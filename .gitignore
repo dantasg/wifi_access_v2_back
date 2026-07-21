@@ -1,0 +1,16 @@
+## .NET
+bin/
+obj/
+*.user
+
+## IDE
+.vs/
+.vscode/
+.idea/
+
+## Publicação
+publish/
+*.pubxml
+
+## Segredos locais
+*.local.json
