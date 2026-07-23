@@ -16,18 +16,11 @@ public class CompaniesControllerTests
             Name: "Dôce Cafeteria",
             Slug: sSlug,
             ReportEmail: sReportEmail,
-            ReportSendDay: iReportSendDay,
-            Unifi: new CompanyUnifiRequest(
-                Host: "https://192.168.1.1",
-                Site: "default",
-                Username: "unifi-user",
-                Password: "unifi-pass",
-                UnifiOs: true,
-                VerifySsl: false));
+            ReportSendDay: iReportSendDay);
     }
 
     [Fact]
-    public async Task Create_ComDadosValidos_CriaESemExporASenhaUnifi()
+    public async Task Create_ComDadosValidos_Cria()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CompaniesController objController = new CompaniesController(objDbContext);
@@ -38,12 +31,7 @@ public class CompaniesControllerTests
         OkObjectResult objOk = Assert.IsType<OkObjectResult>(objResult.Result);
         CompanyDto objCompany = Assert.IsType<CompanyDto>(objOk.Value);
         Assert.Equal("doce", objCompany.Slug);
-        Assert.Equal("https://192.168.1.1", objCompany.Unifi.Host);
-
-        // A senha fica só na entidade — o DTO não tem a propriedade.
-        Assert.Equal("unifi-pass", objDbContext.Companies.Single().Unifi.Password);
-        Assert.DoesNotContain(
-            typeof(CompanyUnifiDto).GetProperties(), objProperty => objProperty.Name == "Password");
+        Assert.Single(objDbContext.Companies);
     }
 
     [Fact]
@@ -141,43 +129,12 @@ public class CompaniesControllerTests
         Guid objCompanyId = objDbContext.Companies.Single().Id;
 
         UpdateCompanyRequest objUpdate = new UpdateCompanyRequest(
-            Name: "Dôce", Active: true, ReportEmail: "novo@doce.com.br", ReportSendDay: 5, Unifi: null);
+            Name: "Dôce", Active: true, ReportEmail: "novo@doce.com.br", ReportSendDay: 5);
 
         await objController.Update(objCompanyId, objUpdate, CancellationToken.None);
 
         Company objCompany = objDbContext.Companies.Single();
         Assert.Equal("novo@doce.com.br", objCompany.ReportEmail);
         Assert.Equal(5, objCompany.ReportSendDay);
-    }
-
-    [Fact]
-    public async Task Update_SenhaUnifiNula_MantemASenhaAtual()
-    {
-        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
-        CompaniesController objController = new CompaniesController(objDbContext);
-        await objController.Create(CreateRequest(), CancellationToken.None);
-        Guid objCompanyId = objDbContext.Companies.Single().Id;
-
-        UpdateCompanyRequest objUpdate = new UpdateCompanyRequest(
-            Name: "Dôce Cafeteria LTDA",
-            Active: true,
-            ReportEmail: "novo@doce.com.br",
-            ReportSendDay: 5,
-            Unifi: new CompanyUnifiRequest(
-                Host: "https://10.0.0.1",
-                Site: "default",
-                Username: "unifi-user",
-                Password: null,
-                UnifiOs: true,
-                VerifySsl: false));
-
-        ActionResult<CompanyDto> objResult =
-            await objController.Update(objCompanyId, objUpdate, CancellationToken.None);
-
-        Assert.IsType<OkObjectResult>(objResult.Result);
-        Company objCompany = objDbContext.Companies.Single();
-        Assert.Equal("Dôce Cafeteria LTDA", objCompany.Name);
-        Assert.Equal("https://10.0.0.1", objCompany.Unifi.Host);
-        Assert.Equal("unifi-pass", objCompany.Unifi.Password);
     }
 }

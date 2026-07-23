@@ -54,10 +54,17 @@ public class AdminController : ControllerBase
         return Ok(new LoginResponse(sToken, sRole, objCompany));
     }
 
+    /// <summary>
+    /// Leads da empresa, agregando todas as unidades. O admin vê a própria empresa; o super
+    /// admin indica a empresa por ?company=slug. Filtro opcional ?unit=slug limita a uma
+    /// unidade; sem ele, traz os leads de todas as unidades da empresa.
+    /// </summary>
     [HttpGet("leads")]
     [Authorize]
     public async Task<ActionResult<List<LeadDto>>> GetLeads(
-        [FromQuery(Name = "company")] string? sCompanySlug, CancellationToken objCancellationToken)
+        [FromQuery(Name = "company")] string? sCompanySlug,
+        [FromQuery(Name = "unit")] string? sUnitSlug,
+        CancellationToken objCancellationToken)
     {
         Guid? objCompanyId = User.GetCompanyId();
         if (objCompanyId is null)
@@ -76,13 +83,23 @@ public class AdminController : ControllerBase
             objCompanyId = objCompany.Id;
         }
 
-        List<LeadDto> objLeads = await _objDbContext.Leads
+        // Unidades da empresa; filtro opcional por slug de unidade.
+        IQueryable<Unit> objUnitsQuery = _objDbContext.Units
             .AsNoTracking()
-            .Where(lead => lead.IDCompany == objCompanyId)
-            .OrderByDescending(lead => lead.Timestamp)
-            .Select(lead => new LeadDto(
-                lead.Timestamp, lead.Nome, lead.Instagram, lead.Telefone,
-                lead.Nascimento, lead.Mac, lead.Ap, lead.Ssid))
+            .Where(unit => unit.IDCompany == objCompanyId);
+        if (!string.IsNullOrWhiteSpace(sUnitSlug))
+        {
+            objUnitsQuery = objUnitsQuery.Where(unit => unit.Slug == sUnitSlug);
+        }
+
+        List<LeadDto> objLeads = await
+            (from lead in _objDbContext.Leads.AsNoTracking()
+             join unit in objUnitsQuery on lead.IDUnit equals unit.Id
+             orderby lead.Timestamp descending
+             select new LeadDto(
+                 lead.Timestamp, lead.Nome, lead.Instagram, lead.Telefone,
+                 lead.Nascimento, lead.Mac, lead.Ap, lead.Ssid,
+                 unit.Slug, unit.Name))
             .ToListAsync(objCancellationToken);
 
         return Ok(objLeads);

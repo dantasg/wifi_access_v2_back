@@ -6,7 +6,7 @@ namespace AccessWifi.Api.Features.Authorize
         string Telefone,
         string Nascimento,
         bool Consentimento,
-        string? Company,
+        string? Unit,
         string? Mac,
         string? Ap,
         string? Ssid,

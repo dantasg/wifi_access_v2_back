@@ -29,31 +29,40 @@ public partial class SettingsController : ControllerBase
     }
 
     /// <summary>
-    /// Tema/marca do portal da empresa (?company=slug) — público, porque o visitante
-    /// carrega o tema sem estar logado. Sem linha gravada, devolve os padrões da marca.
+    /// Tema/marca do portal (?unit=slug) — público, porque o visitante carrega o tema sem
+    /// estar logado. O tema é da empresa dona da unidade. Sem linha gravada, devolve os
+    /// padrões da marca.
     /// </summary>
     [HttpGet("/settings")]
     public async Task<ActionResult<SettingsDto>> Get(
-        [FromQuery(Name = "company")] string? sCompanySlug, CancellationToken objCancellationToken)
+        [FromQuery(Name = "unit")] string? sUnitSlug, CancellationToken objCancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(sCompanySlug))
+        if (string.IsNullOrWhiteSpace(sUnitSlug))
         {
-            return BadRequest(new ErrorResponse("Informe a empresa (?company=slug)."));
+            return BadRequest(new ErrorResponse("Informe a unidade (?unit=slug)."));
         }
 
-        Company? objCompany = await _objDbContext.Companies
+        Unit? objUnit = await _objDbContext.Units
             .AsNoTracking()
-            .FirstOrDefaultAsync(company => company.Slug == sCompanySlug, objCancellationToken);
-        if (objCompany is null || !objCompany.Active)
+            .FirstOrDefaultAsync(unit => unit.Slug == sUnitSlug, objCancellationToken);
+        if (objUnit is null || !objUnit.Active)
         {
-            return NotFound(new ErrorResponse("Empresa não encontrada."));
+            return NotFound(new ErrorResponse("Unidade não encontrada."));
+        }
+
+        bool bCompanyAtiva = await _objDbContext.Companies
+            .AsNoTracking()
+            .AnyAsync(company => company.Id == objUnit.IDCompany && company.Active, objCancellationToken);
+        if (!bCompanyAtiva)
+        {
+            return NotFound(new ErrorResponse("Unidade não encontrada."));
         }
 
         PortalSettings objSettings = await _objDbContext.PortalSettings
             .AsNoTracking()
             .FirstOrDefaultAsync(
-                settings => settings.IDCompany == objCompany.Id, objCancellationToken)
-            ?? new PortalSettings { IDCompany = objCompany.Id };
+                settings => settings.IDCompany == objUnit.IDCompany, objCancellationToken)
+            ?? new PortalSettings { IDCompany = objUnit.IDCompany };
 
         return Ok(SettingsDto.FromEntity(objSettings));
     }

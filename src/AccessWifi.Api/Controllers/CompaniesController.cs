@@ -76,7 +76,6 @@ public partial class CompaniesController : ControllerBase
             Slug = objRequest.Slug,
         };
         ApplyReport(objCompany, objRequest.ReportEmail, objRequest.ReportSendDay);
-        ApplyUnifi(objCompany, objRequest.Unifi);
 
         _objDbContext.Companies.Add(objCompany);
         await _objDbContext.SaveChangesAsync(objCancellationToken);
@@ -84,7 +83,7 @@ public partial class CompaniesController : ControllerBase
         return Ok(CompanyDto.FromEntity(objCompany));
     }
 
-    /// <summary>Atualiza nome, situação e config UniFi (senha nula = manter a atual).</summary>
+    /// <summary>Atualiza nome, situação e configuração de relatório da empresa.</summary>
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<CompanyDto>> Update(
         Guid id, UpdateCompanyRequest objRequest, CancellationToken objCancellationToken)
@@ -110,7 +109,6 @@ public partial class CompaniesController : ControllerBase
         objCompany.Name = objRequest.Name.Trim();
         objCompany.Active = objRequest.Active;
         ApplyReport(objCompany, objRequest.ReportEmail, objRequest.ReportSendDay);
-        ApplyUnifi(objCompany, objRequest.Unifi);
 
         await _objDbContext.SaveChangesAsync(objCancellationToken);
 
@@ -141,24 +139,6 @@ public partial class CompaniesController : ControllerBase
         if (iReportSendDay is not null)
         {
             objCompany.ReportSendDay = iReportSendDay.Value;
-        }
-    }
-
-    private static void ApplyUnifi(Company objCompany, CompanyUnifiRequest? objUnifi)
-    {
-        if (objUnifi is null)
-        {
-            return;
-        }
-
-        objCompany.Unifi.Host = objUnifi.Host?.Trim() ?? "";
-        objCompany.Unifi.Site = string.IsNullOrWhiteSpace(objUnifi.Site) ? "default" : objUnifi.Site.Trim();
-        objCompany.Unifi.Username = objUnifi.Username?.Trim() ?? "";
-        objCompany.Unifi.UnifiOs = objUnifi.UnifiOs;
-        objCompany.Unifi.VerifySsl = objUnifi.VerifySsl;
-        if (objUnifi.Password is not null)
-        {
-            objCompany.Unifi.Password = objUnifi.Password;
         }
     }
 }

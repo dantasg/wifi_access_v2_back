@@ -8,5 +8,7 @@ namespace AccessWifi.Api.Features.Leads
         string Nascimento,
         string? Mac,
         string? Ap,
-        string? Ssid);
+        string? Ssid,
+        string UnitSlug,
+        string UnitName);
 }

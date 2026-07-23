@@ -36,6 +36,14 @@ public class AdminControllerTests
         return objCompany;
     }
 
+    private static Unit CreateUnit(AppDbContext objDbContext, Guid objCompanyId, string sSlug)
+    {
+        Unit objUnit = new Unit { IDCompany = objCompanyId, Name = sSlug, Slug = sSlug };
+        objDbContext.Units.Add(objUnit);
+        objDbContext.SaveChanges();
+        return objUnit;
+    }
+
     private static void CreateUser(AppDbContext objDbContext, string sUsername, Guid? objCompanyId)
     {
         objDbContext.Users.Add(new AdminUser
@@ -112,24 +120,51 @@ public class AdminControllerTests
     }
 
     [Fact]
-    public async Task GetLeads_AdminDeEmpresa_SoVeOsLeadsDaSuaEmpresa()
+    public async Task GetLeads_AdminDeEmpresa_VeOsLeadsDeTodasAsSuasUnidades()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompanyA = CreateCompany(objDbContext, "doce");
         Company objCompanyB = CreateCompany(objDbContext, "outra");
-        objDbContext.Leads.Add(new Lead { IDCompany = objCompanyA.Id, Nome = "Da Dôce" });
-        objDbContext.Leads.Add(new Lead { IDCompany = objCompanyB.Id, Nome = "Da Outra" });
+        Unit objUnitA1 = CreateUnit(objDbContext, objCompanyA.Id, "doce-um");
+        Unit objUnitA2 = CreateUnit(objDbContext, objCompanyA.Id, "doce-dois");
+        Unit objUnitB = CreateUnit(objDbContext, objCompanyB.Id, "outra-um");
+        objDbContext.Leads.Add(new Lead { IDUnit = objUnitA1.Id, Nome = "Da Unidade Um" });
+        objDbContext.Leads.Add(new Lead { IDUnit = objUnitA2.Id, Nome = "Da Unidade Dois" });
+        objDbContext.Leads.Add(new Lead { IDUnit = objUnitB.Id, Nome = "Da Outra" });
         objDbContext.SaveChanges();
         AdminController objController = CreateController(objDbContext);
         TestHelpers.SetUser(objController, objCompanyA.Id);
 
         ActionResult<List<LeadDto>> objResult =
-            await objController.GetLeads(null, CancellationToken.None);
+            await objController.GetLeads(null, null, CancellationToken.None);
+
+        List<LeadDto> objLeads =
+            Assert.IsType<List<LeadDto>>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
+        Assert.Equal(2, objLeads.Count);
+        Assert.DoesNotContain(objLeads, lead => lead.Nome == "Da Outra");
+    }
+
+    [Fact]
+    public async Task GetLeads_ComFiltroDeUnidade_SoVeOsLeadsDaqueleSlug()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext, "doce");
+        Unit objUnit1 = CreateUnit(objDbContext, objCompany.Id, "doce-um");
+        Unit objUnit2 = CreateUnit(objDbContext, objCompany.Id, "doce-dois");
+        objDbContext.Leads.Add(new Lead { IDUnit = objUnit1.Id, Nome = "Da Unidade Um" });
+        objDbContext.Leads.Add(new Lead { IDUnit = objUnit2.Id, Nome = "Da Unidade Dois" });
+        objDbContext.SaveChanges();
+        AdminController objController = CreateController(objDbContext);
+        TestHelpers.SetUser(objController, objCompany.Id);
+
+        ActionResult<List<LeadDto>> objResult =
+            await objController.GetLeads(null, "doce-dois", CancellationToken.None);
 
         List<LeadDto> objLeads =
             Assert.IsType<List<LeadDto>>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
         LeadDto objLead = Assert.Single(objLeads);
-        Assert.Equal("Da Dôce", objLead.Nome);
+        Assert.Equal("Da Unidade Dois", objLead.Nome);
+        Assert.Equal("doce-dois", objLead.UnitSlug);
     }
 
     [Fact]
@@ -140,7 +175,7 @@ public class AdminControllerTests
         TestHelpers.SetUser(objController, null);
 
         ActionResult<List<LeadDto>> objResult =
-            await objController.GetLeads(null, CancellationToken.None);
+            await objController.GetLeads(null, null, CancellationToken.None);
 
         BadRequestObjectResult objBadRequest = Assert.IsType<BadRequestObjectResult>(objResult.Result);
         Assert.IsType<ErrorResponse>(objBadRequest.Value);
@@ -152,14 +187,16 @@ public class AdminControllerTests
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompanyA = CreateCompany(objDbContext, "doce");
         Company objCompanyB = CreateCompany(objDbContext, "outra");
-        objDbContext.Leads.Add(new Lead { IDCompany = objCompanyA.Id, Nome = "Da Dôce" });
-        objDbContext.Leads.Add(new Lead { IDCompany = objCompanyB.Id, Nome = "Da Outra" });
+        Unit objUnitA = CreateUnit(objDbContext, objCompanyA.Id, "doce-um");
+        Unit objUnitB = CreateUnit(objDbContext, objCompanyB.Id, "outra-um");
+        objDbContext.Leads.Add(new Lead { IDUnit = objUnitA.Id, Nome = "Da Dôce" });
+        objDbContext.Leads.Add(new Lead { IDUnit = objUnitB.Id, Nome = "Da Outra" });
         objDbContext.SaveChanges();
         AdminController objController = CreateController(objDbContext);
         TestHelpers.SetUser(objController, null);
 
         ActionResult<List<LeadDto>> objResult =
-            await objController.GetLeads("outra", CancellationToken.None);
+            await objController.GetLeads("outra", null, CancellationToken.None);
 
         List<LeadDto> objLeads =
             Assert.IsType<List<LeadDto>>(Assert.IsType<OkObjectResult>(objResult.Result).Value);

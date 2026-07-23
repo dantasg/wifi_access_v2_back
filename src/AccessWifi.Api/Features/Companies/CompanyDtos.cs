@@ -10,15 +10,6 @@ namespace AccessWifi.Api.Features.Companies
         }
     }
 
-    public record CompanyUnifiDto(string Host, string Site, string Username, bool UnifiOs, bool VerifySsl)
-    {
-        public static CompanyUnifiDto FromEntity(CompanyUnifi objUnifi)
-        {
-            return new CompanyUnifiDto(
-                objUnifi.Host, objUnifi.Site, objUnifi.Username, objUnifi.UnifiOs, objUnifi.VerifySsl);
-        }
-    }
-
     public record CompanyDto(
         Guid Id,
         string Name,
@@ -27,23 +18,20 @@ namespace AccessWifi.Api.Features.Companies
         DateTime CreatedAt,
         string? ReportEmail,
         int ReportSendDay,
-        DateTime? LastReportSentAt,
-        CompanyUnifiDto Unifi)
+        DateTime? LastReportSentAt)
     {
         public static CompanyDto FromEntity(Company objCompany)
         {
             return new CompanyDto(
                 objCompany.Id, objCompany.Name, objCompany.Slug, objCompany.Active,
                 objCompany.CreatedAt, objCompany.ReportEmail, objCompany.ReportSendDay,
-                objCompany.LastReportSentAt, CompanyUnifiDto.FromEntity(objCompany.Unifi));
+                objCompany.LastReportSentAt);
         }
     }
 
-    public record CompanyUnifiRequest(string Host, string Site, string Username, string? Password, bool UnifiOs, bool VerifySsl);
-
     public record CreateCompanyRequest(
-        string Name, string Slug, string? ReportEmail, int? ReportSendDay, CompanyUnifiRequest? Unifi);
+        string Name, string Slug, string? ReportEmail, int? ReportSendDay);
 
     public record UpdateCompanyRequest(
-        string Name, bool Active, string? ReportEmail, int? ReportSendDay, CompanyUnifiRequest? Unifi);
+        string Name, bool Active, string? ReportEmail, int? ReportSendDay);
 }

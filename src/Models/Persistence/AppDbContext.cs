@@ -12,6 +12,7 @@ namespace Models.Persistence
         public AppDbContext(DbContextOptions<AppDbContext> objOptions) : base(objOptions) { }
 
         public DbSet<Company> Companies => Set<Company>();
+        public DbSet<Unit> Units => Set<Unit>();
         public DbSet<AdminUser> Users => Set<AdminUser>();
         public DbSet<Lead> Leads => Set<Lead>();
         public DbSet<PortalSettings> PortalSettings => Set<PortalSettings>();
@@ -32,7 +33,18 @@ namespace Models.Persistence
                 objCompany.Property(company => company.Slug).HasMaxLength(40);
                 objCompany.Property(company => company.ReportEmail).HasMaxLength(200);
                 objCompany.HasIndex(company => company.Slug).IsUnique();
-                objCompany.OwnsOne(company => company.Unifi, objUnifi =>
+            });
+
+            objModelBuilder.Entity<Unit>(objUnit =>
+            {
+                objUnit.Property(unit => unit.Name).HasMaxLength(120);
+                objUnit.Property(unit => unit.Slug).HasMaxLength(40);
+                objUnit.HasIndex(unit => unit.Slug).IsUnique();
+                objUnit.HasOne<Company>()
+                    .WithMany()
+                    .HasForeignKey(unit => unit.IDCompany)
+                    .OnDelete(DeleteBehavior.Restrict);
+                objUnit.OwnsOne(unit => unit.Unifi, objUnifi =>
                 {
                     objUnifi.Property(unifi => unifi.Host).HasMaxLength(200);
                     objUnifi.Property(unifi => unifi.Site).HasMaxLength(60);
@@ -60,10 +72,10 @@ namespace Models.Persistence
                 objLead.Property(lead => lead.Mac).HasMaxLength(17);
                 objLead.Property(lead => lead.Ap).HasMaxLength(17);
                 objLead.Property(lead => lead.Ssid).HasMaxLength(32);
-                objLead.HasIndex(lead => new { lead.IDCompany, lead.Timestamp });
-                objLead.HasOne<Company>()
+                objLead.HasIndex(lead => new { lead.IDUnit, lead.Timestamp });
+                objLead.HasOne<Unit>()
                     .WithMany()
-                    .HasForeignKey(lead => lead.IDCompany)
+                    .HasForeignKey(lead => lead.IDUnit)
                     .OnDelete(DeleteBehavior.Restrict);
             });
 

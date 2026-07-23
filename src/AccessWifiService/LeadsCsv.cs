@@ -4,22 +4,27 @@ using Models.DataBase;
 
 namespace AccessWifiService
 {
+    /// <summary>Uma linha do CSV: o lead e o nome da unidade a que ele pertence.</summary>
+    public readonly record struct LeadReportRow(Lead Lead, string UnitName);
+
     /// <summary>Gera o CSV de cadastros anexado ao relatório (UTF-8 com BOM, para o Excel).</summary>
     public static class LeadsCsv
     {
         private static readonly string[] s_arrHeader =
-            ["timestamp", "nome", "instagram", "telefone", "nascimento", "mac", "ap", "ssid"];
+            ["timestamp", "unidade", "nome", "instagram", "telefone", "nascimento", "mac", "ap", "ssid"];
 
-        public static byte[] Build(IEnumerable<Lead> objLeads)
+        public static byte[] Build(IEnumerable<LeadReportRow> objRows)
         {
             StringBuilder objBuilder = new StringBuilder();
             objBuilder.AppendLine(string.Join(",", s_arrHeader));
 
-            foreach (Lead objLead in objLeads)
+            foreach (LeadReportRow objRow in objRows)
             {
+                Lead objLead = objRow.Lead;
                 string[] arrFields =
                 [
                     objLead.Timestamp.ToString("o", CultureInfo.InvariantCulture),
+                    objRow.UnitName,
                     objLead.Nome,
                     objLead.Instagram,
                     objLead.Telefone,

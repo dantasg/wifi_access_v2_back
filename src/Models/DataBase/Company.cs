@@ -25,7 +25,5 @@ namespace Models.DataBase
         /// o serviço não reenvia se já enviou no mês corrente. Nulo = nunca enviado.
         /// </summary>
         public DateTime? LastReportSentAt { get; set; }
-
-        public CompanyUnifi Unifi { get; set; } = new CompanyUnifi();
     }
 }

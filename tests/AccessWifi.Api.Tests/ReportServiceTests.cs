@@ -37,11 +37,19 @@ public class ReportServiceTests
         return objCompany;
     }
 
-    private static void AddLead(AppDbContext objDbContext, Guid objCompanyId, DateTime dtTimestamp)
+    private static Unit AddUnit(AppDbContext objDbContext, Guid objCompanyId, string sSlug)
+    {
+        Unit objUnit = new Unit { IDCompany = objCompanyId, Name = sSlug, Slug = sSlug };
+        objDbContext.Units.Add(objUnit);
+        objDbContext.SaveChanges();
+        return objUnit;
+    }
+
+    private static void AddLead(AppDbContext objDbContext, Guid objUnitId, DateTime dtTimestamp)
     {
         objDbContext.Leads.Add(new Lead
         {
-            IDCompany = objCompanyId,
+            IDUnit = objUnitId,
             Nome = "Fulano",
             Timestamp = dtTimestamp,
         });
@@ -77,12 +85,13 @@ public class ReportServiceTests
         Company objComEmail = AddCompany(objDbContext, "doce", "rel@doce.com.br", iSendDay: 1);
         Company objSemEmail = AddCompany(objDbContext, "outra", null, iSendDay: 1);
         Company objOutroDia = AddCompany(objDbContext, "terceira", "z@z.com", iSendDay: 15);
+        Unit objUnit = AddUnit(objDbContext, objComEmail.Id, "doce-matriz");
 
         // 2 leads em julho (mês anterior) + 1 em junho + 1 em agosto (fora do período).
-        AddLead(objDbContext, objComEmail.Id, new DateTime(2026, 7, 5, 12, 0, 0, DateTimeKind.Utc));
-        AddLead(objDbContext, objComEmail.Id, new DateTime(2026, 7, 20, 12, 0, 0, DateTimeKind.Utc));
-        AddLead(objDbContext, objComEmail.Id, new DateTime(2026, 6, 30, 12, 0, 0, DateTimeKind.Utc));
-        AddLead(objDbContext, objComEmail.Id, new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc));
+        AddLead(objDbContext, objUnit.Id, new DateTime(2026, 7, 5, 12, 0, 0, DateTimeKind.Utc));
+        AddLead(objDbContext, objUnit.Id, new DateTime(2026, 7, 20, 12, 0, 0, DateTimeKind.Utc));
+        AddLead(objDbContext, objUnit.Id, new DateTime(2026, 6, 30, 12, 0, 0, DateTimeKind.Utc));
+        AddLead(objDbContext, objUnit.Id, new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc));
 
         FakeEmailSender objSender = new FakeEmailSender();
         ReportService objService = new ReportService(

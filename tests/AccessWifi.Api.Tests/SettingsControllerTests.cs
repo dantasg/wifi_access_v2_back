@@ -18,6 +18,14 @@ public class SettingsControllerTests
         return objCompany;
     }
 
+    /// <summary>Cria uma unidade para a empresa e devolve o slug da unidade.</summary>
+    private static string CreateUnit(AppDbContext objDbContext, Guid objCompanyId, string sUnitSlug)
+    {
+        objDbContext.Units.Add(new Unit { IDCompany = objCompanyId, Name = sUnitSlug, Slug = sUnitSlug });
+        objDbContext.SaveChanges();
+        return sUnitSlug;
+    }
+
     private static SettingsDto CreateDto(
         string sBrand = "#112233",
         string? sLogo = null,
@@ -53,7 +61,7 @@ public class SettingsControllerTests
     }
 
     [Fact]
-    public async Task Get_EmpresaInexistente_Retorna404()
+    public async Task Get_UnidadeInexistente_Retorna404()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         SettingsController objController = new SettingsController(objDbContext);
@@ -62,17 +70,18 @@ public class SettingsControllerTests
 
         NotFoundObjectResult objNotFound = Assert.IsType<NotFoundObjectResult>(objResult.Result);
         ErrorResponse objError = Assert.IsType<ErrorResponse>(objNotFound.Value);
-        Assert.Equal("Empresa não encontrada.", objError.Error);
+        Assert.Equal("Unidade não encontrada.", objError.Error);
     }
 
     [Fact]
-    public async Task Get_EmpresaSemLinhaGravada_DevolveOsPadroesDaMarca()
+    public async Task Get_UnidadeSemLinhaGravada_DevolveOsPadroesDaMarca()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
-        CreateCompany(objDbContext);
+        Company objCompany = CreateCompany(objDbContext);
+        string sUnitSlug = CreateUnit(objDbContext, objCompany.Id, "doce-matriz");
         SettingsController objController = new SettingsController(objDbContext);
 
-        ActionResult<SettingsDto> objResult = await objController.Get("doce", CancellationToken.None);
+        ActionResult<SettingsDto> objResult = await objController.Get(sUnitSlug, CancellationToken.None);
 
         OkObjectResult objOk = Assert.IsType<OkObjectResult>(objResult.Result);
         SettingsDto objSettings = Assert.IsType<SettingsDto>(objOk.Value);
@@ -86,6 +95,7 @@ public class SettingsControllerTests
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
+        string sUnitSlug = CreateUnit(objDbContext, objCompany.Id, "doce-matriz");
         SettingsController objController = new SettingsController(objDbContext);
         TestHelpers.SetUser(objController, objCompany.Id);
 
@@ -99,7 +109,7 @@ public class SettingsControllerTests
         PortalSettings objRow = Assert.Single(objDbContext.PortalSettings);
         Assert.Equal(objCompany.Id, objRow.IDCompany);
 
-        ActionResult<SettingsDto> objGetResult = await objController.Get("doce", CancellationToken.None);
+        ActionResult<SettingsDto> objGetResult = await objController.Get(sUnitSlug, CancellationToken.None);
         SettingsDto objLoaded =
             Assert.IsType<SettingsDto>(Assert.IsType<OkObjectResult>(objGetResult.Result).Value);
         Assert.Equal("#112233", objLoaded.Colors.Brand);

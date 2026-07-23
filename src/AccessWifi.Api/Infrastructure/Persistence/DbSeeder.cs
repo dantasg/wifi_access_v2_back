@@ -34,13 +34,20 @@ public static class DbSeeder
             {
                 Company objCompany = new Company { Name = "Dôce Cafeteria", Slug = "doce" };
                 objDbContext.Companies.Add(objCompany);
+                objDbContext.Units.Add(new Unit
+                {
+                    IDCompany = objCompany.Id,
+                    Name = "Matriz",
+                    Slug = "doce-matriz",
+                });
                 objDbContext.Users.Add(new AdminUser
                 {
                     Username = "admin",
                     PasswordHash = objAdminOptions.PasswordHash,
                     IDCompany = objCompany.Id,
                 });
-                objLogger.LogInformation("Seed dev: empresa 'doce' e usuário 'admin' criados.");
+                objLogger.LogInformation(
+                    "Seed dev: empresa 'doce', unidade 'doce-matriz' e usuário 'admin' criados.");
             }
 
             await objDbContext.SaveChangesAsync();

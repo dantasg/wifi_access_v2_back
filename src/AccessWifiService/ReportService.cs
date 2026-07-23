@@ -48,27 +48,30 @@ namespace AccessWifiService
 
         private async Task SendForCompanyAsync(Company objCompany, DateTime dtStartUtc, DateTime dtEndUtc, CancellationToken objCancellationToken)
         {
-            List<Lead> objLeads = await _objDbContext.Leads
-                .AsNoTracking()
-                .Where(lead => lead.IDCompany == objCompany.Id
-                    && lead.Timestamp >= dtStartUtc && lead.Timestamp < dtEndUtc)
-                .OrderBy(lead => lead.Timestamp)
+            // Agrega os leads de todas as unidades da empresa; a coluna "unidade" distingue.
+            List<LeadReportRow> objRows = await
+                (from lead in _objDbContext.Leads.AsNoTracking()
+                 join unit in _objDbContext.Units.AsNoTracking() on lead.IDUnit equals unit.Id
+                 where unit.IDCompany == objCompany.Id
+                     && lead.Timestamp >= dtStartUtc && lead.Timestamp < dtEndUtc
+                 orderby lead.Timestamp
+                 select new LeadReportRow(lead, unit.Name))
                 .ToListAsync(objCancellationToken);
 
             string sPeriodo = dtStartUtc.ToString("MM/yyyy", CultureInfo.InvariantCulture);
-            byte[] objCsv = LeadsCsv.Build(objLeads);
+            byte[] objCsv = LeadsCsv.Build(objRows);
             string sFileName = $"cadastros-{objCompany.Slug}-{dtStartUtc:yyyy-MM}.csv";
             string sSubject = $"Relatório de cadastros — {objCompany.Name} — {sPeriodo}";
             string sBody =
                 $"Olá,\r\n\r\nSegue em anexo o relatório de cadastros de {objCompany.Name} " +
-                $"referente a {sPeriodo}.\r\nTotal de cadastros no período: {objLeads.Count}.\r\n\r\n" +
+                $"referente a {sPeriodo}.\r\nTotal de cadastros no período: {objRows.Count}.\r\n\r\n" +
                 "Mensagem automática do AccessWifi.";
 
             await _objEmailSender.SendAsync(objCompany.ReportEmail!, sSubject, sBody, objCsv, sFileName, objCancellationToken);
 
             _objLogger.LogInformation(
                 "Relatório de {Count} cadastros ({Periodo}) enviado para {Email} (empresa {Slug}).",
-                objLeads.Count, sPeriodo, objCompany.ReportEmail, objCompany.Slug);
+                objRows.Count, sPeriodo, objCompany.ReportEmail, objCompany.Slug);
         }
     }
 }
