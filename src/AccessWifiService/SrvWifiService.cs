@@ -4,10 +4,6 @@ using Microsoft.Extensions.Logging;
 
 namespace AccessWifiService
 {
-    /// <summary>
-    /// Serviço de fundo: uma vez por dia (e ao subir) verifica quais empresas têm relatório
-    /// para enviar hoje e dispara o envio dos cadastros do mês anterior.
-    /// </summary>
     public class SrvWifiService : BackgroundService
     {
         // Hora do dia (local) da verificação diária.

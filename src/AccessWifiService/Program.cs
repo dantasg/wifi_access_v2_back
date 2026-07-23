@@ -22,9 +22,9 @@ string sConnectionString = objBuilder.Configuration.GetConnectionString("Default
     ?? throw new InvalidOperationException("ConnectionStrings:Default não configurada.");
 objBuilder.Services.AddDbContext<AppDbContext>(objDbOptions => objDbOptions.UseNpgsql(sConnectionString));
 
-// SMTP global do serviço + envio.
-objBuilder.Services.Configure<SmtpOptions>(objBuilder.Configuration.GetSection(SmtpOptions.SectionName));
-objBuilder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
+// Config global (SMTP etc.) vem da tabela Configuration, não do appsettings.
+objBuilder.Services.AddScoped<ConfigurationReader>();
+objBuilder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
 objBuilder.Services.AddScoped<ReportService>();
 
 objBuilder.Services.AddHostedService<SrvWifiService>();

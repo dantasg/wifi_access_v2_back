@@ -25,8 +25,7 @@ namespace AccessWifiService
         }
 
         /// <param name="dtToday">Data de referência (normalmente DateTime.Today).</param>
-        public async Task SendDueReportsAsync(
-            DateTime dtToday, CancellationToken objCancellationToken = default)
+        public async Task SendDueReportsAsync(DateTime dtToday, CancellationToken objCancellationToken = default)
         {
             (DateTime dtStartUtc, DateTime dtEndUtc) = ReportSchedule.PreviousMonthRangeUtc(dtToday);
 
@@ -47,8 +46,7 @@ namespace AccessWifiService
             }
         }
 
-        private async Task SendForCompanyAsync(
-            Company objCompany, DateTime dtStartUtc, DateTime dtEndUtc, CancellationToken objCancellationToken)
+        private async Task SendForCompanyAsync(Company objCompany, DateTime dtStartUtc, DateTime dtEndUtc, CancellationToken objCancellationToken)
         {
             List<Lead> objLeads = await _objDbContext.Leads
                 .AsNoTracking()
@@ -66,8 +64,7 @@ namespace AccessWifiService
                 $"referente a {sPeriodo}.\r\nTotal de cadastros no período: {objLeads.Count}.\r\n\r\n" +
                 "Mensagem automática do AccessWifi.";
 
-            await _objEmailSender.SendAsync(
-                objCompany.ReportEmail!, sSubject, sBody, objCsv, sFileName, objCancellationToken);
+            await _objEmailSender.SendAsync(objCompany.ReportEmail!, sSubject, sBody, objCsv, sFileName, objCancellationToken);
 
             _objLogger.LogInformation(
                 "Relatório de {Count} cadastros ({Periodo}) enviado para {Email} (empresa {Slug}).",

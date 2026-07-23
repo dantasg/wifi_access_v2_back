@@ -15,9 +15,17 @@ namespace Models.Persistence
         public DbSet<AdminUser> Users => Set<AdminUser>();
         public DbSet<Lead> Leads => Set<Lead>();
         public DbSet<PortalSettings> PortalSettings => Set<PortalSettings>();
+        public DbSet<Configuration> Configurations => Set<Configuration>();
 
         protected override void OnModelCreating(ModelBuilder objModelBuilder)
         {
+            objModelBuilder.Entity<Configuration>(objConfiguration =>
+            {
+                objConfiguration.ToTable("Configuration");
+                objConfiguration.HasKey(config => config.IDConfiguration);
+                objConfiguration.Property(config => config.IDConfiguration).HasMaxLength(100);
+            });
+
             objModelBuilder.Entity<Company>(objCompany =>
             {
                 objCompany.Property(company => company.Name).HasMaxLength(120);
