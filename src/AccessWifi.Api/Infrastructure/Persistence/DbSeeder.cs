@@ -6,9 +6,13 @@ using Models.Persistence;
 
 namespace AccessWifi.Api.Infrastructure.Persistence;
 
+/// <summary>
+/// Semeadura mínima para a aplicação subir: apenas o super admin vindo da configuração.
+/// Empresas, unidades e usuários de empresa são criados pelo super admin via API.
+/// </summary>
 public static class DbSeeder
 {
-    public static async Task SeedAsync(IServiceProvider objServices, IHostEnvironment objEnvironment)
+    public static async Task SeedAsync(IServiceProvider objServices)
     {
         AppDbContext objDbContext = objServices.GetRequiredService<AppDbContext>();
         AdminOptions objAdminOptions = objServices.GetRequiredService<IOptions<AdminOptions>>().Value;
@@ -26,31 +30,9 @@ public static class DbSeeder
                     IDCompany = null, // super admin
                 });
                 objLogger.LogInformation("Seed: super admin '{Username}' criado.", objAdminOptions.Username);
-            }
 
-            if (objEnvironment.IsDevelopment() &&
-                !await objDbContext.Companies.AnyAsync() &&
-                !string.IsNullOrWhiteSpace(objAdminOptions.PasswordHash))
-            {
-                Company objCompany = new Company { Name = "Dôce Cafeteria", Slug = "doce" };
-                objDbContext.Companies.Add(objCompany);
-                objDbContext.Units.Add(new Unit
-                {
-                    IDCompany = objCompany.Id,
-                    Name = "Matriz",
-                    Slug = "doce-matriz",
-                });
-                objDbContext.Users.Add(new AdminUser
-                {
-                    Username = "admin",
-                    PasswordHash = objAdminOptions.PasswordHash,
-                    IDCompany = objCompany.Id,
-                });
-                objLogger.LogInformation(
-                    "Seed dev: empresa 'doce', unidade 'doce-matriz' e usuário 'admin' criados.");
+                await objDbContext.SaveChangesAsync();
             }
-
-            await objDbContext.SaveChangesAsync();
         }
         catch (Exception objException)
         {

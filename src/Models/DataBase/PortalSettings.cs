@@ -18,7 +18,7 @@ namespace Models.DataBase
         public string? Favicon { get; set; }
         public string? Banner { get; set; }
 
-        public string Ssid { get; set; } = "Doce";
+        public string Ssid { get; set; } = string.Empty;
 
         /// <summary>Tempo de liberação do guest, em minutos.</summary>
         public int AccessMinutes { get; set; } = 1440;

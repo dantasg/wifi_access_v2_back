@@ -89,10 +89,10 @@ builder.Services.AddControllers().AddJsonOptions(objJsonOptions =>
 
 WebApplication app = builder.Build();
 
-// Bootstrap: super admin da config quando não há usuários; em dev, semeia a Dôce.
+// Bootstrap: cria o super admin vindo da configuração quando ainda não há usuários.
 using (IServiceScope objScope = app.Services.CreateScope())
 {
-    await DbSeeder.SeedAsync(objScope.ServiceProvider, app.Environment);
+    await DbSeeder.SeedAsync(objScope.ServiceProvider);
 }
 
 // HTTPS fica a cargo do reverse proxy (Nginx) em produção; em dev o Vite proxeia via http.
