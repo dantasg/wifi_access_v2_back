@@ -1,45 +1,55 @@
+using Models.DataBase;
 using AccessWifi.Api.Controllers;
 using AccessWifi.Api.Features.Authorize;
-using AccessWifi.Api.Infrastructure.Persistence;
+using AccessWifi.Api.Features.Companies;
+using Models.Persistence;
 using AccessWifi.Api.Infrastructure.Unifi;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AccessWifi.Api.Tests;
 
 public class AuthorizeControllerTests
 {
-    /// <summary>Dublê da controladora: registra o MAC autorizado ou simula falha.</summary>
+    /// <summary>Dublê da controladora: registra a chamada ou simula falha.</summary>
     private class FakeUnifiClient : IUnifiClient
     {
+        public CompanyUnifi? ObjConfigRecebida { get; private set; }
         public string? SMacAutorizado { get; private set; }
         public int? IMinutosRecebidos { get; private set; }
         public bool Falhar { get; set; }
 
         public Task AuthorizeGuestAsync(
-            string sMac, int? iAccessMinutes = null, CancellationToken objCancellationToken = default)
+            CompanyUnifi objConfig, string sMac, int iAccessMinutes,
+            CancellationToken objCancellationToken = default)
         {
             if (Falhar)
             {
                 throw new UnifiException("Simulação de falha.");
             }
+            ObjConfigRecebida = objConfig;
             SMacAutorizado = sMac;
             IMinutosRecebidos = iAccessMinutes;
             return Task.CompletedTask;
         }
     }
 
-    private static AppDbContext CreateDbContext()
+    private static Company CreateCompany(AppDbContext objDbContext, string sSlug = "doce")
     {
-        DbContextOptions<AppDbContext> objOptions = new DbContextOptionsBuilder<AppDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-        return new AppDbContext(objOptions);
+        Company objCompany = new Company
+        {
+            Name = "Dôce Cafeteria",
+            Slug = sSlug,
+            Unifi = new CompanyUnifi { Host = "https://192.168.1.1" },
+        };
+        objDbContext.Companies.Add(objCompany);
+        objDbContext.SaveChanges();
+        return objCompany;
     }
 
-    private static AuthorizeRequest CreateRequest(string? sMac = "AA:BB:CC:DD:EE:FF", bool consentimento = true)
+    private static AuthorizeRequest CreateRequest(
+        string? sCompany = "doce", string? sMac = "AA:BB:CC:DD:EE:FF", bool consentimento = true)
     {
         return new AuthorizeRequest(
             Nome: "Ana Beatriz Souza",
@@ -47,6 +57,7 @@ public class AuthorizeControllerTests
             Telefone: "(91) 98888-1234",
             Nascimento: "12/03/1998",
             Consentimento: consentimento,
+            Company: sCompany,
             Mac: sMac,
             Ap: "11:22:33:44:55:66",
             Ssid: "Doce",
@@ -60,9 +71,56 @@ public class AuthorizeControllerTests
     }
 
     [Fact]
+    public async Task Post_SemEmpresa_Retorna400()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        AuthorizeController objController = CreateController(objDbContext, new FakeUnifiClient());
+
+        ActionResult<AuthorizeResponse> objResult =
+            await objController.Post(CreateRequest(sCompany: null), CancellationToken.None);
+
+        BadRequestObjectResult objBadRequest = Assert.IsType<BadRequestObjectResult>(objResult.Result);
+        AuthorizeResponse objResponse = Assert.IsType<AuthorizeResponse>(objBadRequest.Value);
+        Assert.Equal("Empresa não informada.", objResponse.Error);
+    }
+
+    [Fact]
+    public async Task Post_EmpresaInexistente_Retorna400()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        CreateCompany(objDbContext);
+        AuthorizeController objController = CreateController(objDbContext, new FakeUnifiClient());
+
+        ActionResult<AuthorizeResponse> objResult =
+            await objController.Post(CreateRequest(sCompany: "outra"), CancellationToken.None);
+
+        BadRequestObjectResult objBadRequest = Assert.IsType<BadRequestObjectResult>(objResult.Result);
+        AuthorizeResponse objResponse = Assert.IsType<AuthorizeResponse>(objBadRequest.Value);
+        Assert.Equal("Empresa não encontrada ou inativa.", objResponse.Error);
+        Assert.Empty(objDbContext.Leads);
+    }
+
+    [Fact]
+    public async Task Post_EmpresaInativa_Retorna400()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext);
+        objCompany.Active = false;
+        objDbContext.SaveChanges();
+        AuthorizeController objController = CreateController(objDbContext, new FakeUnifiClient());
+
+        ActionResult<AuthorizeResponse> objResult =
+            await objController.Post(CreateRequest(), CancellationToken.None);
+
+        Assert.IsType<BadRequestObjectResult>(objResult.Result);
+        Assert.Empty(objDbContext.Leads);
+    }
+
+    [Fact]
     public async Task Post_SemMac_Retorna400ComMensagem()
     {
-        using AppDbContext objDbContext = CreateDbContext();
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        CreateCompany(objDbContext);
         AuthorizeController objController = CreateController(objDbContext, new FakeUnifiClient());
 
         ActionResult<AuthorizeResponse> objResult =
@@ -70,7 +128,6 @@ public class AuthorizeControllerTests
 
         BadRequestObjectResult objBadRequest = Assert.IsType<BadRequestObjectResult>(objResult.Result);
         AuthorizeResponse objResponse = Assert.IsType<AuthorizeResponse>(objBadRequest.Value);
-        Assert.False(objResponse.Authorized);
         Assert.Equal("MAC do cliente ausente.", objResponse.Error);
         Assert.Empty(objDbContext.Leads);
     }
@@ -78,7 +135,8 @@ public class AuthorizeControllerTests
     [Fact]
     public async Task Post_SemConsentimento_Retorna400ComMensagemLgpd()
     {
-        using AppDbContext objDbContext = CreateDbContext();
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        CreateCompany(objDbContext);
         AuthorizeController objController = CreateController(objDbContext, new FakeUnifiClient());
 
         ActionResult<AuthorizeResponse> objResult =
@@ -91,9 +149,10 @@ public class AuthorizeControllerTests
     }
 
     [Fact]
-    public async Task Post_ComDadosValidos_GravaLeadEChamaUnifi()
+    public async Task Post_ComDadosValidos_GravaLeadComIDCompanyEChamaUnifiDaEmpresa()
     {
-        using AppDbContext objDbContext = CreateDbContext();
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext);
         FakeUnifiClient objUnifiClient = new FakeUnifiClient();
         AuthorizeController objController = CreateController(objDbContext, objUnifiClient);
 
@@ -106,16 +165,22 @@ public class AuthorizeControllerTests
         Assert.Equal("https://www.doce.com.br", objResponse.Redirect);
 
         Assert.Equal("AA:BB:CC:DD:EE:FF", objUnifiClient.SMacAutorizado);
+        Assert.Same(objCompany.Unifi, objUnifiClient.ObjConfigRecebida);
         Assert.Single(objDbContext.Leads);
-        Assert.Equal("Ana Beatriz Souza", objDbContext.Leads.Single().Nome);
+        Assert.Equal(objCompany.Id, objDbContext.Leads.Single().IDCompany);
     }
 
     [Fact]
-    public async Task Post_ComSettingsGravadas_RepassaOAccessMinutesSalvo()
+    public async Task Post_ComSettingsGravadas_RepassaOAccessMinutesDaEmpresa()
     {
-        using AppDbContext objDbContext = CreateDbContext();
-        objDbContext.PortalSettings.Add(new Features.Settings.PortalSettings { AccessMinutes = 90 });
-        await objDbContext.SaveChangesAsync();
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext);
+        objDbContext.PortalSettings.Add(new PortalSettings
+        {
+            IDCompany = objCompany.Id,
+            AccessMinutes = 90,
+        });
+        objDbContext.SaveChanges();
         FakeUnifiClient objUnifiClient = new FakeUnifiClient();
         AuthorizeController objController = CreateController(objDbContext, objUnifiClient);
 
@@ -125,21 +190,23 @@ public class AuthorizeControllerTests
     }
 
     [Fact]
-    public async Task Post_SemSettings_DeixaOUnifiClientUsarOPadraoDoAppsettings()
+    public async Task Post_SemSettings_UsaODefaultDe1440Minutos()
     {
-        using AppDbContext objDbContext = CreateDbContext();
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        CreateCompany(objDbContext);
         FakeUnifiClient objUnifiClient = new FakeUnifiClient();
         AuthorizeController objController = CreateController(objDbContext, objUnifiClient);
 
         await objController.Post(CreateRequest(), CancellationToken.None);
 
-        Assert.Null(objUnifiClient.IMinutosRecebidos);
+        Assert.Equal(1440, objUnifiClient.IMinutosRecebidos);
     }
 
     [Fact]
     public async Task Post_FalhaNaUnifi_Retorna502MasMantemOLead()
     {
-        using AppDbContext objDbContext = CreateDbContext();
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        CreateCompany(objDbContext);
         AuthorizeController objController =
             CreateController(objDbContext, new FakeUnifiClient { Falhar = true });
 

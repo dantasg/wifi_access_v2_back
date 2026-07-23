@@ -1,11 +1,12 @@
-namespace AccessWifi.Api.Infrastructure.Unifi;
+using AccessWifi.Api.Features.Companies;
+using Models.DataBase;
 
-/// <summary>Isola a controladora UniFi atrás de interface (facilita teste e troca de implementação).</summary>
-public interface IUnifiClient
+namespace AccessWifi.Api.Infrastructure.Unifi
 {
-    /// <summary>Autoriza o MAC do visitante na controladora (cmd authorize-guest).</summary>
-    /// <param name="iAccessMinutes">Tempo de liberação; null = usar o Unifi:AccessMinutes do appsettings.</param>
-    /// <exception cref="UnifiException">Login ou autorização falharam.</exception>
-    Task AuthorizeGuestAsync(
-        string sMac, int? iAccessMinutes = null, CancellationToken objCancellationToken = default);
+    public interface IUnifiClient
+    {
+        Task AuthorizeGuestAsync(
+            CompanyUnifi objConfig, string sMac, int iAccessMinutes,
+            CancellationToken objCancellationToken = default);
+    }
 }

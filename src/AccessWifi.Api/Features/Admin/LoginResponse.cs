@@ -1,4 +1,6 @@
-namespace AccessWifi.Api.Features.Admin;
+using AccessWifi.Api.Features.Companies;
 
-/// <summary>Resposta do login: o front guarda o token só em memória.</summary>
-public record LoginResponse(string Token);
+namespace AccessWifi.Api.Features.Admin
+{
+    public record LoginResponse(string Token, string Role, CompanySummaryDto? Company);
+}

@@ -8,8 +8,8 @@ using AccessWifi.Api.Infrastructure.Unifi;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using Models.Persistence;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 ConfigurationManager objConfiguration = builder.Configuration;
@@ -17,7 +17,6 @@ ConfigurationManager objConfiguration = builder.Configuration;
 // ------------------------------------------------------------------ Options
 builder.Services.Configure<AdminOptions>(objConfiguration.GetSection(AdminOptions.SectionName));
 builder.Services.Configure<JwtOptions>(objConfiguration.GetSection(JwtOptions.SectionName));
-builder.Services.Configure<UnifiOptions>(objConfiguration.GetSection(UnifiOptions.SectionName));
 
 // ------------------------------------------------------------- EF Core / Postgres
 string sConnectionString = objConfiguration.GetConnectionString("Default")
@@ -38,6 +37,9 @@ JwtOptions objJwtOptions = objConfiguration.GetSection(JwtOptions.SectionName).G
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(objBearerOptions =>
     {
+        // Sem renomear claims na entrada: "role" e "companyId" chegam com esses nomes
+        // aos controllers (senão o RoleClaimType abaixo não casa e [Authorize(Roles)] dá 403).
+        objBearerOptions.MapInboundClaims = false;
         objBearerOptions.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
@@ -48,6 +50,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(objJwtOptions.Secret)),
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromMinutes(1),
+            // Papéis multi empresa: [Authorize(Roles = "superadmin")] lê a claim "role".
+            RoleClaimType = ClaimsExtensions.ClaimRole,
         };
     });
 builder.Services.AddAuthorization();
@@ -77,38 +81,19 @@ builder.Services.AddRateLimiter(objLimiterOptions =>
 
 // ---------------------------------------------------------------- Serviços da app
 builder.Services.AddScoped<TokenService>();
-builder.Services.AddHttpClient<IUnifiClient, UnifiClient>(
-    (objServiceProvider, objHttpClient) =>
-    {
-        UnifiOptions objUnifiOptions =
-            objServiceProvider.GetRequiredService<IOptions<UnifiOptions>>().Value;
-        if (!string.IsNullOrWhiteSpace(objUnifiOptions.Host))
-        {
-            objHttpClient.BaseAddress = new Uri(objUnifiOptions.Host);
-        }
-        objHttpClient.Timeout = TimeSpan.FromSeconds(15);
-    })
-    .ConfigurePrimaryHttpMessageHandler(objServiceProvider =>
-    {
-        UnifiOptions objUnifiOptions =
-            objServiceProvider.GetRequiredService<IOptions<UnifiOptions>>().Value;
-        HttpClientHandler objHandler = new HttpClientHandler
-        {
-            UseCookies = true,
-            CookieContainer = new CookieContainer(),
-        };
-        if (!objUnifiOptions.VerifySsl)
-        {
-            // UDM/Cloud Gateway usam certificado self-signed.
-            objHandler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
-        }
-        return objHandler;
-    });
+// A config da controladora vem por empresa (banco); o client é criado por chamada.
+builder.Services.AddSingleton<IUnifiClient, UnifiClient>();
 
 builder.Services.AddControllers().AddJsonOptions(objJsonOptions =>
     objJsonOptions.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull);
 
 WebApplication app = builder.Build();
+
+// Bootstrap: super admin da config quando não há usuários; em dev, semeia a Dôce.
+using (IServiceScope objScope = app.Services.CreateScope())
+{
+    await DbSeeder.SeedAsync(objScope.ServiceProvider, app.Environment);
+}
 
 // HTTPS fica a cargo do reverse proxy (Nginx) em produção; em dev o Vite proxeia via http.
 app.UseCors();

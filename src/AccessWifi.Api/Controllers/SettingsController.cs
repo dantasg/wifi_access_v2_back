@@ -1,10 +1,13 @@
 using System.Text.RegularExpressions;
 using AccessWifi.Api.Features;
+using AccessWifi.Api.Features.Companies;
 using AccessWifi.Api.Features.Settings;
-using AccessWifi.Api.Infrastructure.Persistence;
+using Models.Persistence;
+using AccessWifi.Api.Infrastructure.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Models.DataBase;
 
 namespace AccessWifi.Api.Controllers;
 
@@ -26,27 +29,64 @@ public partial class SettingsController : ControllerBase
     }
 
     /// <summary>
-    /// Tema/marca do portal — público, porque o visitante carrega o tema sem estar logado.
-    /// Sem linha gravada, devolve os padrões da Dôce (mesmos defaults do front).
+    /// Tema/marca do portal da empresa (?company=slug) — público, porque o visitante
+    /// carrega o tema sem estar logado. Sem linha gravada, devolve os padrões da marca.
     /// </summary>
     [HttpGet("/settings")]
-    public async Task<ActionResult<SettingsDto>> Get(CancellationToken objCancellationToken)
+    public async Task<ActionResult<SettingsDto>> Get(
+        [FromQuery(Name = "company")] string? sCompanySlug, CancellationToken objCancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(sCompanySlug))
+        {
+            return BadRequest(new ErrorResponse("Informe a empresa (?company=slug)."));
+        }
+
+        Company? objCompany = await _objDbContext.Companies
+            .AsNoTracking()
+            .FirstOrDefaultAsync(company => company.Slug == sCompanySlug, objCancellationToken);
+        if (objCompany is null || !objCompany.Active)
+        {
+            return NotFound(new ErrorResponse("Empresa não encontrada."));
+        }
+
         PortalSettings objSettings = await _objDbContext.PortalSettings
             .AsNoTracking()
-            .FirstOrDefaultAsync(objCancellationToken)
-            ?? new PortalSettings();
+            .FirstOrDefaultAsync(
+                settings => settings.IDCompany == objCompany.Id, objCancellationToken)
+            ?? new PortalSettings { IDCompany = objCompany.Id };
 
         return Ok(SettingsDto.FromEntity(objSettings));
     }
 
-    /// <summary>Salva tema + parâmetros de acesso (linha única, upsert).</summary>
+    /// <summary>
+    /// Salva tema + parâmetros da empresa do token (upsert). Super admin indica a
+    /// empresa via ?company=slug.
+    /// </summary>
     [HttpPut("/admin/settings")]
     [Authorize]
     [RequestSizeLimit(12 * 1024 * 1024)]
     public async Task<ActionResult<SettingsDto>> Put(
-        SettingsDto objRequest, CancellationToken objCancellationToken)
+        SettingsDto objRequest,
+        [FromQuery(Name = "company")] string? sCompanySlug,
+        CancellationToken objCancellationToken)
     {
+        Guid? objCompanyId = User.GetCompanyId();
+        if (objCompanyId is null)
+        {
+            // Super admin: a empresa vem da query string.
+            if (string.IsNullOrWhiteSpace(sCompanySlug))
+            {
+                return BadRequest(new ErrorResponse("Informe a empresa (?company=slug)."));
+            }
+            Company? objCompany = await _objDbContext.Companies
+                .FirstOrDefaultAsync(company => company.Slug == sCompanySlug, objCancellationToken);
+            if (objCompany is null)
+            {
+                return NotFound(new ErrorResponse("Empresa não encontrada."));
+            }
+            objCompanyId = objCompany.Id;
+        }
+
         string? sValidationError = Validate(objRequest);
         if (sValidationError is not null)
         {
@@ -54,10 +94,11 @@ public partial class SettingsController : ControllerBase
         }
 
         PortalSettings? objSettings = await _objDbContext.PortalSettings
-            .FirstOrDefaultAsync(objCancellationToken);
+            .FirstOrDefaultAsync(
+                settings => settings.IDCompany == objCompanyId, objCancellationToken);
         if (objSettings is null)
         {
-            objSettings = new PortalSettings();
+            objSettings = new PortalSettings { IDCompany = objCompanyId.Value };
             _objDbContext.PortalSettings.Add(objSettings);
         }
 

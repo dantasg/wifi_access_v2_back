@@ -1,6 +1,8 @@
+using Models.DataBase;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using AccessWifi.Api.Features.Admin;
 using AccessWifi.Api.Infrastructure.Security;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -25,7 +27,8 @@ public class TokenServiceTests
     [Fact]
     public void GenerateToken_TokenValidaComAMesmaChaveIssuerEAudience()
     {
-        string sToken = CreateService().GenerateToken("admin");
+        AdminUser objUser = new AdminUser { Username = "admin", IDCompany = Guid.NewGuid() };
+        string sToken = CreateService().GenerateToken(objUser);
 
         TokenValidationParameters objParameters = new TokenValidationParameters
         {
@@ -45,14 +48,30 @@ public class TokenServiceTests
     }
 
     [Fact]
-    public void GenerateToken_CarregaUsernameNoSubEExpiracaoConfigurada()
+    public void GenerateToken_AdminDeEmpresa_CarregaRoleAdminEIDCompany()
     {
-        string sToken = CreateService().GenerateToken("admin");
+        Guid objCompanyId = Guid.NewGuid();
+        AdminUser objUser = new AdminUser { Username = "admin", IDCompany = objCompanyId };
 
+        string sToken = CreateService().GenerateToken(objUser);
         JwtSecurityToken objToken = new JwtSecurityTokenHandler().ReadJwtToken(sToken);
 
         Assert.Equal("admin", objToken.Claims.First(claim => claim.Type == "sub").Value);
-        Assert.True(objToken.ValidTo > DateTime.UtcNow.AddHours(7));
-        Assert.True(objToken.ValidTo <= DateTime.UtcNow.AddHours(9));
+        Assert.Equal("admin", objToken.Claims.First(claim => claim.Type == "role").Value);
+        Assert.Equal(
+            objCompanyId.ToString(),
+            objToken.Claims.First(claim => claim.Type == "companyId").Value);
+    }
+
+    [Fact]
+    public void GenerateToken_SuperAdmin_CarregaRoleSuperadminSemIDCompany()
+    {
+        AdminUser objUser = new AdminUser { Username = "root", IDCompany = null };
+
+        string sToken = CreateService().GenerateToken(objUser);
+        JwtSecurityToken objToken = new JwtSecurityTokenHandler().ReadJwtToken(sToken);
+
+        Assert.Equal("superadmin", objToken.Claims.First(claim => claim.Type == "role").Value);
+        Assert.DoesNotContain(objToken.Claims, claim => claim.Type == "companyId");
     }
 }

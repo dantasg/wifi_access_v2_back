@@ -1,6 +1,8 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/AccessWifi.Api/AccessWifi.Api.csproj" />
+    <Project Path="src/AccessWifiService/AccessWifiService.csproj" Id="cf707e26-5b3c-47c6-9d24-6108d77bf0e9" />
+    <Project Path="src/Models/Models.csproj" Id="b19d7384-5f79-4637-b7d1-cda33d31104f" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/AccessWifi.Api.Tests/AccessWifi.Api.Tests.csproj" />

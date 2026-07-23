@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\AccessWifi.Api\AccessWifi.Api.csproj" />
+    <ProjectReference Include="..\..\src\AccessWifiService\AccessWifiService.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,44 +1,54 @@
-using System.Net.Http.Json;
+using System.Net;
 using System.Text.Json;
-using Microsoft.Extensions.Options;
+using AccessWifi.Api.Features.Companies;
+using Models.DataBase;
 
 namespace AccessWifi.Api.Infrastructure.Unifi;
 
-/// <summary>
-/// Cliente HTTP da controladora UniFi (portado do protótipo v1 em Node).
-/// Faz login a cada autorização — o cookie de sessão fica no CookieContainer do handler
-/// e o header x-csrf-token é repassado quando a controladora o envia (UniFi OS).
-/// </summary>
 public class UnifiClient : IUnifiClient
 {
     private static readonly JsonSerializerOptions s_objJsonOptions =
         new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
-    private readonly HttpClient _objHttpClient;
-    private readonly UnifiOptions _objUnifiOptions;
-
     private record LoginPayload(string Username, string Password);
     private record AuthorizeGuestPayload(string Cmd, string Mac, int Minutes);
 
-    public UnifiClient(HttpClient objHttpClient, IOptions<UnifiOptions> objOptions)
-    {
-        _objHttpClient = objHttpClient;
-        _objUnifiOptions = objOptions.Value;
-    }
-
     public async Task AuthorizeGuestAsync(
-        string sMac, int? iAccessMinutes = null, CancellationToken objCancellationToken = default)
+        CompanyUnifi objConfig, string sMac, int iAccessMinutes,
+        CancellationToken objCancellationToken = default)
     {
-        string? sCsrfToken = await LoginAsync(objCancellationToken);
+        if (string.IsNullOrWhiteSpace(objConfig.Host) ||
+            !Uri.TryCreate(objConfig.Host, UriKind.Absolute, out Uri? objBaseAddress))
+        {
+            throw new UnifiException("Controladora UniFi não configurada para esta empresa.");
+        }
 
-        string sAuthorizePath = _objUnifiOptions.UnifiOs
-            ? $"/proxy/network/api/s/{_objUnifiOptions.Site}/cmd/stamgr"
-            : $"/api/s/{_objUnifiOptions.Site}/cmd/stamgr";
+        using HttpClientHandler objHandler = new HttpClientHandler
+        {
+            UseCookies = true,
+            CookieContainer = new CookieContainer(),
+        };
+        if (!objConfig.VerifySsl)
+        {
+            // UDM/Cloud Gateway usam certificado self-signed.
+            objHandler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
+        }
+        using HttpClient objHttpClient = new HttpClient(objHandler)
+        {
+            BaseAddress = objBaseAddress,
+            Timeout = TimeSpan.FromSeconds(15),
+        };
+
+        string? sCsrfToken = await LoginAsync(objHttpClient, objConfig, objCancellationToken);
+
+        string sAuthorizePath = objConfig.UnifiOs
+            ? $"/proxy/network/api/s/{objConfig.Site}/cmd/stamgr"
+            : $"/api/s/{objConfig.Site}/cmd/stamgr";
 
         AuthorizeGuestPayload objPayload = new AuthorizeGuestPayload(
             Cmd: "authorize-guest",
             Mac: sMac.ToLowerInvariant(),
-            Minutes: iAccessMinutes ?? _objUnifiOptions.AccessMinutes);
+            Minutes: iAccessMinutes);
 
         using HttpRequestMessage objRequest = new HttpRequestMessage(HttpMethod.Post, sAuthorizePath)
         {
@@ -52,7 +62,7 @@ public class UnifiClient : IUnifiClient
         HttpResponseMessage objResponse;
         try
         {
-            objResponse = await _objHttpClient.SendAsync(objRequest, objCancellationToken);
+            objResponse = await objHttpClient.SendAsync(objRequest, objCancellationToken);
         }
         catch (HttpRequestException objException)
         {
@@ -69,16 +79,16 @@ public class UnifiClient : IUnifiClient
         }
     }
 
-    /// <summary>Autentica na controladora e devolve o x-csrf-token, quando presente.</summary>
-    private async Task<string?> LoginAsync(CancellationToken objCancellationToken)
+    private static async Task<string?> LoginAsync(
+        HttpClient objHttpClient, CompanyUnifi objConfig, CancellationToken objCancellationToken)
     {
-        string sLoginPath = _objUnifiOptions.UnifiOs ? "/api/auth/login" : "/api/login";
-        LoginPayload objPayload = new LoginPayload(_objUnifiOptions.Username, _objUnifiOptions.Password);
+        string sLoginPath = objConfig.UnifiOs ? "/api/auth/login" : "/api/login";
+        LoginPayload objPayload = new LoginPayload(objConfig.Username, objConfig.Password);
 
         HttpResponseMessage objResponse;
         try
         {
-            objResponse = await _objHttpClient.PostAsJsonAsync(
+            objResponse = await objHttpClient.PostAsJsonAsync(
                 sLoginPath, objPayload, s_objJsonOptions, objCancellationToken);
         }
         catch (HttpRequestException objException)

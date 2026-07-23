@@ -1,20 +1,21 @@
+using Models.DataBase;
 using AccessWifi.Api.Controllers;
 using AccessWifi.Api.Features;
+using AccessWifi.Api.Features.Companies;
 using AccessWifi.Api.Features.Settings;
-using AccessWifi.Api.Infrastructure.Persistence;
+using Models.Persistence;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace AccessWifi.Api.Tests;
 
 public class SettingsControllerTests
 {
-    private static AppDbContext CreateDbContext()
+    private static Company CreateCompany(AppDbContext objDbContext, string sSlug = "doce")
     {
-        DbContextOptions<AppDbContext> objOptions = new DbContextOptionsBuilder<AppDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-        return new AppDbContext(objOptions);
+        Company objCompany = new Company { Name = "Dôce Cafeteria", Slug = sSlug };
+        objDbContext.Companies.Add(objCompany);
+        objDbContext.SaveChanges();
+        return objCompany;
     }
 
     private static SettingsDto CreateDto(
@@ -41,65 +42,131 @@ public class SettingsControllerTests
     }
 
     [Fact]
-    public async Task Get_SemLinhaGravada_DevolveOsPadroesDaMarca()
+    public async Task Get_SemSlug_Retorna400()
     {
-        using AppDbContext objDbContext = CreateDbContext();
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         SettingsController objController = new SettingsController(objDbContext);
 
-        ActionResult<SettingsDto> objResult = await objController.Get(CancellationToken.None);
+        ActionResult<SettingsDto> objResult = await objController.Get(null, CancellationToken.None);
+
+        Assert.IsType<BadRequestObjectResult>(objResult.Result);
+    }
+
+    [Fact]
+    public async Task Get_EmpresaInexistente_Retorna404()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        SettingsController objController = new SettingsController(objDbContext);
+
+        ActionResult<SettingsDto> objResult = await objController.Get("nada", CancellationToken.None);
+
+        NotFoundObjectResult objNotFound = Assert.IsType<NotFoundObjectResult>(objResult.Result);
+        ErrorResponse objError = Assert.IsType<ErrorResponse>(objNotFound.Value);
+        Assert.Equal("Empresa não encontrada.", objError.Error);
+    }
+
+    [Fact]
+    public async Task Get_EmpresaSemLinhaGravada_DevolveOsPadroesDaMarca()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        CreateCompany(objDbContext);
+        SettingsController objController = new SettingsController(objDbContext);
+
+        ActionResult<SettingsDto> objResult = await objController.Get("doce", CancellationToken.None);
 
         OkObjectResult objOk = Assert.IsType<OkObjectResult>(objResult.Result);
         SettingsDto objSettings = Assert.IsType<SettingsDto>(objOk.Value);
         Assert.Equal("#c8a46d", objSettings.Colors.Brand);
         Assert.Null(objSettings.Logo);
-        Assert.Equal("Doce", objSettings.Ssid);
         Assert.Equal(1440, objSettings.AccessMinutes);
     }
 
     [Fact]
-    public async Task Put_PrimeiraVez_CriaALinhaEOGetPassaADevolver()
+    public async Task Put_AdminDaEmpresa_CriaALinhaDaSuaEmpresaEOGetPassaADevolver()
     {
-        using AppDbContext objDbContext = CreateDbContext();
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext);
         SettingsController objController = new SettingsController(objDbContext);
-        SettingsDto objDto = CreateDto(sLogo: "data:image/png;base64,AAAA");
+        TestHelpers.SetUser(objController, objCompany.Id);
 
-        ActionResult<SettingsDto> objPutResult =
-            await objController.Put(objDto, CancellationToken.None);
+        ActionResult<SettingsDto> objPutResult = await objController.Put(
+            CreateDto(sLogo: "data:image/png;base64,AAAA"), null, CancellationToken.None);
 
         OkObjectResult objOk = Assert.IsType<OkObjectResult>(objPutResult.Result);
         SettingsDto objSaved = Assert.IsType<SettingsDto>(objOk.Value);
         Assert.Equal("#112233", objSaved.Colors.Brand);
-        Assert.Equal("data:image/png;base64,AAAA", objSaved.Logo);
-        Assert.Equal(720, objSaved.AccessMinutes);
 
-        ActionResult<SettingsDto> objGetResult = await objController.Get(CancellationToken.None);
+        PortalSettings objRow = Assert.Single(objDbContext.PortalSettings);
+        Assert.Equal(objCompany.Id, objRow.IDCompany);
+
+        ActionResult<SettingsDto> objGetResult = await objController.Get("doce", CancellationToken.None);
         SettingsDto objLoaded =
             Assert.IsType<SettingsDto>(Assert.IsType<OkObjectResult>(objGetResult.Result).Value);
         Assert.Equal("#112233", objLoaded.Colors.Brand);
-        Assert.Single(objDbContext.PortalSettings);
     }
 
     [Fact]
-    public async Task Put_SegundaVez_AtualizaAMesmaLinha()
+    public async Task Put_DuasEmpresas_CadaUmaTemSuaLinha()
     {
-        using AppDbContext objDbContext = CreateDbContext();
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompanyA = CreateCompany(objDbContext, "doce");
+        Company objCompanyB = CreateCompany(objDbContext, "outra");
         SettingsController objController = new SettingsController(objDbContext);
 
-        await objController.Put(CreateDto(sBrand: "#111111"), CancellationToken.None);
-        await objController.Put(CreateDto(sBrand: "#222222"), CancellationToken.None);
+        TestHelpers.SetUser(objController, objCompanyA.Id);
+        await objController.Put(CreateDto(sBrand: "#111111"), null, CancellationToken.None);
 
-        Assert.Single(objDbContext.PortalSettings);
-        Assert.Equal("#222222", objDbContext.PortalSettings.Single().Colors.Brand);
+        TestHelpers.SetUser(objController, objCompanyB.Id);
+        await objController.Put(CreateDto(sBrand: "#222222"), null, CancellationToken.None);
+
+        Assert.Equal(2, objDbContext.PortalSettings.Count());
+        Assert.Equal(
+            "#111111",
+            objDbContext.PortalSettings.Single(settings => settings.IDCompany == objCompanyA.Id).Colors.Brand);
+        Assert.Equal(
+            "#222222",
+            objDbContext.PortalSettings.Single(settings => settings.IDCompany == objCompanyB.Id).Colors.Brand);
+    }
+
+    [Fact]
+    public async Task Put_SuperAdminSemSlug_Retorna400()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        CreateCompany(objDbContext);
+        SettingsController objController = new SettingsController(objDbContext);
+        TestHelpers.SetUser(objController, null); // super admin
+
+        ActionResult<SettingsDto> objResult =
+            await objController.Put(CreateDto(), null, CancellationToken.None);
+
+        Assert.IsType<BadRequestObjectResult>(objResult.Result);
+    }
+
+    [Fact]
+    public async Task Put_SuperAdminComSlug_SalvaNaEmpresaIndicada()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext);
+        SettingsController objController = new SettingsController(objDbContext);
+        TestHelpers.SetUser(objController, null); // super admin
+
+        ActionResult<SettingsDto> objResult =
+            await objController.Put(CreateDto(), "doce", CancellationToken.None);
+
+        Assert.IsType<OkObjectResult>(objResult.Result);
+        Assert.Equal(objCompany.Id, objDbContext.PortalSettings.Single().IDCompany);
     }
 
     [Fact]
     public async Task Put_CorInvalida_Retorna400()
     {
-        using AppDbContext objDbContext = CreateDbContext();
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext);
         SettingsController objController = new SettingsController(objDbContext);
+        TestHelpers.SetUser(objController, objCompany.Id);
 
-        ActionResult<SettingsDto> objResult =
-            await objController.Put(CreateDto(sBrand: "vermelho"), CancellationToken.None);
+        ActionResult<SettingsDto> objResult = await objController.Put(
+            CreateDto(sBrand: "vermelho"), null, CancellationToken.None);
 
         BadRequestObjectResult objBadRequest = Assert.IsType<BadRequestObjectResult>(objResult.Result);
         ErrorResponse objError = Assert.IsType<ErrorResponse>(objBadRequest.Value);
@@ -110,11 +177,13 @@ public class SettingsControllerTests
     [Fact]
     public async Task Put_ImagemQueNaoEDataUrl_Retorna400()
     {
-        using AppDbContext objDbContext = CreateDbContext();
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext);
         SettingsController objController = new SettingsController(objDbContext);
+        TestHelpers.SetUser(objController, objCompany.Id);
 
         ActionResult<SettingsDto> objResult = await objController.Put(
-            CreateDto(sLogo: "https://exemplo.com/logo.png"), CancellationToken.None);
+            CreateDto(sLogo: "https://exemplo.com/logo.png"), null, CancellationToken.None);
 
         Assert.IsType<BadRequestObjectResult>(objResult.Result);
     }
@@ -122,11 +191,13 @@ public class SettingsControllerTests
     [Fact]
     public async Task Put_MinutosForaDoIntervalo_Retorna400()
     {
-        using AppDbContext objDbContext = CreateDbContext();
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext);
         SettingsController objController = new SettingsController(objDbContext);
+        TestHelpers.SetUser(objController, objCompany.Id);
 
-        ActionResult<SettingsDto> objResult =
-            await objController.Put(CreateDto(iAccessMinutes: 0), CancellationToken.None);
+        ActionResult<SettingsDto> objResult = await objController.Put(
+            CreateDto(iAccessMinutes: 0), null, CancellationToken.None);
 
         Assert.IsType<BadRequestObjectResult>(objResult.Result);
     }

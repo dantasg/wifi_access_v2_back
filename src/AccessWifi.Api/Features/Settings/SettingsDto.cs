@@ -1,6 +1,7 @@
+using Models.DataBase;
+
 namespace AccessWifi.Api.Features.Settings;
 
-/// <summary>Contrato do GET /settings e do PUT /admin/settings (imagens como data URL).</summary>
 public record SettingsDto(
     ThemeColorsDto Colors,
     string? Logo,
@@ -21,7 +22,6 @@ public record SettingsDto(
     }
 }
 
-/// <summary>Espelha ThemeColors de src/theme/theme.ts do front (8 cores hex).</summary>
 public record ThemeColorsDto(
     string Brand,
     string BrandDark,

@@ -1,6 +1,5 @@
 namespace AccessWifi.Api.Infrastructure.Security;
 
-/// <summary>Seção "Jwt" do appsettings.</summary>
 public class JwtOptions
 {
     public const string SectionName = "Jwt";

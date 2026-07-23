@@ -1,12 +1,13 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using AccessWifi.Api.Features.Admin;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using Models.DataBase;
 
 namespace AccessWifi.Api.Infrastructure.Security;
 
-/// <summary>Gera o JWT devolvido no POST /admin/login.</summary>
 public class TokenService
 {
     private readonly JwtOptions _objJwtOptions;
@@ -16,18 +17,25 @@ public class TokenService
         _objJwtOptions = objOptions.Value;
     }
 
-    public string GenerateToken(string sUsername)
+    public string GenerateToken(AdminUser objUser)
     {
         SymmetricSecurityKey objSecurityKey =
             new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_objJwtOptions.Secret));
         SigningCredentials objSigningCredentials =
             new SigningCredentials(objSecurityKey, SecurityAlgorithms.HmacSha256);
 
-        Claim[] objClaims =
+        List<Claim> objClaims =
         [
-            new Claim(JwtRegisteredClaimNames.Sub, sUsername),
+            new Claim(JwtRegisteredClaimNames.Sub, objUser.Username),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new Claim(
+                ClaimsExtensions.ClaimRole,
+                objUser.IDCompany is null ? ClaimsExtensions.RoleSuperAdmin : ClaimsExtensions.RoleAdmin),
         ];
+        if (objUser.IDCompany is not null)
+        {
+            objClaims.Add(new Claim(ClaimsExtensions.ClaimCompanyId, objUser.IDCompany.Value.ToString()));
+        }
 
         JwtSecurityToken objToken = new JwtSecurityToken(
             issuer: _objJwtOptions.Issuer,
