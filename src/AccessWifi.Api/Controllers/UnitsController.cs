@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Models.DataBase;
+using Models.Security;
 
 namespace AccessWifi.Api.Controllers;
 
@@ -23,10 +24,12 @@ public partial class UnitsController : ControllerBase
     private static partial Regex SlugRegex();
 
     private readonly AppDbContext _objDbContext;
+    private readonly IEncryptor _objEncryptor;
 
-    public UnitsController(AppDbContext objDbContext)
+    public UnitsController(AppDbContext objDbContext, IEncryptor objEncryptor)
     {
         _objDbContext = objDbContext;
+        _objEncryptor = objEncryptor;
     }
 
     /// <summary>
@@ -131,7 +134,7 @@ public partial class UnitsController : ControllerBase
         return Ok(UnitDto.FromEntity(objUnit));
     }
 
-    private static void ApplyUnifi(Unit objUnit, UnitUnifiRequest? objUnifi)
+    private void ApplyUnifi(Unit objUnit, UnitUnifiRequest? objUnifi)
     {
         if (objUnifi is null)
         {
@@ -143,9 +146,10 @@ public partial class UnitsController : ControllerBase
         objUnit.Unifi.Username = objUnifi.Username?.Trim() ?? "";
         objUnit.Unifi.UnifiOs = objUnifi.UnifiOs;
         objUnit.Unifi.VerifySsl = objUnifi.VerifySsl;
+        // Senha nula = manter a atual; caso contrário, guarda cifrada.
         if (objUnifi.Password is not null)
         {
-            objUnit.Unifi.Password = objUnifi.Password;
+            objUnit.Unifi.Password = _objEncryptor.Encrypt(objUnifi.Password) ?? "";
         }
     }
 }

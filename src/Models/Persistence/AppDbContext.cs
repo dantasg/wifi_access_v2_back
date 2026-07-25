@@ -50,7 +50,8 @@ namespace Models.Persistence
                     objUnifi.Property(unifi => unifi.Host).HasMaxLength(200);
                     objUnifi.Property(unifi => unifi.Site).HasMaxLength(60);
                     objUnifi.Property(unifi => unifi.Username).HasMaxLength(100);
-                    objUnifi.Property(unifi => unifi.Password).HasMaxLength(200);
+                    // Guardada cifrada (AES-GCM, base64) — maior que o texto puro.
+                    objUnifi.Property(unifi => unifi.Password).HasMaxLength(512);
                 });
             });
 

@@ -23,7 +23,7 @@ public class ConfigurationReaderTests
         AddConfig(objDbContext, ConfigurationKeys.SmtpFromEmail, "no-reply@doce.com.br");
         AddConfig(objDbContext, ConfigurationKeys.SmtpUseStartTls, "false");
 
-        SmtpOptions objSmtp = await new ConfigurationReader(objDbContext).GetSmtpAsync();
+        SmtpOptions objSmtp = await new ConfigurationReader(objDbContext, TestHelpers.CreateEncryptor()).GetSmtpAsync();
 
         Assert.Equal("smtp.doce.com.br", objSmtp.Host);
         Assert.Equal(465, objSmtp.Port);
@@ -34,11 +34,24 @@ public class ConfigurationReaderTests
     }
 
     [Fact]
+    public async Task GetSmtpAsync_SenhaCifrada_DevolveEmClaro()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        string? sSenhaCifrada = TestHelpers.CreateEncryptor().Encrypt("segredo-smtp");
+        AddConfig(objDbContext, ConfigurationKeys.SmtpPassword, sSenhaCifrada!);
+
+        SmtpOptions objSmtp =
+            await new ConfigurationReader(objDbContext, TestHelpers.CreateEncryptor()).GetSmtpAsync();
+
+        Assert.Equal("segredo-smtp", objSmtp.Password);
+    }
+
+    [Fact]
     public async Task GetSmtpAsync_SemChaves_UsaOsPadroes()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
 
-        SmtpOptions objSmtp = await new ConfigurationReader(objDbContext).GetSmtpAsync();
+        SmtpOptions objSmtp = await new ConfigurationReader(objDbContext, TestHelpers.CreateEncryptor()).GetSmtpAsync();
 
         Assert.Equal("", objSmtp.Host);
         Assert.Equal(587, objSmtp.Port);
@@ -51,7 +64,7 @@ public class ConfigurationReaderTests
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
 
-        string? sValue = await new ConfigurationReader(objDbContext).GetValueAsync("NAO_EXISTE");
+        string? sValue = await new ConfigurationReader(objDbContext, TestHelpers.CreateEncryptor()).GetValueAsync("NAO_EXISTE");
 
         Assert.Null(sValue);
     }

@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using AccessWifi.Api.Features.Companies;
 using Models.DataBase;
+using Models.Security;
 
 namespace AccessWifi.Api.Infrastructure.Unifi;
 
@@ -9,6 +10,13 @@ public class UnifiClient : IUnifiClient
 {
     private static readonly JsonSerializerOptions s_objJsonOptions =
         new JsonSerializerOptions(JsonSerializerDefaults.Web);
+
+    private readonly IEncryptor _objEncryptor;
+
+    public UnifiClient(IEncryptor objEncryptor)
+    {
+        _objEncryptor = objEncryptor;
+    }
 
     private record LoginPayload(string Username, string Password);
     private record AuthorizeGuestPayload(string Cmd, string Mac, int Minutes);
@@ -79,11 +87,13 @@ public class UnifiClient : IUnifiClient
         }
     }
 
-    private static async Task<string?> LoginAsync(
+    private async Task<string?> LoginAsync(
         HttpClient objHttpClient, CompanyUnifi objConfig, CancellationToken objCancellationToken)
     {
         string sLoginPath = objConfig.UnifiOs ? "/api/auth/login" : "/api/login";
-        LoginPayload objPayload = new LoginPayload(objConfig.Username, objConfig.Password);
+        // A senha é guardada cifrada no banco; decifra só na hora de falar com a controladora.
+        string sPassword = _objEncryptor.Decrypt(objConfig.Password) ?? "";
+        LoginPayload objPayload = new LoginPayload(objConfig.Username, sPassword);
 
         HttpResponseMessage objResponse;
         try

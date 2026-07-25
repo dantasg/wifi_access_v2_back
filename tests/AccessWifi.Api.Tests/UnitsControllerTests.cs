@@ -37,7 +37,7 @@ public class UnitsControllerTests
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
-        UnitsController objController = new UnitsController(objDbContext);
+        UnitsController objController = new UnitsController(objDbContext, TestHelpers.CreateEncryptor());
 
         ActionResult<UnitDto> objResult =
             await objController.Create(CreateRequest(objCompany.Id), CancellationToken.None);
@@ -47,8 +47,10 @@ public class UnitsControllerTests
         Assert.Equal("doce-matriz", objUnit.Slug);
         Assert.Equal("https://192.168.1.1", objUnit.Unifi.Host);
 
-        // A senha fica só na entidade — o DTO não tem a propriedade.
-        Assert.Equal("unifi-pass", objDbContext.Units.Single().Unifi.Password);
+        // A senha fica só na entidade (o DTO não tem a propriedade) e é guardada CIFRADA.
+        string sStored = objDbContext.Units.Single().Unifi.Password;
+        Assert.NotEqual("unifi-pass", sStored);
+        Assert.Equal("unifi-pass", TestHelpers.CreateEncryptor().Decrypt(sStored));
         Assert.DoesNotContain(
             typeof(UnitUnifiDto).GetProperties(), objProperty => objProperty.Name == "Password");
     }
@@ -57,7 +59,7 @@ public class UnitsControllerTests
     public async Task Create_EmpresaInexistente_Retorna400()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
-        UnitsController objController = new UnitsController(objDbContext);
+        UnitsController objController = new UnitsController(objDbContext, TestHelpers.CreateEncryptor());
 
         ActionResult<UnitDto> objResult =
             await objController.Create(CreateRequest(Guid.NewGuid()), CancellationToken.None);
@@ -73,7 +75,7 @@ public class UnitsControllerTests
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompanyA = CreateCompany(objDbContext, "doce");
         Company objCompanyB = CreateCompany(objDbContext, "outra");
-        UnitsController objController = new UnitsController(objDbContext);
+        UnitsController objController = new UnitsController(objDbContext, TestHelpers.CreateEncryptor());
         await objController.Create(CreateRequest(objCompanyA.Id, "matriz"), CancellationToken.None);
 
         // Mesmo slug, outra empresa: barrado (slug é único globalmente).
@@ -89,7 +91,7 @@ public class UnitsControllerTests
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
-        UnitsController objController = new UnitsController(objDbContext);
+        UnitsController objController = new UnitsController(objDbContext, TestHelpers.CreateEncryptor());
 
         ActionResult<UnitDto> objResult =
             await objController.Create(CreateRequest(objCompany.Id, "Matriz Central!"), CancellationToken.None);
@@ -103,7 +105,7 @@ public class UnitsControllerTests
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
-        UnitsController objController = new UnitsController(objDbContext);
+        UnitsController objController = new UnitsController(objDbContext, TestHelpers.CreateEncryptor());
         await objController.Create(CreateRequest(objCompany.Id), CancellationToken.None);
         Guid objUnitId = objDbContext.Units.Single().Id;
 
@@ -125,7 +127,8 @@ public class UnitsControllerTests
         Unit objUnit = objDbContext.Units.Single();
         Assert.Equal("Matriz Nova", objUnit.Name);
         Assert.Equal("https://10.0.0.1", objUnit.Unifi.Host);
-        Assert.Equal("unifi-pass", objUnit.Unifi.Password);
+        // Senha nula no update = mantém a atual (que segue cifrada, decifrando para o valor original).
+        Assert.Equal("unifi-pass", TestHelpers.CreateEncryptor().Decrypt(objUnit.Unifi.Password));
     }
 
     [Fact]
@@ -134,7 +137,7 @@ public class UnitsControllerTests
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompanyA = CreateCompany(objDbContext, "doce");
         Company objCompanyB = CreateCompany(objDbContext, "outra");
-        UnitsController objController = new UnitsController(objDbContext);
+        UnitsController objController = new UnitsController(objDbContext, TestHelpers.CreateEncryptor());
         await objController.Create(CreateRequest(objCompanyA.Id, "doce-um"), CancellationToken.None);
         await objController.Create(CreateRequest(objCompanyB.Id, "outra-um"), CancellationToken.None);
         TestHelpers.SetUser(objController, null); // super admin
@@ -154,7 +157,7 @@ public class UnitsControllerTests
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompanyA = CreateCompany(objDbContext, "doce");
         Company objCompanyB = CreateCompany(objDbContext, "outra");
-        UnitsController objController = new UnitsController(objDbContext);
+        UnitsController objController = new UnitsController(objDbContext, TestHelpers.CreateEncryptor());
         await objController.Create(CreateRequest(objCompanyA.Id, "doce-um"), CancellationToken.None);
         await objController.Create(CreateRequest(objCompanyB.Id, "outra-um"), CancellationToken.None);
         TestHelpers.SetUser(objController, objCompanyA.Id); // admin da empresa A

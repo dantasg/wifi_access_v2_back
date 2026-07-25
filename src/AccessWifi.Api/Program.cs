@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Models.Persistence;
+using Models.Security;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 ConfigurationManager objConfiguration = builder.Configuration;
@@ -112,6 +113,10 @@ builder.Services.AddRateLimiter(objLimiterOptions =>
 
 // ---------------------------------------------------------------- Serviços da app
 builder.Services.AddScoped<TokenService>();
+// Cifragem em repouso (senha da UniFi/SMTP). A chave vem de Encryption:Key (env/user-secrets);
+// resolvida sob demanda para não exigir a chave no design-time das migrations.
+builder.Services.AddSingleton<IEncryptor>(
+    _ => new AesGcmEncryptor(objConfiguration["Encryption:Key"]));
 // A config da controladora vem por empresa (banco); o client é criado por chamada.
 builder.Services.AddSingleton<IUnifiClient, UnifiClient>();
 

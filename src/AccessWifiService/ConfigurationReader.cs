@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Models.Persistence;
+using Models.Security;
 
 namespace AccessWifiService
 {
@@ -8,10 +9,12 @@ namespace AccessWifiService
     public class ConfigurationReader
     {
         private readonly AppDbContext _objDbContext;
+        private readonly IEncryptor _objEncryptor;
 
-        public ConfigurationReader(AppDbContext objDbContext)
+        public ConfigurationReader(AppDbContext objDbContext, IEncryptor objEncryptor)
         {
             _objDbContext = objDbContext;
+            _objEncryptor = objEncryptor;
         }
 
         /// <summary>Valor de uma chave, ou null se não existir.</summary>
@@ -47,7 +50,8 @@ namespace AccessWifiService
             {
                 Host = GetString(dicValues, ConfigurationKeys.SmtpHost, ""),
                 Username = GetString(dicValues, ConfigurationKeys.SmtpUsername, ""),
-                Password = GetString(dicValues, ConfigurationKeys.SmtpPassword, ""),
+                // Guardada cifrada (ou texto puro legado — o Decrypt tolera ambos).
+                Password = _objEncryptor.Decrypt(GetString(dicValues, ConfigurationKeys.SmtpPassword, "")) ?? "",
                 FromEmail = GetString(dicValues, ConfigurationKeys.SmtpFromEmail, ""),
                 FromName = GetString(dicValues, ConfigurationKeys.SmtpFromName, "AccessWifi"),
                 Port = GetInt(dicValues, ConfigurationKeys.SmtpPort, 587),
