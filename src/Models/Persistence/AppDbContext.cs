@@ -17,6 +17,7 @@ namespace Models.Persistence
         public DbSet<Lead> Leads => Set<Lead>();
         public DbSet<PortalSettings> PortalSettings => Set<PortalSettings>();
         public DbSet<Configuration> Configurations => Set<Configuration>();
+        public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
         protected override void OnModelCreating(ModelBuilder objModelBuilder)
         {
@@ -61,6 +62,17 @@ namespace Models.Persistence
                     .WithMany()
                     .HasForeignKey(user => user.IDCompany)
                     .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            objModelBuilder.Entity<RefreshToken>(objRefreshToken =>
+            {
+                objRefreshToken.Property(token => token.TokenHash).HasMaxLength(64);
+                objRefreshToken.HasIndex(token => token.TokenHash).IsUnique();
+                objRefreshToken.HasIndex(token => token.IDUser);
+                objRefreshToken.HasOne<AdminUser>()
+                    .WithMany()
+                    .HasForeignKey(token => token.IDUser)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
             objModelBuilder.Entity<Lead>(objLead =>

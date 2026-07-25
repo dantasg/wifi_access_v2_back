@@ -57,6 +57,11 @@ namespace AccessWifiService
             ReportService objReportService = objScope.ServiceProvider.GetRequiredService<ReportService>();
             // Referência em UTC (leads, período e o carimbo LastReportSentAt são todos UTC).
             await objReportService.SendDueReportsAsync(DateTime.UtcNow.Date, objCancellationToken);
+
+            // Expurgo de leads fora do prazo de retenção (LGPD).
+            LeadRetentionService objRetentionService =
+                objScope.ServiceProvider.GetRequiredService<LeadRetentionService>();
+            await objRetentionService.PurgeExpiredLeadsAsync(DateTime.UtcNow, objCancellationToken);
         }
 
         /// <summary>Tempo até a próxima verificação diária (amanhã no horário configurado).</summary>

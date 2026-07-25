@@ -120,6 +120,93 @@ public class AdminControllerTests
     }
 
     [Fact]
+    public async Task Login_DevolveRefreshTokenEPersisteNoBanco()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        CreateUser(objDbContext, "root", null);
+        AdminController objController = CreateController(objDbContext);
+
+        ActionResult<LoginResponse> objResult = await objController.Login(
+            new LoginRequest("root", "senha-forte"), CancellationToken.None);
+
+        LoginResponse objResponse =
+            Assert.IsType<LoginResponse>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
+        Assert.NotEmpty(objResponse.RefreshToken);
+        Assert.Single(objDbContext.RefreshTokens);
+    }
+
+    [Fact]
+    public async Task Refresh_TokenValido_DevolveNovoParERevogaOAntigo()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        CreateUser(objDbContext, "root", null);
+        AdminController objController = CreateController(objDbContext);
+        LoginResponse objLogin = Assert.IsType<LoginResponse>(Assert.IsType<OkObjectResult>(
+            (await objController.Login(new LoginRequest("root", "senha-forte"), CancellationToken.None)).Result).Value);
+
+        ActionResult<LoginResponse> objRefreshResult =
+            await objController.Refresh(new RefreshRequest(objLogin.RefreshToken), CancellationToken.None);
+
+        LoginResponse objRefresh =
+            Assert.IsType<LoginResponse>(Assert.IsType<OkObjectResult>(objRefreshResult.Result).Value);
+        Assert.NotEmpty(objRefresh.Token);
+        Assert.NotEqual(objLogin.RefreshToken, objRefresh.RefreshToken);
+        // O token antigo fica revogado (rotação) e existe um novo.
+        string sOldHash = TokenService.HashRefreshToken(objLogin.RefreshToken);
+        Assert.NotNull(objDbContext.RefreshTokens.Single(token => token.TokenHash == sOldHash).RevokedAt);
+        Assert.Equal(2, objDbContext.RefreshTokens.Count());
+    }
+
+    [Fact]
+    public async Task Refresh_TokenRevogado_Retorna401()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        CreateUser(objDbContext, "root", null);
+        AdminController objController = CreateController(objDbContext);
+        LoginResponse objLogin = Assert.IsType<LoginResponse>(Assert.IsType<OkObjectResult>(
+            (await objController.Login(new LoginRequest("root", "senha-forte"), CancellationToken.None)).Result).Value);
+        // Primeira renovação revoga o token original.
+        await objController.Refresh(new RefreshRequest(objLogin.RefreshToken), CancellationToken.None);
+
+        // Reusar o token original (já revogado) deve falhar.
+        ActionResult<LoginResponse> objResult =
+            await objController.Refresh(new RefreshRequest(objLogin.RefreshToken), CancellationToken.None);
+
+        Assert.IsType<UnauthorizedResult>(objResult.Result);
+    }
+
+    [Fact]
+    public async Task Refresh_TokenInexistente_Retorna401()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        AdminController objController = CreateController(objDbContext);
+
+        ActionResult<LoginResponse> objResult =
+            await objController.Refresh(new RefreshRequest("token-que-nao-existe"), CancellationToken.None);
+
+        Assert.IsType<UnauthorizedResult>(objResult.Result);
+    }
+
+    [Fact]
+    public async Task Logout_RevogaORefreshToken()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        CreateUser(objDbContext, "root", null);
+        AdminController objController = CreateController(objDbContext);
+        LoginResponse objLogin = Assert.IsType<LoginResponse>(Assert.IsType<OkObjectResult>(
+            (await objController.Login(new LoginRequest("root", "senha-forte"), CancellationToken.None)).Result).Value);
+
+        IActionResult objLogout =
+            await objController.Logout(new RefreshRequest(objLogin.RefreshToken), CancellationToken.None);
+        Assert.IsType<NoContentResult>(objLogout);
+
+        // Após o logout, o refresh não vale mais.
+        ActionResult<LoginResponse> objRefresh =
+            await objController.Refresh(new RefreshRequest(objLogin.RefreshToken), CancellationToken.None);
+        Assert.IsType<UnauthorizedResult>(objRefresh.Result);
+    }
+
+    [Fact]
     public async Task GetLeads_AdminDeEmpresa_VeOsLeadsDeTodasAsSuasUnidades()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();

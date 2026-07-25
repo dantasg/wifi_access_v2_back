@@ -26,6 +26,7 @@ objBuilder.Services.AddDbContext<AppDbContext>(objDbOptions => objDbOptions.UseN
 objBuilder.Services.AddScoped<ConfigurationReader>();
 objBuilder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
 objBuilder.Services.AddScoped<ReportService>();
+objBuilder.Services.AddScoped<LeadRetentionService>();
 
 objBuilder.Services.AddHostedService<SrvWifiService>();
 

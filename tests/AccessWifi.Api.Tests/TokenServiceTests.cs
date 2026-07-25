@@ -14,7 +14,7 @@ public class TokenServiceTests
     private static readonly JwtOptions s_objJwtOptions = new JwtOptions
     {
         Secret = "segredo-de-teste-3f9a1c7e5b2d8046a1e9c3b7d5f20486",
-        ExpiresInHours = 8,
+        AccessTokenMinutes = 60,
         Issuer = "accesswifi",
         Audience = "accesswifi-admin",
     };

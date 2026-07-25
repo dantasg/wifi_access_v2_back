@@ -52,7 +52,74 @@ public class AdminController : ControllerBase
             return Unauthorized();
         }
 
-        string sToken = _objTokenService.GenerateToken(objUser);
+        LoginResponse objResponse = await IssueTokensAsync(objUser, objCancellationToken);
+        return Ok(objResponse);
+    }
+
+    /// <summary>
+    /// Troca um refresh token válido por um novo access token (curto) + um novo refresh token
+    /// (rotação: o antigo é revogado). Público — o próprio refresh token é a credencial.
+    /// </summary>
+    [HttpPost("refresh")]
+    [EnableRateLimiting("admin-login")]
+    public async Task<ActionResult<LoginResponse>> Refresh(
+        RefreshRequest objRequest, CancellationToken objCancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(objRequest.RefreshToken))
+        {
+            return Unauthorized();
+        }
+
+        string sHash = TokenService.HashRefreshToken(objRequest.RefreshToken);
+        RefreshToken? objStored = await _objDbContext.RefreshTokens
+            .FirstOrDefaultAsync(token => token.TokenHash == sHash, objCancellationToken);
+        if (objStored is null || objStored.RevokedAt is not null || objStored.ExpiresAt <= DateTime.UtcNow)
+        {
+            return Unauthorized();
+        }
+
+        AdminUser? objUser = await _objDbContext.Users
+            .Include(user => user.Company)
+            .FirstOrDefaultAsync(user => user.Id == objStored.IDUser, objCancellationToken);
+        if (objUser is null || (objUser.Company is not null && !objUser.Company.Active))
+        {
+            return Unauthorized();
+        }
+
+        // Rotação: revoga o token usado antes de emitir o novo par.
+        objStored.RevokedAt = DateTime.UtcNow;
+        LoginResponse objResponse = await IssueTokensAsync(objUser, objCancellationToken);
+        return Ok(objResponse);
+    }
+
+    /// <summary>Revoga um refresh token (logout). Idempotente: sempre 204.</summary>
+    [HttpPost("logout")]
+    public async Task<IActionResult> Logout(RefreshRequest objRequest, CancellationToken objCancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(objRequest.RefreshToken))
+        {
+            string sHash = TokenService.HashRefreshToken(objRequest.RefreshToken);
+            RefreshToken? objStored = await _objDbContext.RefreshTokens
+                .FirstOrDefaultAsync(
+                    token => token.TokenHash == sHash && token.RevokedAt == null, objCancellationToken);
+            if (objStored is not null)
+            {
+                objStored.RevokedAt = DateTime.UtcNow;
+                await _objDbContext.SaveChangesAsync(objCancellationToken);
+            }
+        }
+
+        return NoContent();
+    }
+
+    /// <summary>Emite access token + refresh token (persistido) e monta a resposta de login.</summary>
+    private async Task<LoginResponse> IssueTokensAsync(AdminUser objUser, CancellationToken objCancellationToken)
+    {
+        string sAccessToken = _objTokenService.GenerateToken(objUser);
+        (string sRefreshToken, RefreshToken objRefreshEntity) = _objTokenService.CreateRefreshToken(objUser.Id);
+        _objDbContext.RefreshTokens.Add(objRefreshEntity);
+        await _objDbContext.SaveChangesAsync(objCancellationToken);
+
         string sRole = objUser.IDCompany is null
             ? ClaimsExtensions.RoleSuperAdmin
             : ClaimsExtensions.RoleAdmin;
@@ -60,7 +127,7 @@ public class AdminController : ControllerBase
             ? null
             : CompanySummaryDto.FromEntity(objUser.Company);
 
-        return Ok(new LoginResponse(sToken, sRole, objCompany));
+        return new LoginResponse(sAccessToken, sRefreshToken, sRole, objCompany);
     }
 
     /// <summary>
