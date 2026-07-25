@@ -6,6 +6,7 @@ using AccessWifi.Api.Infrastructure.Persistence;
 using AccessWifi.Api.Infrastructure.Security;
 using AccessWifi.Api.Infrastructure.Unifi;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -16,7 +17,36 @@ ConfigurationManager objConfiguration = builder.Configuration;
 
 // ------------------------------------------------------------------ Options
 builder.Services.Configure<AdminOptions>(objConfiguration.GetSection(AdminOptions.SectionName));
-builder.Services.Configure<JwtOptions>(objConfiguration.GetSection(JwtOptions.SectionName));
+// JWT: falha rápida no boot se o segredo for vazio ou fraco (< 32 bytes), evitando subir
+// com uma chave que permitiria forjar tokens de admin.
+builder.Services.AddOptions<JwtOptions>()
+    .Bind(objConfiguration.GetSection(JwtOptions.SectionName))
+    .Validate(
+        objOptions => !string.IsNullOrWhiteSpace(objOptions.Secret)
+            && Encoding.UTF8.GetByteCount(objOptions.Secret) >= 32,
+        "Jwt:Secret é obrigatório e deve ter no mínimo 32 bytes (defina via env/user-secrets).")
+    .ValidateOnStart();
+
+// Cabeçalhos encaminhados pelo reverse proxy (IP real do cliente e esquema http/https).
+// Sem KnownProxies configurados, o ASP.NET ignora os headers (padrão seguro): configure
+// "ForwardedHeaders:KnownProxies" com o IP do seu proxy para o rate limit e o HTTPS
+// redirect enxergarem o cliente real.
+builder.Services.Configure<ForwardedHeadersOptions>(objForwardedOptions =>
+{
+    objForwardedOptions.ForwardedHeaders =
+        ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    objForwardedOptions.KnownProxies.Clear();
+    objForwardedOptions.KnownIPNetworks.Clear();
+    string[] arrKnownProxies =
+        objConfiguration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>() ?? [];
+    foreach (string sProxy in arrKnownProxies)
+    {
+        if (IPAddress.TryParse(sProxy, out IPAddress? objProxyIp))
+        {
+            objForwardedOptions.KnownProxies.Add(objProxyIp);
+        }
+    }
+});
 
 // ------------------------------------------------------------- EF Core / Postgres
 string sConnectionString = objConfiguration.GetConnectionString("Default")
@@ -24,8 +54,13 @@ string sConnectionString = objConfiguration.GetConnectionString("Default")
 builder.Services.AddDbContext<AppDbContext>(objDbOptions => objDbOptions.UseNpgsql(sConnectionString));
 
 // ----------------------------------------------------------------------- CORS
-// Em dev o proxy do Vite evita CORS; em produção libere só a origem do front.
-builder.Services.AddCors();
+// Libera só a origem do front (configurável por env FrontOrigin) e apenas os métodos/headers
+// que a aplicação usa — sem AllowAny.
+string sFrontOrigin = objConfiguration["FrontOrigin"] ?? "http://localhost:5173";
+builder.Services.AddCors(objCorsOptions => objCorsOptions.AddDefaultPolicy(objPolicy => objPolicy
+    .WithOrigins(sFrontOrigin)
+    .WithMethods("GET", "POST", "PUT")
+    .WithHeaders("Content-Type", "Authorization")));
 
 // ------------------------------------------------------------------- JWT (admin)
 JwtOptions objJwtOptions = objConfiguration.GetSection(JwtOptions.SectionName).Get<JwtOptions>()
@@ -91,14 +126,33 @@ using (IServiceScope objScope = app.Services.CreateScope())
     await DbSeeder.SeedAsync(objScope.ServiceProvider);
 }
 
-//string sFrontOrigin = objConfiguration["FrontOrigin"] ?? "http://localhost:5173";
-string sFrontOrigin = "https://wifi-access-v2-front.vercel.app";
+// Primeiro na pipeline: adota o IP/esquema reais vindos do proxy (quando confiável).
+app.UseForwardedHeaders();
 
-app.UseCors(p => p
-    .WithOrigins(sFrontOrigin)
-    .AllowAnyHeader()
-    .AllowAnyMethod());
+if (!app.Environment.IsDevelopment())
+{
+    // HSTS instrui o navegador a só usar HTTPS. O header só trafega sobre HTTPS, então é inócuo
+    // em HTTP — seguro habilitar sempre em produção.
+    app.UseHsts();
+}
 
+// Redirecionar HTTP→HTTPS fica atrás de flag ("Security:EnforceHttpsRedirect"): habilite só
+// quando o proxy encaminhar corretamente o X-Forwarded-Proto (senão pode gerar loop de redirect).
+if (objConfiguration.GetValue("Security:EnforceHttpsRedirect", false))
+{
+    app.UseHttpsRedirection();
+}
+
+// Cabeçalhos de segurança (defesa em profundidade; a API não serve HTML, mas custam pouco).
+app.Use(async (objContext, objNext) =>
+{
+    objContext.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    objContext.Response.Headers["Referrer-Policy"] = "no-referrer";
+    objContext.Response.Headers["X-Frame-Options"] = "DENY";
+    await objNext();
+});
+
+app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();

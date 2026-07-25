@@ -16,6 +16,11 @@ namespace AccessWifi.Api.Controllers;
 [Route("admin")]
 public class AdminController : ControllerBase
 {
+    // Hash "isca" com o mesmo custo dos hashes reais: verificado quando o usuário não existe,
+    // para o tempo de resposta não revelar se um usuário é válido (anti-enumeração por timing).
+    private static readonly string s_sDummyPasswordHash =
+        BCrypt.Net.BCrypt.HashPassword("timing-guard-not-a-real-account");
+
     private readonly AppDbContext _objDbContext;
     private readonly TokenService _objTokenService;
 
@@ -33,7 +38,11 @@ public class AdminController : ControllerBase
             .Include(user => user.Company)
             .FirstOrDefaultAsync(user => user.Username == objRequest.Username, objCancellationToken);
 
-        if (objUser is null || !BCrypt.Net.BCrypt.Verify(objRequest.Password, objUser.PasswordHash))
+        // Verifica sempre um hash (o do usuário ou o isca) para gastar o mesmo tempo, exista o
+        // usuário ou não. Só autentica se o usuário existe E a senha confere.
+        string sHashParaVerificar = objUser?.PasswordHash ?? s_sDummyPasswordHash;
+        bool bSenhaConfere = BCrypt.Net.BCrypt.Verify(objRequest.Password, sHashParaVerificar);
+        if (objUser is null || !bSenhaConfere)
         {
             return Unauthorized();
         }
