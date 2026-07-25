@@ -23,6 +23,12 @@ namespace Models.DataBase
         /// <summary>Tempo de liberação do guest, em minutos.</summary>
         public int AccessMinutes { get; set; } = 1440;
 
+        /// <summary>
+        /// URL para onde o visitante é redirecionado ao liberar o acesso (ex.: o Instagram da
+        /// empresa). Nula/vazia = mantém o comportamento padrão (URL da UniFi / fallback).
+        /// </summary>
+        public string? RedirectUrl { get; set; }
+
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     }
 

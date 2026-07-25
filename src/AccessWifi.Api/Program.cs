@@ -25,11 +25,7 @@ builder.Services.AddDbContext<AppDbContext>(objDbOptions => objDbOptions.UseNpgs
 
 // ----------------------------------------------------------------------- CORS
 // Em dev o proxy do Vite evita CORS; em produção libere só a origem do front.
-string sFrontOrigin = objConfiguration["FrontOrigin"] ?? "http://localhost:5173";
-builder.Services.AddCors(objCorsOptions => objCorsOptions.AddDefaultPolicy(objPolicy => objPolicy
-    .WithOrigins(sFrontOrigin)
-    .WithMethods("GET", "POST", "PUT")
-    .WithHeaders("Content-Type", "Authorization")));
+builder.Services.AddCors();
 
 // ------------------------------------------------------------------- JWT (admin)
 JwtOptions objJwtOptions = objConfiguration.GetSection(JwtOptions.SectionName).Get<JwtOptions>()
@@ -95,11 +91,17 @@ using (IServiceScope objScope = app.Services.CreateScope())
     await DbSeeder.SeedAsync(objScope.ServiceProvider);
 }
 
-// HTTPS fica a cargo do reverse proxy (Nginx) em produção; em dev o Vite proxeia via http.
-app.UseCors();
-app.UseRateLimiter();
+//string sFrontOrigin = objConfiguration["FrontOrigin"] ?? "http://localhost:5173";
+string sFrontOrigin = "https://wifi-access-v2-front.vercel.app";
+
+app.UseCors(p => p
+    .WithOrigins(sFrontOrigin)
+    .AllowAnyHeader()
+    .AllowAnyMethod());
+
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 app.MapControllers();
 
 app.Run();

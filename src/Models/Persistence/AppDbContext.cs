@@ -73,6 +73,8 @@ namespace Models.Persistence
                 objLead.Property(lead => lead.Ap).HasMaxLength(17);
                 objLead.Property(lead => lead.Ssid).HasMaxLength(32);
                 objLead.HasIndex(lead => new { lead.IDUnit, lead.Timestamp });
+                // Um cadastro por aparelho em cada unidade: o /authorize faz upsert por esta chave.
+                objLead.HasIndex(lead => new { lead.IDUnit, lead.Mac }).IsUnique();
                 objLead.HasOne<Unit>()
                     .WithMany()
                     .HasForeignKey(lead => lead.IDUnit)
@@ -82,6 +84,7 @@ namespace Models.Persistence
             objModelBuilder.Entity<PortalSettings>(objSettings =>
             {
                 objSettings.Property(settings => settings.Ssid).HasMaxLength(32);
+                objSettings.Property(settings => settings.RedirectUrl).HasMaxLength(2048);
                 objSettings.HasIndex(settings => settings.IDCompany).IsUnique();
                 objSettings.HasOne<Company>()
                     .WithMany()

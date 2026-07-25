@@ -193,6 +193,72 @@ public class AuthorizeControllerTests
     }
 
     [Fact]
+    public async Task Post_MesmoMacNaMesmaUnidade_AtualizaOLeadEmVezDeDuplicar()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        CreateUnit(objDbContext);
+        AuthorizeController objController = CreateController(objDbContext, new FakeUnifiClient());
+
+        await objController.Post(CreateRequest(), CancellationToken.None);
+        // Mesmo aparelho (mesmo MAC) volta com o nome atualizado.
+        AuthorizeRequest objSegundoCadastro = CreateRequest() with { Nome = "Ana B. Souza (novo)" };
+        await objController.Post(objSegundoCadastro, CancellationToken.None);
+
+        Lead objLead = Assert.Single(objDbContext.Leads);
+        Assert.Equal("Ana B. Souza (novo)", objLead.Nome);
+    }
+
+    [Fact]
+    public async Task Post_MacsDiferentesNaMesmaUnidade_GeramLeadsSeparados()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        CreateUnit(objDbContext);
+        AuthorizeController objController = CreateController(objDbContext, new FakeUnifiClient());
+
+        await objController.Post(CreateRequest(sMac: "AA:AA:AA:AA:AA:AA"), CancellationToken.None);
+        await objController.Post(CreateRequest(sMac: "BB:BB:BB:BB:BB:BB"), CancellationToken.None);
+
+        Assert.Equal(2, objDbContext.Leads.Count());
+    }
+
+    [Fact]
+    public async Task Post_ComRedirectUrlDaEmpresa_RedirecionaParaEla()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Unit objUnit = CreateUnit(objDbContext);
+        objDbContext.PortalSettings.Add(new PortalSettings
+        {
+            IDCompany = objUnit.IDCompany,
+            RedirectUrl = "https://instagram.com/doce",
+        });
+        objDbContext.SaveChanges();
+        AuthorizeController objController = CreateController(objDbContext, new FakeUnifiClient());
+
+        ActionResult<AuthorizeResponse> objResult =
+            await objController.Post(CreateRequest(), CancellationToken.None);
+
+        OkObjectResult objOk = Assert.IsType<OkObjectResult>(objResult.Result);
+        AuthorizeResponse objResponse = Assert.IsType<AuthorizeResponse>(objOk.Value);
+        // A URL da empresa vence a URL enviada pela UniFi no request.
+        Assert.Equal("https://instagram.com/doce", objResponse.Redirect);
+    }
+
+    [Fact]
+    public async Task Post_SemRedirectUrl_UsaAUrlDoRequest()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        CreateUnit(objDbContext);
+        AuthorizeController objController = CreateController(objDbContext, new FakeUnifiClient());
+
+        ActionResult<AuthorizeResponse> objResult =
+            await objController.Post(CreateRequest(), CancellationToken.None);
+
+        OkObjectResult objOk = Assert.IsType<OkObjectResult>(objResult.Result);
+        AuthorizeResponse objResponse = Assert.IsType<AuthorizeResponse>(objOk.Value);
+        Assert.Equal("https://www.doce.com.br", objResponse.Redirect);
+    }
+
+    [Fact]
     public async Task Post_SemSettings_UsaODefaultDe1440Minutos()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();

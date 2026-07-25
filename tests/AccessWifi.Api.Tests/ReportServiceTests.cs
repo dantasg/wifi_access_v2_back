@@ -45,13 +45,14 @@ public class ReportServiceTests
         return objUnit;
     }
 
-    private static void AddLead(AppDbContext objDbContext, Guid objUnitId, DateTime dtTimestamp)
+    private static void AddLead(AppDbContext objDbContext, Guid objUnitId, DateTime dtCreatedAt)
     {
         objDbContext.Leads.Add(new Lead
         {
             IDUnit = objUnitId,
             Nome = "Fulano",
-            Timestamp = dtTimestamp,
+            CreatedAt = dtCreatedAt,
+            Timestamp = dtCreatedAt,
         });
         objDbContext.SaveChanges();
     }
@@ -106,6 +107,37 @@ public class ReportServiceTests
         string sCsv = System.Text.Encoding.UTF8.GetString(objAttachment!);
         int iLinhas = sCsv.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length;
         Assert.Equal(3, iLinhas);
+    }
+
+    [Fact]
+    public async Task SendDueReports_LeadCadastradoNoMesMasReconectadoDepois_ContaNoMesDoCadastro()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        DateTime dtHoje = new DateTime(2026, 8, 1);
+        Company objCompany = AddCompany(objDbContext, "doce", "rel@doce.com.br", iSendDay: 1);
+        Unit objUnit = AddUnit(objDbContext, objCompany.Id, "doce-matriz");
+
+        // Cadastro em julho, mas o aparelho reconectou em agosto (Timestamp movido pelo upsert).
+        objDbContext.Leads.Add(new Lead
+        {
+            IDUnit = objUnit.Id,
+            Nome = "Fulano",
+            CreatedAt = new DateTime(2026, 7, 10, 12, 0, 0, DateTimeKind.Utc),
+            Timestamp = new DateTime(2026, 8, 3, 9, 0, 0, DateTimeKind.Utc),
+        });
+        objDbContext.SaveChanges();
+
+        FakeEmailSender objSender = new FakeEmailSender();
+        ReportService objService = new ReportService(
+            objDbContext, objSender, NullLogger<ReportService>.Instance);
+
+        await objService.SendDueReportsAsync(dtHoje, CancellationToken.None);
+
+        // Aparece no relatório de julho (cabeçalho + 1 linha), apesar do último acesso em agosto.
+        (_, _, byte[]? objAttachment) = Assert.Single(objSender.Enviados);
+        string sCsv = System.Text.Encoding.UTF8.GetString(objAttachment!);
+        int iLinhas = sCsv.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length;
+        Assert.Equal(2, iLinhas);
     }
 
     [Fact]

@@ -30,7 +30,8 @@ public class SettingsControllerTests
         string sBrand = "#112233",
         string? sLogo = null,
         string sSsid = "Doce",
-        int iAccessMinutes = 720)
+        int iAccessMinutes = 720,
+        string? sRedirectUrl = null)
     {
         return new SettingsDto(
             Colors: new ThemeColorsDto(
@@ -46,7 +47,8 @@ public class SettingsControllerTests
             Favicon: null,
             Banner: null,
             Ssid: sSsid,
-            AccessMinutes: iAccessMinutes);
+            AccessMinutes: iAccessMinutes,
+            RedirectUrl: sRedirectUrl);
     }
 
     [Fact]
@@ -210,5 +212,57 @@ public class SettingsControllerTests
             CreateDto(iAccessMinutes: 0), null, CancellationToken.None);
 
         Assert.IsType<BadRequestObjectResult>(objResult.Result);
+    }
+
+    [Fact]
+    public async Task Put_UrlDeRedirecionamentoValida_SalvaEODevolveNoGet()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext);
+        string sUnitSlug = CreateUnit(objDbContext, objCompany.Id, "doce-matriz");
+        SettingsController objController = new SettingsController(objDbContext);
+        TestHelpers.SetUser(objController, objCompany.Id);
+
+        await objController.Put(
+            CreateDto(sRedirectUrl: "https://instagram.com/doce"), null, CancellationToken.None);
+
+        Assert.Equal(
+            "https://instagram.com/doce",
+            objDbContext.PortalSettings.Single().RedirectUrl);
+
+        ActionResult<SettingsDto> objGetResult = await objController.Get(sUnitSlug, CancellationToken.None);
+        SettingsDto objLoaded =
+            Assert.IsType<SettingsDto>(Assert.IsType<OkObjectResult>(objGetResult.Result).Value);
+        Assert.Equal("https://instagram.com/doce", objLoaded.RedirectUrl);
+    }
+
+    [Fact]
+    public async Task Put_UrlDeRedirecionamentoVazia_GravaComoNula()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext);
+        SettingsController objController = new SettingsController(objDbContext);
+        TestHelpers.SetUser(objController, objCompany.Id);
+
+        await objController.Put(CreateDto(sRedirectUrl: "   "), null, CancellationToken.None);
+
+        Assert.Null(objDbContext.PortalSettings.Single().RedirectUrl);
+    }
+
+    [Fact]
+    public async Task Put_UrlDeRedirecionamentoInvalida_Retorna400()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext);
+        SettingsController objController = new SettingsController(objDbContext);
+        TestHelpers.SetUser(objController, objCompany.Id);
+
+        ActionResult<SettingsDto> objResult = await objController.Put(
+            CreateDto(sRedirectUrl: "javascript:alert(1)"), null, CancellationToken.None);
+
+        BadRequestObjectResult objBadRequest = Assert.IsType<BadRequestObjectResult>(objResult.Result);
+        ErrorResponse objError = Assert.IsType<ErrorResponse>(objBadRequest.Value);
+        Assert.Contains("redirecionamento", objError.Error);
+        Assert.Empty(objDbContext.PortalSettings);
     }
 }

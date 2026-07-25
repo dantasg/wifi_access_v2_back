@@ -53,8 +53,8 @@ namespace AccessWifiService
                 (from lead in _objDbContext.Leads.AsNoTracking()
                  join unit in _objDbContext.Units.AsNoTracking() on lead.IDUnit equals unit.Id
                  where unit.IDCompany == objCompany.Id
-                     && lead.Timestamp >= dtStartUtc && lead.Timestamp < dtEndUtc
-                 orderby lead.Timestamp
+                     && lead.CreatedAt >= dtStartUtc && lead.CreatedAt < dtEndUtc
+                 orderby lead.CreatedAt
                  select new LeadReportRow(lead, unit.Name))
                 .ToListAsync(objCancellationToken);
 

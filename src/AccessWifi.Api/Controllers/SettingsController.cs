@@ -17,6 +17,7 @@ public partial class SettingsController : ControllerBase
     // Front limita cada imagem a 2 MB; em data URL (base64) isso dá ~2,8M chars — 4M dá folga.
     private const int MaxImageChars = 4 * 1024 * 1024;
     private const int MaxAccessMinutes = 525_600; // 1 ano
+    private const int MaxRedirectUrlChars = 2048;
 
     [GeneratedRegex("^#[0-9a-fA-F]{6}$")]
     private static partial Regex HexColorRegex();
@@ -117,6 +118,9 @@ public partial class SettingsController : ControllerBase
         objSettings.Banner = objRequest.Banner;
         objSettings.Ssid = objRequest.Ssid.Trim();
         objSettings.AccessMinutes = objRequest.AccessMinutes;
+        objSettings.RedirectUrl = string.IsNullOrWhiteSpace(objRequest.RedirectUrl)
+            ? null
+            : objRequest.RedirectUrl.Trim();
         objSettings.UpdatedAt = DateTime.UtcNow;
 
         await _objDbContext.SaveChangesAsync(objCancellationToken);
@@ -175,6 +179,22 @@ public partial class SettingsController : ControllerBase
         if (objRequest.AccessMinutes < 1 || objRequest.AccessMinutes > MaxAccessMinutes)
         {
             return $"Tempo de acesso deve ficar entre 1 e {MaxAccessMinutes} minutos.";
+        }
+
+        if (!string.IsNullOrWhiteSpace(objRequest.RedirectUrl))
+        {
+            string sRedirectUrl = objRequest.RedirectUrl.Trim();
+            if (sRedirectUrl.Length > MaxRedirectUrlChars)
+            {
+                return $"URL de redirecionamento muito longa (máximo de {MaxRedirectUrlChars} caracteres).";
+            }
+            bool bUrlValida =
+                Uri.TryCreate(sRedirectUrl, UriKind.Absolute, out Uri? objUri) &&
+                (objUri.Scheme == Uri.UriSchemeHttp || objUri.Scheme == Uri.UriSchemeHttps);
+            if (!bUrlValida)
+            {
+                return "URL de redirecionamento inválida (informe um endereço http ou https completo).";
+            }
         }
 
         return null;

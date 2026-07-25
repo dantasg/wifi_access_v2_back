@@ -11,7 +11,7 @@ namespace AccessWifiService
     public static class LeadsCsv
     {
         private static readonly string[] s_arrHeader =
-            ["timestamp", "unidade", "nome", "instagram", "telefone", "nascimento", "mac", "ap", "ssid"];
+            ["cadastro", "unidade", "nome", "instagram", "telefone", "nascimento", "mac", "ap", "ssid"];
 
         public static byte[] Build(IEnumerable<LeadReportRow> objRows)
         {
@@ -23,7 +23,7 @@ namespace AccessWifiService
                 Lead objLead = objRow.Lead;
                 string[] arrFields =
                 [
-                    objLead.Timestamp.ToString("o", CultureInfo.InvariantCulture),
+                    objLead.CreatedAt.ToString("o", CultureInfo.InvariantCulture),
                     objRow.UnitName,
                     objLead.Nome,
                     objLead.Instagram,

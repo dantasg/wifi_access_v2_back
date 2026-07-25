@@ -8,7 +8,8 @@ public record SettingsDto(
     string? Favicon,
     string? Banner,
     string Ssid,
-    int AccessMinutes)
+    int AccessMinutes,
+    string? RedirectUrl)
 {
     public static SettingsDto FromEntity(PortalSettings objSettings)
     {
@@ -18,7 +19,8 @@ public record SettingsDto(
             Favicon: objSettings.Favicon,
             Banner: objSettings.Banner,
             Ssid: objSettings.Ssid,
-            AccessMinutes: objSettings.AccessMinutes);
+            AccessMinutes: objSettings.AccessMinutes,
+            RedirectUrl: objSettings.RedirectUrl);
     }
 }
 

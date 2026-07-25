@@ -57,27 +57,35 @@ public class AuthorizeController : ControllerBase
             return BadRequest(new AuthorizeResponse(false, Error: "É necessário aceitar os termos (LGPD)."));
         }
 
-        Lead objLead = new Lead
+        // Upsert por (IDUnit, Mac): o mesmo aparelho voltando na mesma unidade atualiza o
+        // cadastro em vez de duplicar. O Mac é obrigatório (validado acima), então é uma chave
+        // sempre presente.
+        Lead? objLead = await _objDbContext.Leads
+            .FirstOrDefaultAsync(
+                lead => lead.IDUnit == objUnit.Id && lead.Mac == objRequest.Mac, objCancellationToken);
+        if (objLead is null)
         {
-            IDUnit = objUnit.Id,
-            Nome = objRequest.Nome,
-            Instagram = objRequest.Instagram,
-            Telefone = objRequest.Telefone,
-            Nascimento = objRequest.Nascimento,
-            Mac = objRequest.Mac,
-            Ap = objRequest.Ap,
-            Ssid = objRequest.Ssid,
-        };
-        _objDbContext.Leads.Add(objLead);
+            objLead = new Lead { IDUnit = objUnit.Id, Mac = objRequest.Mac };
+            _objDbContext.Leads.Add(objLead);
+        }
+
+        objLead.Nome = objRequest.Nome;
+        objLead.Instagram = objRequest.Instagram;
+        objLead.Telefone = objRequest.Telefone;
+        objLead.Nascimento = objRequest.Nascimento;
+        objLead.Ap = objRequest.Ap;
+        objLead.Ssid = objRequest.Ssid;
+        objLead.Timestamp = DateTime.UtcNow;
         await _objDbContext.SaveChangesAsync(objCancellationToken);
 
-        // Tempo de liberação salvo nas Configurações da empresa dona da unidade; sem linha, usa o padrão.
-        int iAccessMinutes = await _objDbContext.PortalSettings
+        // Configurações da empresa dona da unidade (tempo de liberação + URL de redirecionamento).
+        var objCompanySettings = await _objDbContext.PortalSettings
             .AsNoTracking()
             .Where(settings => settings.IDCompany == objUnit.IDCompany)
-            .Select(settings => (int?)settings.AccessMinutes)
-            .FirstOrDefaultAsync(objCancellationToken)
-            ?? DefaultAccessMinutes;
+            .Select(settings => new { settings.AccessMinutes, settings.RedirectUrl })
+            .FirstOrDefaultAsync(objCancellationToken);
+
+        int iAccessMinutes = objCompanySettings?.AccessMinutes ?? DefaultAccessMinutes;
 
         try
         {
@@ -94,9 +102,13 @@ public class AuthorizeController : ControllerBase
                 new AuthorizeResponse(false, Error: "Falha ao autorizar na UniFi."));
         }
 
-        string sRedirect = string.IsNullOrWhiteSpace(objRequest.Url)
-            ? "https://www.google.com"
-            : objRequest.Url;
+        // Precedência: URL configurada pela empresa (ex.: Instagram) vence; senão a URL que a
+        // UniFi enviou; por fim, o fallback fixo.
+        string sRedirect = objCompanySettings?.RedirectUrl is { Length: > 0 } sCompanyUrl
+            ? sCompanyUrl
+            : string.IsNullOrWhiteSpace(objRequest.Url)
+                ? "https://www.google.com"
+                : objRequest.Url;
         return Ok(new AuthorizeResponse(true, Redirect: sRedirect));
     }
 }
