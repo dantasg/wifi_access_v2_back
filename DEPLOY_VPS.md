@@ -219,6 +219,9 @@ dotnet ef database update \
 Deve terminar sem erro e criar todas as tabelas (empresas, unidades, leads, usuários,
 refresh tokens, configurações etc.).
 
+> 📖 Detalhes sobre migrations (criar, revisar e aplicar sem perder dados) estão no
+> [MIGRATIONS.md](MIGRATIONS.md).
+
 ---
 
 ## 11. Serviço systemd da API
@@ -363,7 +366,12 @@ Aponte o front (Vercel) para `https://api.seunegocio.com.br` (variável `VITE_AP
 
 ## 15. Atualizações futuras (deploy de uma nova versão)
 
+⚠️ **Faça backup do banco antes** — o passo a passo seguro está no
+[MIGRATIONS.md § 5](MIGRATIONS.md#5-️-alterações-futuras-no-servidor-já-tem-dados).
+
 ```bash
+sudo -u postgres pg_dump accesswifi > ~/backup-accesswifi-$(date +%F-%H%M).sql
+
 cd /opt/accesswifi
 git pull
 dotnet publish src/AccessWifi.Api/AccessWifi.Api.csproj -c Release -o /opt/accesswifi/publish/api
