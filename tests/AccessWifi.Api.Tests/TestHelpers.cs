@@ -28,8 +28,11 @@ public static class TestHelpers
         return new AesGcmEncryptor(TestEncryptionKey);
     }
 
-    /// <summary>Simula o JWT no controller: admin de empresa (com IDCompany) ou super admin (sem).</summary>
-    public static void SetUser(ControllerBase objController, Guid? objCompanyId)
+    /// <summary>
+    /// Simula o JWT no controller: admin de empresa (com IDCompany) ou super admin (sem).
+    /// sUsername vira a claim "sub" (quem está logado).
+    /// </summary>
+    public static void SetUser(ControllerBase objController, Guid? objCompanyId, string? sUsername = null)
     {
         List<Claim> objClaims =
         [
@@ -40,6 +43,11 @@ public static class TestHelpers
         if (objCompanyId is not null)
         {
             objClaims.Add(new Claim(ClaimsExtensions.ClaimCompanyId, objCompanyId.Value.ToString()));
+        }
+
+        if (sUsername is not null)
+        {
+            objClaims.Add(new Claim(ClaimsExtensions.ClaimUsername, sUsername));
         }
 
         ClaimsIdentity objIdentity = new ClaimsIdentity(

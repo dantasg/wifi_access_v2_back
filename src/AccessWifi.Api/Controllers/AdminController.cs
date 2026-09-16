@@ -47,7 +47,8 @@ public class AdminController : ControllerBase
             return Unauthorized();
         }
 
-        if (objUser.Company is not null && !objUser.Company.Active)
+        // Usuário ou empresa inativos: mesmo 401 da senha errada (não revela que a conta existe).
+        if (!objUser.Active || (objUser.Company is not null && !objUser.Company.Active))
         {
             return Unauthorized();
         }
@@ -81,7 +82,7 @@ public class AdminController : ControllerBase
         AdminUser? objUser = await _objDbContext.Users
             .Include(user => user.Company)
             .FirstOrDefaultAsync(user => user.Id == objStored.IDUser, objCancellationToken);
-        if (objUser is null || (objUser.Company is not null && !objUser.Company.Active))
+        if (objUser is null || !objUser.Active || (objUser.Company is not null && !objUser.Company.Active))
         {
             return Unauthorized();
         }

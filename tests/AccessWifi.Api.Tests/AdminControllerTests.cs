@@ -120,6 +120,40 @@ public class AdminControllerTests
     }
 
     [Fact]
+    public async Task Login_UsuarioInativo_Retorna401MesmoComSenhaCorreta()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        CreateUser(objDbContext, "admin", CreateCompany(objDbContext, "doce").Id);
+        objDbContext.Users.Single().Active = false;
+        objDbContext.SaveChanges();
+        AdminController objController = CreateController(objDbContext);
+
+        ActionResult<LoginResponse> objResult = await objController.Login(
+            new LoginRequest("admin", "senha-forte"), CancellationToken.None);
+
+        Assert.IsType<UnauthorizedResult>(objResult.Result);
+        Assert.Empty(objDbContext.RefreshTokens);
+    }
+
+    [Fact]
+    public async Task Refresh_UsuarioDesativadoDepoisDoLogin_Retorna401()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        CreateUser(objDbContext, "admin", CreateCompany(objDbContext, "doce").Id);
+        AdminController objController = CreateController(objDbContext);
+        LoginResponse objLogin = Assert.IsType<LoginResponse>(Assert.IsType<OkObjectResult>(
+            (await objController.Login(new LoginRequest("admin", "senha-forte"), CancellationToken.None)).Result).Value);
+        // Desativado direto no banco, sem revogar o token: o refresh deve barrar pelo Active.
+        objDbContext.Users.Single().Active = false;
+        objDbContext.SaveChanges();
+
+        ActionResult<LoginResponse> objResult =
+            await objController.Refresh(new RefreshRequest(objLogin.RefreshToken), CancellationToken.None);
+
+        Assert.IsType<UnauthorizedResult>(objResult.Result);
+    }
+
+    [Fact]
     public async Task Login_DevolveRefreshTokenEPersisteNoBanco()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();

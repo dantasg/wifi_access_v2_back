@@ -13,6 +13,8 @@ namespace Models.DataBase
         public Company? Company { get; set; }
         public string Username { get; set; } = "";
         public string PasswordHash { get; set; } = "";
+        /// <summary>Usuário desativado não entra nem renova a sessão (o registro é mantido).</summary>
+        public bool Active { get; set; } = true;
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }
 }

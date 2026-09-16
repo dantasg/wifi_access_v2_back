@@ -42,7 +42,8 @@ public class UsersController : ControllerBase
                 user.IDCompany == null ? ClaimsExtensions.RoleSuperAdmin : ClaimsExtensions.RoleAdmin,
                 user.IDCompany,
                 user.Company == null ? null : user.Company.Name,
-                user.CreatedAt))
+                user.CreatedAt,
+                user.Active))
             .ToListAsync(objCancellationToken);
 
         return Ok(objUsers);
@@ -96,6 +97,65 @@ public class UsersController : ControllerBase
             objUser.IDCompany is null ? ClaimsExtensions.RoleSuperAdmin : ClaimsExtensions.RoleAdmin,
             objUser.IDCompany,
             objCompany?.Name,
-            objUser.CreatedAt));
+            objUser.CreatedAt,
+            objUser.Active));
+    }
+
+    /// <summary>
+    /// Ativa/desativa um usuário. Desativar encerra as sessões dele (revoga os refresh tokens);
+    /// o access token já emitido ainda vale até expirar (~1h).
+    /// </summary>
+    [HttpPut("{id:guid}")]
+    public async Task<ActionResult<UserDto>> Update(
+        Guid id, UpdateUserRequest objRequest, CancellationToken objCancellationToken)
+    {
+        AdminUser? objUser = await _objDbContext.Users
+            .Include(user => user.Company)
+            .FirstOrDefaultAsync(user => user.Id == id, objCancellationToken);
+        if (objUser is null)
+        {
+            return NotFound(new ErrorResponse("Usuário não encontrado."));
+        }
+
+        if (objUser.Active && !objRequest.Active)
+        {
+            if (objUser.Username == User.GetUsername())
+            {
+                return BadRequest(new ErrorResponse("Você não pode desativar o próprio usuário."));
+            }
+
+            if (objUser.IDCompany is null)
+            {
+                bool bExisteOutroSuperAdminAtivo = await _objDbContext.Users.AnyAsync(
+                    user => user.IDCompany == null && user.Active && user.Id != objUser.Id,
+                    objCancellationToken);
+                if (!bExisteOutroSuperAdminAtivo)
+                {
+                    return BadRequest(new ErrorResponse(
+                        "Não é possível desativar o último super admin ativo."));
+                }
+            }
+
+            DateTime dtNowUtc = DateTime.UtcNow;
+            List<RefreshToken> objTokens = await _objDbContext.RefreshTokens
+                .Where(token => token.IDUser == objUser.Id && token.RevokedAt == null)
+                .ToListAsync(objCancellationToken);
+            foreach (RefreshToken objToken in objTokens)
+            {
+                objToken.RevokedAt = dtNowUtc;
+            }
+        }
+
+        objUser.Active = objRequest.Active;
+        await _objDbContext.SaveChangesAsync(objCancellationToken);
+
+        return Ok(new UserDto(
+            objUser.Id,
+            objUser.Username,
+            objUser.IDCompany is null ? ClaimsExtensions.RoleSuperAdmin : ClaimsExtensions.RoleAdmin,
+            objUser.IDCompany,
+            objUser.Company?.Name,
+            objUser.CreatedAt,
+            objUser.Active));
     }
 }
