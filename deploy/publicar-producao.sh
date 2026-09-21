@@ -18,7 +18,10 @@
 #
 # Detalhes da produção: PRODUCAO.md
 # =============================================================================
-set -euo pipefail
+set -Eeuo pipefail
+
+# Nenhuma falha é silenciosa: se um comando quebrar, diz a linha e qual foi.
+trap 'printf "\n\033[1;31m✗ Falhou na linha %s: %s\033[0m\n" "$LINENO" "$BASH_COMMAND" >&2' ERR
 
 SERVIDOR="root@216.22.13.216"
 CHAVE="${USERPROFILE:-$HOME}/.ssh/accesswifi_vps"
@@ -32,7 +35,19 @@ SSH=(ssh -i "$CHAVE" -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15
 
 etapa() { printf '\n\033[1;34m==> %s\033[0m\n' "$1"; }
 ok()    { printf '    \033[32m✓\033[0m %s\n' "$1"; }
-falha() { printf '\n\033[1;31m✗ %s\033[0m\n' "$1" >&2; exit 1; }
+falha() { trap - ERR; printf '\n\033[1;31m✗ %s\033[0m\n' "$1" >&2; exit 1; }
+
+# Roda sem poluir a tela, mas se falhar mostra a saída inteira: erro de compilação não pode sumir.
+quieto() {
+  local log
+  log="$(mktemp)"
+  if ! "$@" >"$log" 2>&1; then
+    sed 's/^/      /' "$log" >&2
+    rm -f "$log"
+    falha "Falhou: $*"
+  fi
+  rm -f "$log"
+}
 
 case "$ALVO" in
   tudo|api|portal|reverter) ;;
@@ -58,15 +73,18 @@ for s in api worker; do
   echo "    $s revertida"
 done
 if [ -d "$SITE/index.anterior" ]; then
-  rm -rf "$SITE/index.revertido"; mv "$SITE/index" "$SITE/index.revertido"; mv "$SITE/index.anterior" "$SITE/index"
+  rm -rf "$SITE/index.revertido"
+  mv "$SITE/index" "$SITE/index.revertido"
+  mv "$SITE/index.anterior" "$SITE/index"
   echo "    portal revertido"
 fi
-[ -f /opt/accesswifi/VERSAO.anterior ] && mv /opt/accesswifi/VERSAO.anterior /opt/accesswifi/VERSAO
+if [ -f /opt/accesswifi/VERSAO.anterior ]; then mv /opt/accesswifi/VERSAO.anterior /opt/accesswifi/VERSAO; fi
 systemctl restart accesswifi-api accesswifi-worker
 sleep 6
-systemctl is-active --quiet accesswifi-api && echo "    API no ar" || echo "    ATENÇÃO: a API não subiu — veja: journalctl -u accesswifi-api -n 50"
+if systemctl is-active --quiet accesswifi-api; then echo "    API no ar"
+else echo "    ATENÇÃO: a API não subiu — veja: journalctl -u accesswifi-api -n 50"; fi
 REMOTO
-  ok "Reversão concluída. Versão no ar: $("${SSH[@]}" 'cat /opt/accesswifi/VERSAO 2>/dev/null || echo desconhecida')"
+  ok "Reversão concluída. No ar: $("${SSH[@]}" 'cat /opt/accesswifi/VERSAO 2>/dev/null || echo desconhecida')"
   exit 0
 fi
 
@@ -102,16 +120,17 @@ trap 'rm -rf "$PACOTE"' EXIT
 # -----------------------------------------------------------------------------
 if [ "$ALVO" != portal ]; then
   etapa "Compilando API e worker (Linux x64)"
-  dotnet publish "$RAIZ_BACK/src/AccessWifi.Api/AccessWifi.Api.csproj" -c Release -r linux-x64 \
-    --self-contained false -o "$PACOTE/api" -v q --nologo >/dev/null
+  quieto dotnet publish "$RAIZ_BACK/src/AccessWifi.Api/AccessWifi.Api.csproj" \
+    -c Release -r linux-x64 --self-contained false -o "$PACOTE/api" -v q --nologo
   ok "API"
-  dotnet publish "$RAIZ_BACK/src/AccessWifiService/AccessWifiService.csproj" -c Release -r linux-x64 \
-    --self-contained false -o "$PACOTE/worker" -v q --nologo >/dev/null
+  quieto dotnet publish "$RAIZ_BACK/src/AccessWifiService/AccessWifiService.csproj" \
+    -c Release -r linux-x64 --self-contained false -o "$PACOTE/worker" -v q --nologo
   ok "worker"
 
   etapa "Gerando o script SQL das migrations (idempotente)"
-  (cd "$RAIZ_BACK" && dotnet ef migrations script --idempotent --project src/Models \
-    --startup-project src/AccessWifi.Api -o "$PACOTE/migrate.sql" >/dev/null)
+  quieto dotnet ef migrations script --idempotent \
+    --project "$RAIZ_BACK/src/Models" --startup-project "$RAIZ_BACK/src/AccessWifi.Api" \
+    -o "$PACOTE/migrate.sql"
   ok "$(grep -c 'INSERT INTO "__EFMigrationsHistory"' "$PACOTE/migrate.sql") migrations no script"
 fi
 
@@ -119,7 +138,8 @@ if [ "$ALVO" != api ]; then
   etapa "Compilando o portal"
   # --mode vps: o Vite NÃO carrega o .env.production (que aponta para o ngrok). Sem VITE_API_URL,
   # o front chama a própria origem — portal e API moram no mesmo endereço.
-  (cd "$RAIZ_FRONT" && npx tsc -b && npx vite build --mode vps --outDir "$PACOTE/portal" --emptyOutDir >/dev/null)
+  quieto bash -c 'cd "$1" && npx tsc -b && npx vite build --mode vps --outDir "$2" --emptyOutDir' \
+    _ "$RAIZ_FRONT" "$PACOTE/portal"
   ok "portal"
 fi
 
@@ -131,10 +151,12 @@ if ls "$PACOTE"/api/appsettings.Development* "$PACOTE"/worker/appsettings.Develo
   falha "O pacote contém appsettings.Development — segredo de desenvolvimento não vai para produção."
 fi
 ok "sem configuração de desenvolvimento"
-if [ -d "$PACOTE/portal" ] && grep -rlqE "ngrok-free\.dev|vercel\.app" "$PACOTE/portal"; then
-  falha "O portal aponta para ngrok/Vercel — ele precisa chamar a própria origem."
+if [ -d "$PACOTE/portal" ]; then
+  if grep -rlqE "ngrok-free\.dev|vercel\.app" "$PACOTE/portal"; then
+    falha "O portal aponta para ngrok/Vercel — ele precisa chamar a própria origem."
+  fi
+  ok "portal chama a própria origem"
 fi
-[ -d "$PACOTE/portal" ] && ok "portal chama a própria origem"
 cp "$RAIZ_BACK/deploy/nginx/90-accesswifi-api.conf" "$PACOTE/"
 printf '%s — publicado em %s\n' "$VERSAO" "$(date '+%d/%m/%Y %H:%M')" > "$PACOTE/VERSAO"
 
@@ -142,7 +164,8 @@ printf '%s — publicado em %s\n' "$VERSAO" "$(date '+%d/%m/%Y %H:%M')" > "$PACO
 # 4. Enviar
 # -----------------------------------------------------------------------------
 etapa "Enviando para $SERVIDOR"
-tar -C "$PACOTE" -czf - . | "${SSH[@]}" 'rm -rf /tmp/accesswifi-pub && mkdir -p /tmp/accesswifi-pub && tar -xzf - -C /tmp/accesswifi-pub'
+tar -C "$PACOTE" -czf - . | "${SSH[@]}" \
+  'rm -rf /tmp/accesswifi-pub && mkdir -p /tmp/accesswifi-pub && tar -xzf - -C /tmp/accesswifi-pub'
 ok "enviado"
 
 # -----------------------------------------------------------------------------
@@ -164,38 +187,45 @@ if [ "$ALVO" != portal ]; then
   ls -1t /var/backups/accesswifi/antes-*.dump | tail -n +11 | xargs -r rm -f
   ok "backup do banco: $(basename "$B") ($(du -h "$B" | cut -f1))"
 
-  export PGPASSWORD=$(grep -oP 'Password=\K[^;]+' /etc/accesswifi/accesswifi.env)
+  export PGPASSWORD="$(grep -oP 'Password=\K[^;]+' /etc/accesswifi/accesswifi.env)"
+  # O script idempotente avisa "already exists, skipping" a cada rodada — é esperado, não é erro.
+  # Só warnings e erros aparecem.
+  export PGOPTIONS='-c client_min_messages=warning'
   ANTES=$(psql -h localhost -U accesswifi -d accesswifi -tAc 'SELECT count(*) FROM "__EFMigrationsHistory"')
   psql -h localhost -U accesswifi -d accesswifi -v ON_ERROR_STOP=1 -q -f "$P/migrate.sql" >/dev/null
   DEPOIS=$(psql -h localhost -U accesswifi -d accesswifi -tAc 'SELECT count(*) FROM "__EFMigrationsHistory"')
-  unset PGPASSWORD
-  ok "migrations: $ANTES → $DEPOIS aplicadas"
+  unset PGPASSWORD PGOPTIONS
+  ok "migrations: $ANTES antes, $DEPOIS depois"
 
   # Troca os binários guardando a versão atual como "anterior" (para o reverter).
   for s in api worker; do
     rm -rf /opt/accesswifi/$s.anterior
-    [ -d /opt/accesswifi/$s ] && mv /opt/accesswifi/$s /opt/accesswifi/$s.anterior
+    if [ -d /opt/accesswifi/$s ]; then mv /opt/accesswifi/$s /opt/accesswifi/$s.anterior; fi
     cp -r "$P/$s" /opt/accesswifi/$s
   done
-  chown -R root:root /opt/accesswifi && chmod -R a+rX /opt/accesswifi
+  chown -R root:root /opt/accesswifi
+  chmod -R a+rX /opt/accesswifi
   systemctl restart accesswifi-api accesswifi-worker
 
   # Espera a API responder (GET /settings sem parâmetro = 400, prova de que subiu).
   SUBIU=0
   for i in $(seq 1 20); do
-    [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5000/settings)" = 400 ] && { SUBIU=1; break; }
+    if [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5000/settings)" = 400 ]; then SUBIU=1; break; fi
     sleep 1
   done
   if [ $SUBIU = 0 ]; then
     echo "    ✗ a API não respondeu — voltando para a versão anterior"
     journalctl -u accesswifi-api -n 15 --no-pager -o cat | sed 's/^/      /'
     for s in api worker; do
-      [ -d /opt/accesswifi/$s.anterior ] && { rm -rf /opt/accesswifi/$s; mv /opt/accesswifi/$s.anterior /opt/accesswifi/$s; }
+      if [ -d /opt/accesswifi/$s.anterior ]; then
+        rm -rf /opt/accesswifi/$s
+        mv /opt/accesswifi/$s.anterior /opt/accesswifi/$s
+      fi
     done
     systemctl restart accesswifi-api accesswifi-worker
-    falha "versão nova recusada; a anterior continua no ar (o banco já recebeu as migrations — ver PRODUCAO.md)"
+    falha "versão nova recusada; a anterior voltou ao ar (o banco já recebeu as migrations — ver PRODUCAO.md §5)"
   fi
-  ok "API e worker no ar ($(systemctl is-active accesswifi-worker) / worker)"
+  ok "API no ar; worker: $(systemctl is-active accesswifi-worker)"
 fi
 
 if [ "$ALVO" != api ]; then
@@ -203,22 +233,26 @@ if [ "$ALVO" != api ]; then
   cp -a "$SITE/index" "$SITE/index.anterior"
   rm -rf "$SITE/index"/*
   cp -r "$P/portal/." "$SITE/index/"
-  chown -R root:root "$SITE/index" && chmod -R a+rX "$SITE/index"
+  chown -R root:root "$SITE/index"
+  chmod -R a+rX "$SITE/index"
   ok "portal publicado"
 fi
 
 # O painel pode regenerar a pasta security/ do site; se o nosso arquivo sumiu ou mudou, recoloca.
 CONF="$SITE/security/90-accesswifi-api.conf"
-if ! cmp -s "$P/90-accesswifi-api.conf" "$CONF" 2>/dev/null; then
+if cmp -s "$P/90-accesswifi-api.conf" "$CONF"; then
+  ok "encaminhamento da API no nginx em dia"
+else
   cp "$P/90-accesswifi-api.conf" "$CONF"
-  docker exec ic-nginx-B0Yo nginx -t >/dev/null 2>&1 || { rm -f "$CONF"; falha "configuração do nginx inválida"; }
+  if ! docker exec ic-nginx-B0Yo nginx -t >/dev/null 2>&1; then
+    rm -f "$CONF"
+    falha "configuração do nginx inválida"
+  fi
   docker exec ic-nginx-B0Yo nginx -s reload
   ok "encaminhamento da API no nginx (re)colocado"
-else
-  ok "encaminhamento da API no nginx em dia"
 fi
 
-[ -f /opt/accesswifi/VERSAO ] && cp /opt/accesswifi/VERSAO /opt/accesswifi/VERSAO.anterior
+if [ -f /opt/accesswifi/VERSAO ]; then cp /opt/accesswifi/VERSAO /opt/accesswifi/VERSAO.anterior; fi
 cp "$P/VERSAO" /opt/accesswifi/VERSAO
 rm -rf "$P"
 REMOTO
@@ -229,11 +263,12 @@ REMOTO
 etapa "Conferindo pela internet"
 confere() {
   local nome="$1" url="$2" esperado="$3" codigo
-  codigo=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$url")
-  [ "$codigo" = "$esperado" ] && ok "$nome ($codigo)" || falha "$nome respondeu $codigo, esperado $esperado — $url"
+  codigo="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$url" || true)"
+  if [ "$codigo" = "$esperado" ]; then ok "$nome ($codigo)"
+  else falha "$nome respondeu $codigo, esperado $esperado — $url"; fi
 }
-confere "portal"               "https://$DOMINIO/guest/s/default/" 200
-confere "API"                  "https://$DOMINIO/settings"         400
-confere "painel admin (página)" "https://$DOMINIO/admin"           200
+confere "portal"                "https://$DOMINIO/guest/s/default/" 200
+confere "API"                   "https://$DOMINIO/settings"         400
+confere "painel admin (página)" "https://$DOMINIO/admin"            200
 
 printf '\n\033[1;32mPublicado: %s\033[0m\n' "$("${SSH[@]}" 'cat /opt/accesswifi/VERSAO')"
