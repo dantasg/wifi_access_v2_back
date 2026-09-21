@@ -1,0 +1,4 @@
+# Arquivos que rodam ou vão para o Linux: sempre LF. Com CRLF o bash quebra ("$'\r': command not
+# found") e o script de publicação acharia que a config do nginx mudou a cada deploy.
+*.sh      text eol=lf
+deploy/** text eol=lf

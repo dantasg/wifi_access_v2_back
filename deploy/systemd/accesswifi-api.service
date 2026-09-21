@@ -1,0 +1,23 @@
+[Unit]
+Description=AccessWifi API
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+WorkingDirectory=/opt/accesswifi/api
+ExecStart=/usr/bin/dotnet /opt/accesswifi/api/AccessWifi.Api.dll
+Restart=always
+RestartSec=5
+User=accesswifi
+Group=accesswifi
+EnvironmentFile=/etc/accesswifi/accesswifi.env
+KillSignal=SIGINT
+SyslogIdentifier=accesswifi-api
+# Endurecimento: o servico nao ganha privilegios, nao escreve no sistema nem ve /home.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

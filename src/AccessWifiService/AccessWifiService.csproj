@@ -25,6 +25,8 @@
     </None>
     <None Update="appsettings.Development.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <!-- Vai para a pasta de build (dev), nunca para o pacote de producao: tem segredos de dev. -->
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
     </None>
   </ItemGroup>
 

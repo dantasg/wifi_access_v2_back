@@ -1,5 +1,11 @@
 # 🚀 Deploy do AccessWifi (Backend) numa VPS Linux — passo a passo completo
 
+> ⚠️ **A produção atual NÃO segue este guia.** Ela roda numa VPS com o painel iContainer: o nginx
+> é o do painel, o código é compilado na sua máquina e enviado por script. Para publicar, voltar
+> versão ou entender como está montada, use o **[PRODUCAO.md](PRODUCAO.md)**.
+>
+> Este guia continua válido para montar uma VPS "limpa", sem painel, do zero.
+
 Guia 100% do zero: do **primeiro acesso SSH** até a **API rodando em produção** com HTTPS,
 banco, serviço em segundo plano (relatórios/retenção) e todos os segredos configurados.
 

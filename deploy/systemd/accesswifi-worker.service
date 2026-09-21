@@ -1,0 +1,23 @@
+[Unit]
+Description=AccessWifi Worker (relatorios e retencao de leads)
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+WorkingDirectory=/opt/accesswifi/worker
+ExecStart=/usr/bin/dotnet /opt/accesswifi/worker/AccessWifiService.dll
+Restart=always
+RestartSec=5
+User=accesswifi
+Group=accesswifi
+EnvironmentFile=/etc/accesswifi/accesswifi.env
+
+SyslogIdentifier=accesswifi-worker
+# Endurecimento: o servico nao ganha privilegios, nao escreve no sistema nem ve /home.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
