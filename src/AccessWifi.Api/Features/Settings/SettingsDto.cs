@@ -9,9 +9,12 @@ public record SettingsDto(
     string? Banner,
     string Ssid,
     int AccessMinutes,
-    string? RedirectUrl)
+    string? RedirectUrl,
+    // Slug da unidade resolvida. Só sai na leitura do portal (o front precisa dele para o
+    // /authorize quando a unidade veio pelo host); ignorado no PUT do painel.
+    string? Unit = null)
 {
-    public static SettingsDto FromEntity(PortalSettings objSettings)
+    public static SettingsDto FromEntity(PortalSettings objSettings, string? sUnitSlug = null)
     {
         return new SettingsDto(
             Colors: ThemeColorsDto.FromEntity(objSettings.Colors),
@@ -20,7 +23,8 @@ public record SettingsDto(
             Banner: objSettings.Banner,
             Ssid: objSettings.Ssid,
             AccessMinutes: objSettings.AccessMinutes,
-            RedirectUrl: objSettings.RedirectUrl);
+            RedirectUrl: objSettings.RedirectUrl,
+            Unit: sUnitSlug);
     }
 }
 

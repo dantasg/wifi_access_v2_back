@@ -1,4 +1,5 @@
 using AccessWifi.Api.Features.Authorize;
+using AccessWifi.Api.Features.Units;
 using Models.Persistence;
 using AccessWifi.Api.Infrastructure.Unifi;
 using Microsoft.AspNetCore.Mvc;
@@ -35,13 +36,15 @@ public class AuthorizeController : ControllerBase
     public async Task<ActionResult<AuthorizeResponse>> Post(
         AuthorizeRequest objRequest, CancellationToken objCancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(objRequest.Unit))
+        // A unidade vem pelo slug ou, quando a UniFi não pôde mandar a query string, pelo host
+        // em que o portal foi aberto (ver UnitResolver).
+        if (string.IsNullOrWhiteSpace(objRequest.Unit) && string.IsNullOrWhiteSpace(objRequest.Host))
         {
             return BadRequest(new AuthorizeResponse(false, Error: "Unidade não informada."));
         }
 
-        Unit? objUnit = await _objDbContext.Units
-            .FirstOrDefaultAsync(unit => unit.Slug == objRequest.Unit, objCancellationToken);
+        Unit? objUnit = await UnitResolver.FindAsync(
+            _objDbContext.Units, objRequest.Unit, objRequest.Host, objCancellationToken);
         if (objUnit is null || !objUnit.Active)
         {
             return BadRequest(new AuthorizeResponse(false, Error: "Unidade não encontrada ou inativa."));
@@ -87,6 +90,7 @@ public class AuthorizeController : ControllerBase
 
         int iAccessMinutes = objCompanySettings?.AccessMinutes ?? DefaultAccessMinutes;
 
+        bool bUnifiFalhou = false;
         try
         {
             await _objUnifiClient.AuthorizeGuestAsync(
@@ -97,6 +101,16 @@ public class AuthorizeController : ControllerBase
             // Não logar dados pessoais — só a unidade e o motivo técnico da falha.
             _objLogger.LogError(
                 objException, "Falha ao autorizar guest na UniFi da unidade {Slug}.", objUnit.Slug);
+            bUnifiFalhou = true;
+        }
+
+        // No modo nuvem a primeira chamada descobre o SiteId da unidade e o grava na entidade;
+        // persistir aqui evita repetir essa descoberta a cada visitante. Sem alteração pendente,
+        // o SaveChanges não gera comando algum.
+        await _objDbContext.SaveChangesAsync(objCancellationToken);
+
+        if (bUnifiFalhou)
+        {
             return StatusCode(
                 StatusCodes.Status502BadGateway,
                 new AuthorizeResponse(false, Error: "Falha ao autorizar na UniFi."));

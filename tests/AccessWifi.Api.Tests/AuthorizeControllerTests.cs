@@ -32,6 +32,12 @@ public class AuthorizeControllerTests
             IMinutosRecebidos = iAccessMinutes;
             return Task.CompletedTask;
         }
+
+        public Task<string> TestConnectionAsync(
+            CompanyUnifi objConfig, CancellationToken objCancellationToken = default)
+        {
+            return Task.FromResult("ok");
+        }
     }
 
     /// <summary>Cria empresa + unidade (com a controladora) e devolve a unidade.</summary>

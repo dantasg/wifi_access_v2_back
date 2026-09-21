@@ -57,7 +57,7 @@ public class SettingsControllerTests
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         SettingsController objController = new SettingsController(objDbContext);
 
-        ActionResult<SettingsDto> objResult = await objController.Get(null, CancellationToken.None);
+        ActionResult<SettingsDto> objResult = await objController.Get(null, null, CancellationToken.None);
 
         Assert.IsType<BadRequestObjectResult>(objResult.Result);
     }
@@ -68,7 +68,7 @@ public class SettingsControllerTests
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         SettingsController objController = new SettingsController(objDbContext);
 
-        ActionResult<SettingsDto> objResult = await objController.Get("nada", CancellationToken.None);
+        ActionResult<SettingsDto> objResult = await objController.Get("nada", null, CancellationToken.None);
 
         NotFoundObjectResult objNotFound = Assert.IsType<NotFoundObjectResult>(objResult.Result);
         ErrorResponse objError = Assert.IsType<ErrorResponse>(objNotFound.Value);
@@ -83,7 +83,7 @@ public class SettingsControllerTests
         string sUnitSlug = CreateUnit(objDbContext, objCompany.Id, "doce-matriz");
         SettingsController objController = new SettingsController(objDbContext);
 
-        ActionResult<SettingsDto> objResult = await objController.Get(sUnitSlug, CancellationToken.None);
+        ActionResult<SettingsDto> objResult = await objController.Get(sUnitSlug, null, CancellationToken.None);
 
         OkObjectResult objOk = Assert.IsType<OkObjectResult>(objResult.Result);
         SettingsDto objSettings = Assert.IsType<SettingsDto>(objOk.Value);
@@ -111,7 +111,7 @@ public class SettingsControllerTests
         PortalSettings objRow = Assert.Single(objDbContext.PortalSettings);
         Assert.Equal(objCompany.Id, objRow.IDCompany);
 
-        ActionResult<SettingsDto> objGetResult = await objController.Get(sUnitSlug, CancellationToken.None);
+        ActionResult<SettingsDto> objGetResult = await objController.Get(sUnitSlug, null, CancellationToken.None);
         SettingsDto objLoaded =
             Assert.IsType<SettingsDto>(Assert.IsType<OkObjectResult>(objGetResult.Result).Value);
         Assert.Equal("#112233", objLoaded.Colors.Brand);
@@ -230,7 +230,7 @@ public class SettingsControllerTests
             "https://instagram.com/doce",
             objDbContext.PortalSettings.Single().RedirectUrl);
 
-        ActionResult<SettingsDto> objGetResult = await objController.Get(sUnitSlug, CancellationToken.None);
+        ActionResult<SettingsDto> objGetResult = await objController.Get(sUnitSlug, null, CancellationToken.None);
         SettingsDto objLoaded =
             Assert.IsType<SettingsDto>(Assert.IsType<OkObjectResult>(objGetResult.Result).Value);
         Assert.Equal("https://instagram.com/doce", objLoaded.RedirectUrl);

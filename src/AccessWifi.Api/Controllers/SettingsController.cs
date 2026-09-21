@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using AccessWifi.Api.Features;
 using AccessWifi.Api.Features.Companies;
 using AccessWifi.Api.Features.Settings;
+using AccessWifi.Api.Features.Units;
 using Models.Persistence;
 using AccessWifi.Api.Infrastructure.Security;
 using Microsoft.AspNetCore.Authorization;
@@ -30,22 +31,24 @@ public partial class SettingsController : ControllerBase
     }
 
     /// <summary>
-    /// Tema/marca do portal (?unit=slug) — público, porque o visitante carrega o tema sem
-    /// estar logado. O tema é da empresa dona da unidade. Sem linha gravada, devolve os
-    /// padrões da marca.
+    /// Tema/marca do portal — público, porque o visitante carrega o tema sem estar logado.
+    /// A unidade vem por <c>?unit=slug</c> ou, quando a UniFi não pôde mandar a query string,
+    /// por <c>?host=</c> (o endereço em que o portal foi aberto). O tema é da empresa dona da
+    /// unidade; sem linha gravada, devolve os padrões da marca.
     /// </summary>
     [HttpGet("/settings")]
     public async Task<ActionResult<SettingsDto>> Get(
-        [FromQuery(Name = "unit")] string? sUnitSlug, CancellationToken objCancellationToken)
+        [FromQuery(Name = "unit")] string? sUnitSlug,
+        [FromQuery(Name = "host")] string? sPortalHost,
+        CancellationToken objCancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(sUnitSlug))
+        if (string.IsNullOrWhiteSpace(sUnitSlug) && string.IsNullOrWhiteSpace(sPortalHost))
         {
-            return BadRequest(new ErrorResponse("Informe a unidade (?unit=slug)."));
+            return BadRequest(new ErrorResponse("Informe a unidade (?unit=slug) ou o host (?host=)."));
         }
 
-        Unit? objUnit = await _objDbContext.Units
-            .AsNoTracking()
-            .FirstOrDefaultAsync(unit => unit.Slug == sUnitSlug, objCancellationToken);
+        Unit? objUnit = await UnitResolver.FindAsync(
+            _objDbContext.Units.AsNoTracking(), sUnitSlug, sPortalHost, objCancellationToken);
         if (objUnit is null || !objUnit.Active)
         {
             return NotFound(new ErrorResponse("Unidade não encontrada."));
@@ -65,7 +68,9 @@ public partial class SettingsController : ControllerBase
                 settings => settings.IDCompany == objUnit.IDCompany, objCancellationToken)
             ?? new PortalSettings { IDCompany = objUnit.IDCompany };
 
-        return Ok(SettingsDto.FromEntity(objSettings));
+        // Devolve o slug resolvido: quando a unidade veio pelo host, é assim que o front
+        // descobre o que mandar depois no /authorize.
+        return Ok(SettingsDto.FromEntity(objSettings, objUnit.Slug));
     }
 
     /// <summary>

@@ -1,19 +1,23 @@
 using System.Net;
 using System.Text.Json;
-using AccessWifi.Api.Features.Companies;
 using Models.DataBase;
 using Models.Security;
 
 namespace AccessWifi.Api.Infrastructure.Unifi;
 
-public class UnifiClient : IUnifiClient
+/// <summary>
+/// Fala direto com a controladora da unidade (API clássica, com usuário e senha de admin).
+/// Exige que o servidor alcance o equipamento pela rede — ou seja, IP público ou DDNS.
+/// Para unidades sem isso, ver <see cref="UnifiCloudClient"/>.
+/// </summary>
+public class UnifiLocalClient : IUnifiClient
 {
     private static readonly JsonSerializerOptions s_objJsonOptions =
         new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     private readonly IEncryptor _objEncryptor;
 
-    public UnifiClient(IEncryptor objEncryptor)
+    public UnifiLocalClient(IEncryptor objEncryptor)
     {
         _objEncryptor = objEncryptor;
     }
@@ -25,27 +29,8 @@ public class UnifiClient : IUnifiClient
         CompanyUnifi objConfig, string sMac, int iAccessMinutes,
         CancellationToken objCancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(objConfig.Host) ||
-            !Uri.TryCreate(objConfig.Host, UriKind.Absolute, out Uri? objBaseAddress))
-        {
-            throw new UnifiException("Controladora UniFi não configurada para esta empresa.");
-        }
-
-        using HttpClientHandler objHandler = new HttpClientHandler
-        {
-            UseCookies = true,
-            CookieContainer = new CookieContainer(),
-        };
-        if (!objConfig.VerifySsl)
-        {
-            // UDM/Cloud Gateway usam certificado self-signed.
-            objHandler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
-        }
-        using HttpClient objHttpClient = new HttpClient(objHandler)
-        {
-            BaseAddress = objBaseAddress,
-            Timeout = TimeSpan.FromSeconds(15),
-        };
+        using HttpClientHandler objHandler = CreateHandler(objConfig);
+        using HttpClient objHttpClient = CreateHttpClient(objConfig, objHandler);
 
         string? sCsrfToken = await LoginAsync(objHttpClient, objConfig, objCancellationToken);
 
@@ -85,6 +70,47 @@ public class UnifiClient : IUnifiClient
                     $"Controladora recusou a autorização (HTTP {(int)objResponse.StatusCode}).");
             }
         }
+    }
+
+    public async Task<string> TestConnectionAsync(
+        CompanyUnifi objConfig, CancellationToken objCancellationToken = default)
+    {
+        using HttpClientHandler objHandler = CreateHandler(objConfig);
+        using HttpClient objHttpClient = CreateHttpClient(objConfig, objHandler);
+
+        await LoginAsync(objHttpClient, objConfig, objCancellationToken);
+
+        return $"Login na controladora funcionou (site \"{objConfig.Site}\").";
+    }
+
+    private static HttpClientHandler CreateHandler(CompanyUnifi objConfig)
+    {
+        HttpClientHandler objHandler = new HttpClientHandler
+        {
+            UseCookies = true,
+            CookieContainer = new CookieContainer(),
+        };
+        if (!objConfig.VerifySsl)
+        {
+            // UDM/Cloud Gateway usam certificado self-signed.
+            objHandler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
+        }
+        return objHandler;
+    }
+
+    private static HttpClient CreateHttpClient(CompanyUnifi objConfig, HttpClientHandler objHandler)
+    {
+        if (string.IsNullOrWhiteSpace(objConfig.Host) ||
+            !Uri.TryCreate(objConfig.Host, UriKind.Absolute, out Uri? objBaseAddress))
+        {
+            throw new UnifiException("Controladora UniFi não configurada para esta unidade.");
+        }
+
+        return new HttpClient(objHandler)
+        {
+            BaseAddress = objBaseAddress,
+            Timeout = TimeSpan.FromSeconds(15),
+        };
     }
 
     private async Task<string?> LoginAsync(

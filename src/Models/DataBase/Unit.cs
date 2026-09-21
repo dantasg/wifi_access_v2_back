@@ -12,6 +12,13 @@ namespace Models.DataBase
 
         /// <summary>Identifica a unidade na URL do portal (?unit=slug). Único globalmente.</summary>
         public string Slug { get; set; } = "";
+
+        /// <summary>
+        /// Endereço (FQDN) em que o portal desta unidade é aberto — ex.: "itaituba.wifi.exemplo.com.br".
+        /// A UniFi só aceita um host no campo de portal externo, sem query string, então é por aqui
+        /// que o portal descobre de qual unidade ele é quando não vem "?unit=". Vazio = não usa.
+        /// </summary>
+        public string PortalHost { get; set; } = "";
         public bool Active { get; set; } = true;
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

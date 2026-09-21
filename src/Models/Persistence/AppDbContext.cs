@@ -41,17 +41,27 @@ namespace Models.Persistence
                 objUnit.Property(unit => unit.Name).HasMaxLength(120);
                 objUnit.Property(unit => unit.Slug).HasMaxLength(40);
                 objUnit.HasIndex(unit => unit.Slug).IsUnique();
+                objUnit.Property(unit => unit.PortalHost).HasMaxLength(200);
+                // Único só entre as unidades que realmente usam host (o vazio pode repetir).
+                objUnit.HasIndex(unit => unit.PortalHost)
+                    .IsUnique()
+                    .HasFilter("\"PortalHost\" <> ''");
                 objUnit.HasOne<Company>()
                     .WithMany()
                     .HasForeignKey(unit => unit.IDCompany)
                     .OnDelete(DeleteBehavior.Restrict);
                 objUnit.OwnsOne(unit => unit.Unifi, objUnifi =>
                 {
+                    objUnifi.Property(unifi => unifi.Mode).HasMaxLength(10);
                     objUnifi.Property(unifi => unifi.Host).HasMaxLength(200);
                     objUnifi.Property(unifi => unifi.Site).HasMaxLength(60);
                     objUnifi.Property(unifi => unifi.Username).HasMaxLength(100);
                     // Guardada cifrada (AES-GCM, base64) — maior que o texto puro.
                     objUnifi.Property(unifi => unifi.Password).HasMaxLength(512);
+                    objUnifi.Property(unifi => unifi.ConsoleId).HasMaxLength(120);
+                    // Cifrada, mesmo tratamento da senha.
+                    objUnifi.Property(unifi => unifi.ApiKey).HasMaxLength(512);
+                    objUnifi.Property(unifi => unifi.SiteId).HasMaxLength(60);
                 });
             });
 

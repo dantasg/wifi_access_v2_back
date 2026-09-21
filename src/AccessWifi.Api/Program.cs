@@ -119,8 +119,19 @@ builder.Services.AddScoped<TokenService>();
 // resolvida sob demanda para não exigir a chave no design-time das migrations.
 builder.Services.AddSingleton<IEncryptor>(
     _ => new AesGcmEncryptor(objConfiguration["Encryption:Key"]));
-// A config da controladora vem por empresa (banco); o client é criado por chamada.
-builder.Services.AddSingleton<IUnifiClient, UnifiClient>();
+// A config da controladora vem por unidade (banco). No modo local o client é criado por chamada
+// (cada unidade tem host e política de certificado próprios); no modo nuvem o destino é sempre
+// api.ui.com, então vale um HttpClient nomeado e reaproveitado.
+builder.Services.AddHttpClient(UnifiCloudClient.HttpClientName, objUnifiHttpClient =>
+{
+    objUnifiHttpClient.BaseAddress = new Uri("https://api.ui.com/");
+    // D8: a Ubiquiti corta a chamada repassada em 25 s; 20 s deixa margem para respondermos antes.
+    objUnifiHttpClient.Timeout = TimeSpan.FromSeconds(20);
+});
+builder.Services.AddSingleton<UnifiLocalClient>();
+builder.Services.AddSingleton<UnifiCloudClient>();
+// O router escolhe o caminho pelo Mode da unidade — os controllers não precisam saber qual é.
+builder.Services.AddSingleton<IUnifiClient, UnifiClientRouter>();
 
 builder.Services.AddControllers().AddJsonOptions(objJsonOptions =>
     objJsonOptions.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull);

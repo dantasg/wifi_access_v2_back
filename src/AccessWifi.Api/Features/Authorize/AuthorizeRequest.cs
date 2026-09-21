@@ -10,5 +10,10 @@ namespace AccessWifi.Api.Features.Authorize
         string? Mac,
         string? Ap,
         string? Ssid,
-        string? Url);
+        string? Url,
+        /// <summary>
+        /// Endereço em que o portal foi aberto. Usado para achar a unidade quando não veio
+        /// "unit" — a UniFi não consegue mandar query string para o portal externo.
+        /// </summary>
+        string? Host = null);
 }
