@@ -1,5 +1,22 @@
 # Proposta — Portal rápido na boca do caixa
 
+> **Status (2026-09-21): implementada e medida em produção** (back `0b23b0c`, front `41ff64d`).
+> Aprovadas as recomendações D1–D6.
+>
+> | Medido em produção, mesmo método do §2 | Antes | Depois |
+> | --- | --- | --- |
+> | `/authorize` no servidor (3 rodadas) | 2,37 · 1,27 · 1,85 s — **média 1,83 s** | 0,42 · 0,77 · 0,79 s — **média 0,66 s** |
+> | Espera fixa no front após "Conectado!" | 1,2 s | **0** |
+> | **Toque → redirecionamento** | **~3 s** | **~0,7 s** |
+> | `POST /authorize/prepare` (o portal não espera por ele) | — | 50 ms |
+> | Tema (`/settings`, compactado) | 193 KB | **47 KB** |
+>
+> Nas medições, a controladora recusou a autorização (`422`) de propósito: foram usados aparelhos da
+> rede interna da loja, para não mexer em visitantes de verdade. Mas o pedido faz o caminho completo
+> até o gateway e volta, então o tempo é o mesmo de uma liberação real. Os leads de teste foram
+> apagados. O piso que sobra, ~0,4–0,8 s, é uma ida à loja pelo túnel da Ubiquiti e não depende de
+> nós.
+
 ## 1. Entendimento do pedido
 
 O TI que testou em Itaituba achou o portal **lento**. E o cenário que importa é o pior possível: o
