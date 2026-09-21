@@ -61,7 +61,9 @@ string sFrontOrigin = objConfiguration["FrontOrigin"] ?? "http://localhost:5173"
 builder.Services.AddCors(objCorsOptions => objCorsOptions.AddDefaultPolicy(objPolicy => objPolicy
     .WithOrigins(sFrontOrigin)
     .WithMethods("GET", "POST", "PUT")
-    .WithHeaders("Content-Type", "Authorization")));
+    // ngrok-skip-browser-warning: o front envia sempre (pula o aviso do ngrok free).
+    // Sem ele na lista, o preflight falha quando a API é exposta por túnel.
+    .WithHeaders("Content-Type", "Authorization", "ngrok-skip-browser-warning")));
 
 // ------------------------------------------------------------------- JWT (admin)
 JwtOptions objJwtOptions = objConfiguration.GetSection(JwtOptions.SectionName).Get<JwtOptions>()
