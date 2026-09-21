@@ -35,6 +35,10 @@ public class PortalHostTests
         public Task<string> TestConnectionAsync(
             CompanyUnifi objConfig, CancellationToken objCancellationToken = default) =>
             Task.FromResult("ok");
+
+        public Task PrepareAsync(
+            CompanyUnifi objConfig, string sMac, CancellationToken objCancellationToken = default) =>
+            Task.CompletedTask;
     }
 
     private static Unit CreateUnit(

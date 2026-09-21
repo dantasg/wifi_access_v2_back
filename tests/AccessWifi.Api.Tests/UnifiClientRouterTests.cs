@@ -1,4 +1,5 @@
 using AccessWifi.Api.Infrastructure.Unifi;
+using Microsoft.Extensions.Caching.Memory;
 using Models.DataBase;
 
 namespace AccessWifi.Api.Tests;
@@ -19,7 +20,9 @@ public class UnifiClientRouterTests
     {
         return new UnifiClientRouter(
             new UnifiLocalClient(TestHelpers.CreateEncryptor()),
-            new UnifiCloudClient(new StubHttpClientFactory(), TestHelpers.CreateEncryptor()));
+            new UnifiCloudClient(
+                new StubHttpClientFactory(), TestHelpers.CreateEncryptor(),
+                new MemoryCache(new MemoryCacheOptions())));
     }
 
     [Fact]
@@ -59,5 +62,14 @@ public class UnifiClientRouterTests
 
         // Só o cliente da nuvem fala em "nuvem UniFi"; o local reclama da "Controladora".
         Assert.Contains("da nuvem UniFi", objException.Message);
+    }
+
+    [Fact]
+    public async Task Prepare_ModoLocal_ConcluiSemFazerNada()
+    {
+        // D6: no modo local a autorização já é uma chamada direta pelo MAC, não há o que adiantar.
+        CompanyUnifi objConfig = new CompanyUnifi { Mode = UnifiMode.Local };
+
+        await CreateRouter().PrepareAsync(objConfig, "36:9d:94:1e:aa:10");
     }
 }

@@ -32,6 +32,12 @@ public class UnifiClientRouter : IUnifiClient
         return Resolve(objConfig).TestConnectionAsync(objConfig, objCancellationToken);
     }
 
+    public Task PrepareAsync(
+        CompanyUnifi objConfig, string sMac, CancellationToken objCancellationToken = default)
+    {
+        return Resolve(objConfig).PrepareAsync(objConfig, sMac, objCancellationToken);
+    }
+
     /// <summary>Qualquer valor que não seja "Cloud" cai no modo local — o padrão histórico.</summary>
     private IUnifiClient Resolve(CompanyUnifi objConfig)
     {

@@ -38,6 +38,15 @@ public class AuthorizeControllerTests
         {
             return Task.FromResult("ok");
         }
+
+        public string? SMacPreparado { get; private set; }
+
+        public Task PrepareAsync(
+            CompanyUnifi objConfig, string sMac, CancellationToken objCancellationToken = default)
+        {
+            SMacPreparado = sMac;
+            return Task.CompletedTask;
+        }
     }
 
     /// <summary>Cria empresa + unidade (com a controladora) e devolve a unidade.</summary>
@@ -294,5 +303,74 @@ public class AuthorizeControllerTests
         Assert.False(objResponse.Authorized);
         Assert.Equal("Falha ao autorizar na UniFi.", objResponse.Error);
         Assert.Single(objDbContext.Leads);
+    }
+
+    // ------------------------------------------------------------------ POST /authorize/prepare
+
+    [Fact]
+    public async Task Prepare_DadosValidos_Retorna202EAdiantaABusca()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        CreateUnit(objDbContext);
+        FakeUnifiClient objFake = new FakeUnifiClient();
+        AuthorizeController objController = CreateController(objDbContext, objFake);
+
+        IActionResult objResult = await objController.Prepare(
+            new PrepareAuthorizeRequest("doce-matriz", null, "AA:BB:CC:DD:EE:FF"), CancellationToken.None);
+
+        Assert.IsType<AcceptedResult>(objResult);
+        Assert.Equal("AA:BB:CC:DD:EE:FF", objFake.SMacPreparado);
+        // Preparar não é autorizar: nada gravado, ninguém liberado.
+        Assert.Empty(objDbContext.Leads);
+        Assert.Null(objFake.SMacAutorizado);
+    }
+
+    [Theory]
+    [InlineData("doce-matriz", null)]
+    [InlineData(null, "AA:BB:CC:DD:EE:FF")]
+    public async Task Prepare_SemUnidadeOuSemMac_Retorna400(string? sUnit, string? sMac)
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        CreateUnit(objDbContext);
+        FakeUnifiClient objFake = new FakeUnifiClient();
+        AuthorizeController objController = CreateController(objDbContext, objFake);
+
+        IActionResult objResult = await objController.Prepare(
+            new PrepareAuthorizeRequest(sUnit, null, sMac), CancellationToken.None);
+
+        Assert.IsType<BadRequestObjectResult>(objResult);
+        Assert.Null(objFake.SMacPreparado);
+    }
+
+    [Fact]
+    public async Task Prepare_UnidadeInexistente_Retorna404()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        CreateUnit(objDbContext);
+        FakeUnifiClient objFake = new FakeUnifiClient();
+        AuthorizeController objController = CreateController(objDbContext, objFake);
+
+        IActionResult objResult = await objController.Prepare(
+            new PrepareAuthorizeRequest("outra", null, "AA:BB:CC:DD:EE:FF"), CancellationToken.None);
+
+        Assert.IsType<NotFoundObjectResult>(objResult);
+        Assert.Null(objFake.SMacPreparado);
+    }
+
+    [Fact]
+    public async Task Prepare_UnidadeInativa_Retorna404()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Unit objUnit = CreateUnit(objDbContext);
+        objUnit.Active = false;
+        objDbContext.SaveChanges();
+        FakeUnifiClient objFake = new FakeUnifiClient();
+        AuthorizeController objController = CreateController(objDbContext, objFake);
+
+        IActionResult objResult = await objController.Prepare(
+            new PrepareAuthorizeRequest("doce-matriz", null, "AA:BB:CC:DD:EE:FF"), CancellationToken.None);
+
+        Assert.IsType<NotFoundObjectResult>(objResult);
+        Assert.Null(objFake.SMacPreparado);
     }
 }

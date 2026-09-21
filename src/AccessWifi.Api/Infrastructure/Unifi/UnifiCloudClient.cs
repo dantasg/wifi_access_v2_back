@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Caching.Memory;
 using Models.DataBase;
 using Models.Security;
 
@@ -13,7 +14,9 @@ namespace AccessWifi.Api.Infrastructure.Unifi;
 /// senha de administrador (a autenticação é por chave de API).
 ///
 /// São três chamadas por visitante: descobrir o site (só na primeira vez), achar o aparelho pelo
-/// MAC e autorizar. Validado em campo na unidade Itaituba em 2026-09-20.
+/// MAC e autorizar. A busca do aparelho é adiantada enquanto ele preenche o formulário
+/// (PrepareAsync), então na hora do toque em "Conectar" sobra só a autorização.
+/// Validado em campo na unidade Itaituba em 2026-09-20.
 /// </summary>
 public partial class UnifiCloudClient : IUnifiClient
 {
@@ -39,19 +42,78 @@ public partial class UnifiCloudClient : IUnifiClient
     [GeneratedRegex("^[0-9a-f]{12}$")]
     private static partial Regex MacRegex();
 
+    /// <summary>
+    /// Quanto tempo o ID do aparelho buscado pelo PrepareAsync fica guardado. Cobre com folga o
+    /// tempo de preencher o formulário; o ID de um aparelho não muda nesse intervalo.
+    /// </summary>
+    private static readonly TimeSpan PreparedTtl = TimeSpan.FromMinutes(15);
+
+    /// <summary>Limite da busca em segundo plano (não há requisição do visitante esperando).</summary>
+    private static readonly TimeSpan PrepareTimeout = TimeSpan.FromSeconds(20);
+
     private readonly IHttpClientFactory _objHttpClientFactory;
     private readonly IEncryptor _objEncryptor;
+    private readonly IMemoryCache _objCache;
 
-    public UnifiCloudClient(IHttpClientFactory objHttpClientFactory, IEncryptor objEncryptor)
+    public UnifiCloudClient(
+        IHttpClientFactory objHttpClientFactory, IEncryptor objEncryptor, IMemoryCache objCache)
     {
         _objHttpClientFactory = objHttpClientFactory;
         _objEncryptor = objEncryptor;
+        _objCache = objCache;
     }
 
     private record PagedResponse<T>(List<T>? Data, int TotalCount);
     private record SiteItem(string Id, string? InternalReference, string? Name);
     private record ClientItem(string Id, string? MacAddress);
     private record AuthorizeGuestPayload(string Action, int TimeLimitMinutes);
+
+    /// <summary>
+    /// Adianta a busca do ID do aparelho enquanto o visitante preenche o formulário (medido em campo:
+    /// cada ida ao console da loja leva 0,4–1 s, e o cliente leva 30–70 s no formulário). Guarda a
+    /// busca — inclusive enquanto ainda está em andamento — para o AuthorizeGuestAsync só autorizar.
+    /// Nunca lança: qualquer problema aqui só faz o /authorize buscar como sempre buscou.
+    /// </summary>
+    public Task PrepareAsync(
+        CompanyUnifi objConfig, string sMac, CancellationToken objCancellationToken = default)
+    {
+        // Sem o site já conhecido não prepara: descobrir o site grava na entidade, e aqui (segundo
+        // plano, depois da requisição) não há quem persista.
+        if (!Guid.TryParse(objConfig.SiteId, out _))
+        {
+            return Task.CompletedTask;
+        }
+
+        string sApiKey, sBasePath, sNormalizedMac;
+        try
+        {
+            sApiKey = ReadApiKey(objConfig);
+            sBasePath = BuildBasePath(objConfig);
+            sNormalizedMac = NormalizeMac(sMac);
+        }
+        catch (UnifiException)
+        {
+            return Task.CompletedTask; // configuração ou MAC inválidos: o /authorize reporta direito
+        }
+
+        string sKey = CacheKey(objConfig, sNormalizedMac);
+        if (!_objCache.TryGetValue(sKey, out Task<string?>? _))
+        {
+            Task<string?> objBusca = FindClientIdDetachedAsync(sApiKey, sBasePath, objConfig.SiteId, sNormalizedMac);
+            _objCache.Set(sKey, objBusca, PreparedTtl);
+            // Resultado inútil não fica guardado: sem achar (ou com erro), o /authorize busca de novo.
+            _ = objBusca.ContinueWith(objTask =>
+            {
+                _ = objTask.Exception; // marca a exceção como observada
+                if (!objTask.IsCompletedSuccessfully || objTask.Result is null)
+                {
+                    _objCache.Remove(sKey);
+                }
+            }, TaskScheduler.Default);
+        }
+
+        return Task.CompletedTask;
+    }
 
     public async Task AuthorizeGuestAsync(
         CompanyUnifi objConfig, string sMac, int iAccessMinutes,
@@ -64,7 +126,73 @@ public partial class UnifiCloudClient : IUnifiClient
 
         string sSiteId = await EnsureSiteIdAsync(
             objHttpClient, objConfig, sApiKey, sBasePath, objCancellationToken);
+        string sKey = CacheKey(objConfig, sNormalizedMac);
 
+        // Caminho rápido: o ID já foi buscado enquanto o visitante preenchia o formulário.
+        string? sClientId = await TryGetPreparedClientIdAsync(sKey, objCancellationToken);
+        bool bUsouPreparado = sClientId is not null;
+        sClientId ??= await FindClientIdWithRetryAsync(
+            objHttpClient, sApiKey, sBasePath, sSiteId, sNormalizedMac, objCancellationToken);
+
+        HttpResponseMessage objResponse = await SendAuthorizeAsync(
+            objHttpClient, sApiKey, sBasePath, sSiteId, sClientId, iAccessMinutes, objCancellationToken);
+
+        if (bUsouPreparado && objResponse.StatusCode == HttpStatusCode.NotFound)
+        {
+            // O ID guardado não vale mais (o aparelho saiu e voltou, a controladora recriou o
+            // registro…). Descarta e faz o caminho completo uma vez.
+            objResponse.Dispose();
+            _objCache.Remove(sKey);
+            sClientId = await FindClientIdWithRetryAsync(
+                objHttpClient, sApiKey, sBasePath, sSiteId, sNormalizedMac, objCancellationToken);
+            objResponse = await SendAuthorizeAsync(
+                objHttpClient, sApiKey, sBasePath, sSiteId, sClientId, iAccessMinutes, objCancellationToken);
+        }
+
+        using (objResponse)
+        {
+            await EnsureSuccessAsync(objResponse, "autorizar o visitante", objCancellationToken);
+        }
+    }
+
+    private static string CacheKey(CompanyUnifi objConfig, string sNormalizedMac)
+    {
+        return $"unifi-cloud-client:{objConfig.ConsoleId.Trim()}:{objConfig.SiteId}:{sNormalizedMac}";
+    }
+
+    /// <summary>ID preparado, esperando a busca terminar se ela ainda estiver em andamento.</summary>
+    private async Task<string?> TryGetPreparedClientIdAsync(string sKey, CancellationToken objCancellationToken)
+    {
+        if (!_objCache.TryGetValue(sKey, out Task<string?>? objBusca) || objBusca is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await objBusca.WaitAsync(objCancellationToken);
+        }
+        catch (Exception objException) when ((objException is UnifiException or OperationCanceledException)
+            && !objCancellationToken.IsCancellationRequested)
+        {
+            return null; // a preparação falhou: segue pelo caminho completo
+        }
+    }
+
+    private async Task<string?> FindClientIdDetachedAsync(
+        string sApiKey, string sBasePath, string sSiteId, string sNormalizedMac)
+    {
+        // Não usa o token da requisição: ela já terminou (a rota responde 202 na hora).
+        using CancellationTokenSource objTimeout = new CancellationTokenSource(PrepareTimeout);
+        HttpClient objHttpClient = _objHttpClientFactory.CreateClient(HttpClientName);
+        return await FindClientIdAsync(
+            objHttpClient, sApiKey, sBasePath, sSiteId, sNormalizedMac, objTimeout.Token);
+    }
+
+    private async Task<string> FindClientIdWithRetryAsync(
+        HttpClient objHttpClient, string sApiKey, string sBasePath, string sSiteId,
+        string sNormalizedMac, CancellationToken objCancellationToken)
+    {
         string? sClientId = await FindClientIdAsync(
             objHttpClient, sApiKey, sBasePath, sSiteId, sNormalizedMac, objCancellationToken);
         if (sClientId is null)
@@ -74,12 +202,14 @@ public partial class UnifiCloudClient : IUnifiClient
                 objHttpClient, sApiKey, sBasePath, sSiteId, sNormalizedMac, objCancellationToken);
         }
 
-        if (sClientId is null)
-        {
-            throw new UnifiException(
-                "Aparelho não encontrado na rede da unidade (ainda não apareceu na controladora).");
-        }
+        return sClientId ?? throw new UnifiException(
+            "Aparelho não encontrado na rede da unidade (ainda não apareceu na controladora).");
+    }
 
+    private static async Task<HttpResponseMessage> SendAuthorizeAsync(
+        HttpClient objHttpClient, string sApiKey, string sBasePath, string sSiteId, string sClientId,
+        int iAccessMinutes, CancellationToken objCancellationToken)
+    {
         AuthorizeGuestPayload objPayload = new AuthorizeGuestPayload(
             Action: "AUTHORIZE_GUEST_ACCESS",
             TimeLimitMinutes: iAccessMinutes);
@@ -91,9 +221,7 @@ public partial class UnifiCloudClient : IUnifiClient
         };
         objRequest.Headers.Add(ApiKeyHeader, sApiKey);
 
-        using HttpResponseMessage objResponse = await SendAsync(
-            objHttpClient, objRequest, objCancellationToken);
-        await EnsureSuccessAsync(objResponse, "autorizar o visitante", objCancellationToken);
+        return await SendAsync(objHttpClient, objRequest, objCancellationToken);
     }
 
     public async Task<string> TestConnectionAsync(

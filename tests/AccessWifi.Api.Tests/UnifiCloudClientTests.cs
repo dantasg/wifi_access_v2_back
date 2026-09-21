@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using AccessWifi.Api.Infrastructure.Unifi;
+using Microsoft.Extensions.Caching.Memory;
 using Models.DataBase;
 
 namespace AccessWifi.Api.Tests;
@@ -35,9 +36,19 @@ public class UnifiCloudClientTests
         public List<string> ObjBodies { get; } = [];
         public required Func<HttpRequestMessage, int, HttpResponseMessage> ObjResponder { get; init; }
 
+        /// <summary>Se definido, a busca do aparelho só responde quando o portão abrir.</summary>
+        public TaskCompletionSource? ObjPortao { get; set; }
+
+        public int IBuscas => ObjRequests.Count(objRequest => objRequest.RequestUri!.ToString().Contains("/clients?filter="));
+        public int IAutorizacoes => ObjRequests.Count(objRequest => objRequest.Method == HttpMethod.Post);
+
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage objRequest, CancellationToken objCancellationToken)
         {
+            if (ObjPortao is not null && objRequest.RequestUri!.ToString().Contains("/clients?filter="))
+            {
+                await ObjPortao.Task.WaitAsync(objCancellationToken);
+            }
             ObjBodies.Add(objRequest.Content is null
                 ? ""
                 : await objRequest.Content.ReadAsStringAsync(objCancellationToken));
@@ -94,7 +105,8 @@ public class UnifiCloudClientTests
     {
         StubHandler objHandler = new StubHandler { ObjResponder = objResponder };
         UnifiCloudClient objClient = new UnifiCloudClient(
-            new StubHttpClientFactory(objHandler), TestHelpers.CreateEncryptor());
+            new StubHttpClientFactory(objHandler), TestHelpers.CreateEncryptor(),
+            new MemoryCache(new MemoryCacheOptions()));
         return (objClient, objHandler);
     }
 
@@ -288,5 +300,137 @@ public class UnifiCloudClientTests
         Assert.Contains("Filial", objException.Message);
         // Nada é adivinhado: a unidade continua sem site definido.
         Assert.Equal("", objConfig.SiteId);
+    }
+
+    // ------------------------------------------------------------------ Preparo (velocidade no caixa)
+
+    [Fact]
+    public async Task Prepare_DepoisAutorizar_NaHoraDoToqueSoAutoriza()
+    {
+        // O coração da otimização: a busca do aparelho sai do caminho do toque em "Conectar".
+        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(RespondeFluxoFeliz);
+        CompanyUnifi objConfig = CreateConfig(SiteId);
+
+        await objClient.PrepareAsync(objConfig, "36:9d:94:1e:aa:10");
+        await objClient.AuthorizeGuestAsync(objConfig, "36:9d:94:1e:aa:10", 1440);
+
+        // Uma busca (a do preparo) e uma autorização — o /authorize não buscou de novo.
+        Assert.Equal(1, objHandler.IBuscas);
+        Assert.Equal(1, objHandler.IAutorizacoes);
+        Assert.EndsWith($"/clients/{ClientId}/actions", objHandler.SUrl(1));
+    }
+
+    [Fact]
+    public async Task Autorizar_ComPreparoAindaEmAndamento_EsperaAMesmaBuscaEmVezDeComecarOutra()
+    {
+        // Cliente rápido: tocou em "Conectar" antes de a busca adiantada terminar.
+        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(RespondeFluxoFeliz);
+        objHandler.ObjPortao = new TaskCompletionSource();
+        CompanyUnifi objConfig = CreateConfig(SiteId);
+
+        await objClient.PrepareAsync(objConfig, "36:9d:94:1e:aa:10");
+        Task objAutorizacao = objClient.AuthorizeGuestAsync(objConfig, "36:9d:94:1e:aa:10", 1440);
+        await Task.Delay(50);
+        Assert.False(objAutorizacao.IsCompleted); // esperando a busca que já está em andamento
+
+        objHandler.ObjPortao.SetResult();
+        await objAutorizacao;
+
+        Assert.Equal(1, objHandler.IBuscas);
+        Assert.Equal(1, objHandler.IAutorizacoes);
+    }
+
+    [Fact]
+    public async Task Prepare_AparelhoAindaNaoApareceu_AutorizarBuscaDeNovoEFunciona()
+    {
+        // O preparo não achou (aparelho acabou de conectar); o /authorize não pode herdar o "não achei".
+        int iBusca = 0;
+        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient((objRequest, iIndex) =>
+            objRequest.RequestUri!.ToString().Contains("/clients?filter=")
+                ? Json(++iBusca == 1 ? ClientEmptyJson : ClientFoundJson)
+                : Json(AuthorizedJson));
+        CompanyUnifi objConfig = CreateConfig(SiteId);
+
+        await objClient.PrepareAsync(objConfig, "36:9d:94:1e:aa:10");
+        await objClient.AuthorizeGuestAsync(objConfig, "36:9d:94:1e:aa:10", 1440);
+
+        Assert.Equal(2, objHandler.IBuscas);
+        Assert.Equal(1, objHandler.IAutorizacoes);
+    }
+
+    [Fact]
+    public async Task Autorizar_IdPreparadoNaoValeMais_BuscaDeNovoEAutoriza()
+    {
+        // Entre o preparo e o toque o aparelho saiu e voltou; a controladora não reconhece o ID antigo.
+        const string sIdNovo = "11111111-2222-3333-8444-555555555555";
+        int iBusca = 0;
+        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient((objRequest, iIndex) =>
+        {
+            string sUrl = objRequest.RequestUri!.ToString();
+            if (sUrl.Contains("/clients?filter="))
+            {
+                return Json(++iBusca == 1 ? ClientFoundJson : ClientFoundJson.Replace(ClientId, sIdNovo));
+            }
+            return sUrl.Contains(ClientId)
+                ? Json("{\"code\":\"api.client.not-found\"}", HttpStatusCode.NotFound)
+                : Json(AuthorizedJson);
+        });
+        CompanyUnifi objConfig = CreateConfig(SiteId);
+
+        await objClient.PrepareAsync(objConfig, "36:9d:94:1e:aa:10");
+        await objClient.AuthorizeGuestAsync(objConfig, "36:9d:94:1e:aa:10", 1440);
+
+        Assert.Equal(2, objHandler.IBuscas);
+        Assert.Equal(2, objHandler.IAutorizacoes);
+        Assert.EndsWith($"/clients/{sIdNovo}/actions", objHandler.SUrl(3));
+    }
+
+    [Fact]
+    public async Task Prepare_DuasVezesSeguidas_FazUmaBuscaSo()
+    {
+        // O StrictMode do React em dev, ou um recarregar de página, não podem dobrar as idas à loja.
+        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(RespondeFluxoFeliz);
+        CompanyUnifi objConfig = CreateConfig(SiteId);
+
+        await objClient.PrepareAsync(objConfig, "36:9d:94:1e:aa:10");
+        await objClient.PrepareAsync(objConfig, "36-9D-94-1E-AA-10"); // mesmo aparelho, outro formato
+        await objClient.AuthorizeGuestAsync(objConfig, "36:9d:94:1e:aa:10", 1440);
+
+        Assert.Equal(1, objHandler.IBuscas);
+    }
+
+    [Fact]
+    public async Task Prepare_SemSiteIdConhecido_NaoFazNada()
+    {
+        // Descobrir o site grava na entidade; em segundo plano não há quem persista.
+        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(RespondeFluxoFeliz);
+
+        await objClient.PrepareAsync(CreateConfig(), "36:9d:94:1e:aa:10");
+
+        Assert.Empty(objHandler.ObjRequests);
+    }
+
+    [Theory]
+    [InlineData("nao-e-mac")]
+    [InlineData("")]
+    public async Task Prepare_MacInvalido_NaoLancaNemChamaARede(string sMac)
+    {
+        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(RespondeFluxoFeliz);
+
+        await objClient.PrepareAsync(CreateConfig(SiteId), sMac);
+
+        Assert.Empty(objHandler.ObjRequests);
+    }
+
+    [Fact]
+    public async Task Prepare_SemChaveDeApi_NaoLancaNemChamaARede()
+    {
+        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(RespondeFluxoFeliz);
+        CompanyUnifi objConfig = CreateConfig(SiteId);
+        objConfig.ApiKey = "";
+
+        await objClient.PrepareAsync(objConfig, "36:9d:94:1e:aa:10");
+
+        Assert.Empty(objHandler.ObjRequests);
     }
 }

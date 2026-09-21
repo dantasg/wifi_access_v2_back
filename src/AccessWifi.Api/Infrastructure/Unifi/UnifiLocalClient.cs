@@ -83,6 +83,16 @@ public class UnifiLocalClient : IUnifiClient
         return $"Login na controladora funcionou (site \"{objConfig.Site}\").";
     }
 
+    /// <summary>
+    /// No modo local a autorização já é uma chamada direta à controladora da loja, pelo MAC — não há
+    /// busca a adiantar.
+    /// </summary>
+    public Task PrepareAsync(
+        CompanyUnifi objConfig, string sMac, CancellationToken objCancellationToken = default)
+    {
+        return Task.CompletedTask;
+    }
+
     private static HttpClientHandler CreateHandler(CompanyUnifi objConfig)
     {
         HttpClientHandler objHandler = new HttpClientHandler
