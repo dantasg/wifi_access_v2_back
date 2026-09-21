@@ -172,6 +172,17 @@ Falhas de autorização na UniFi ficam no log da API com o motivo técnico. O vi
 
 Teste de conexão com a UniFi, sem autorizar ninguém: `POST /admin/units/{id}/unifi/test`.
 
+**Velocidade da liberação.** Cada autorização grava o caminho e o tempo, sem dado pessoal:
+
+```bash
+journalctl -u accesswifi-api --since today -o cat | grep "Autorização UniFi"
+# Autorização UniFi (nuvem) pelo caminho clássico em 812 ms.    ← normal: uma ida à loja
+# Autorização UniFi (nuvem) pelo caminho oficial em 2140 ms.    ← plano B: veja o aviso logo antes
+```
+
+Se aparecer o caminho **oficial** com frequência, a linha anterior (`API clássica da UniFi não
+autorizou (...)`) diz o motivo. Pode ser que a Ubiquiti tenha mudado ou desligado a API clássica.
+
 ---
 
 ## 8. Armadilhas conhecidas

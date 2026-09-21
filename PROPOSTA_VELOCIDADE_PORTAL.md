@@ -1,21 +1,44 @@
 # Proposta — Portal rápido na boca do caixa
 
-> **Status (2026-09-21): implementada e medida em produção** (back `0b23b0c`, front `41ff64d`).
-> Aprovadas as recomendações D1–D6.
+> **Status (2026-09-21) — fase 2 em produção.** A busca adiantada (parte A abaixo) **não serviu no
+> uso real** e foi trocada por uma autorização numa ida só. As partes B (sem espera fixa) e C
+> (imagens menores) continuam valendo.
 >
-> | Medido em produção, mesmo método do §2 | Antes | Depois |
-> | --- | --- | --- |
-> | `/authorize` no servidor (3 rodadas) | 2,37 · 1,27 · 1,85 s — **média 1,83 s** | 0,42 · 0,77 · 0,79 s — **média 0,66 s** |
-> | Espera fixa no front após "Conectado!" | 1,2 s | **0** |
-> | **Toque → redirecionamento** | **~3 s** | **~0,7 s** |
-> | `POST /authorize/prepare` (o portal não espera por ele) | — | 50 ms |
-> | Tema (`/settings`, compactado) | 193 KB | **47 KB** |
+> ### O que aconteceu com a parte A
 >
-> Nas medições, a controladora recusou a autorização (`422`) de propósito: foram usados aparelhos da
-> rede interna da loja, para não mexer em visitantes de verdade. Mas o pedido faz o caminho completo
-> até o gateway e volta, então o tempo é o mesmo de uma liberação real. Os leads de teste foram
-> apagados. O piso que sobra, ~0,4–0,8 s, é uma ida à loja pelo túnel da Ubiquiti e não depende de
-> nós.
+> Medi a fase 1 com aparelhos conectados havia horas, e ela funcionou (média de 0,66 s). O visitante
+> real é diferente: o teste do TI às 11:07 mostrou que ele abre o portal **2 s depois de conectar**.
+> Nesse momento a controladora ainda não lista o aparelho, a busca adiantada voltou vazia, e a
+> autorização levou **2,2 s** pelo caminho completo. A melhora que o TI sentiu veio só da parte B.
+>
+> ### Fase 2 — autorizar numa ida só, pelo MAC
+>
+> A UniFi tem uma API **clássica** (`cmd/stamgr`, `authorize-guest`) que libera **pelo MAC**, sem
+> precisar do ID do aparelho e sem depender de a controladora já listá-lo. Testei pela nuvem da
+> Ubiquiti, com a mesma chave:
+>
+> | Teste em produção (21/09) | Resultado |
+> | --- | --- |
+> | Leitura (`stat/sta`) | `HTTP 200`, `rc: ok`, 9 aparelhos — 0,6 a 1 s |
+> | **Autorização real** (celular de teste do TI) | `HTTP 200`, `rc: ok`, `authorized_by: api` — **0,93 s** |
+> | Conferência pela API oficial | vencimento estendido para +24 h a partir do comando ✓ |
+>
+> - **Caminho principal:** clássica, **uma** ida à loja. Toque → resposta em ~0,6–1 s, sem depender
+>   de timing.
+> - **Plano B:** se a clássica falhar (a Ubiquiti não a documenta oficialmente), o sistema cai na
+>   API oficial, com duas idas. Fica mais lento, mas não para.
+> - **Sem plano B** quando não adianta tentar de novo: chave recusada (401/403), limite de chamadas
+>   (429) ou nuvem fora do ar. Nesses casos a oficial falharia igual, e só dobraria a espera.
+> - **Saiu o `POST /authorize/prepare`** (back e front): com uma ida só, não há o que adiantar.
+> - **Log de diagnóstico:** cada autorização registra o caminho (clássico/oficial) e o tempo
+>   (`journalctl -u accesswifi-api | grep "Autorização UniFi"`). Sem MAC nem dado pessoal.
+>
+> O piso que sobra, ~0,6–1 s, é a ida pelo túnel da Ubiquiti. Para baixo disso, só com um túnel
+> direto até a loja (WireGuard): ver [TUNEL_LOJA_TI.md](TUNEL_LOJA_TI.md).
+>
+> ---
+>
+> *Abaixo, a proposta original da fase 1, mantida como registro.*
 
 ## 1. Entendimento do pedido
 

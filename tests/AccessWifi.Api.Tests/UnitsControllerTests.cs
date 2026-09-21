@@ -52,10 +52,6 @@ public class UnitsControllerTests
             }
             return Task.FromResult("Console respondeu pela nuvem.");
         }
-
-        public Task PrepareAsync(
-            CompanyUnifi objConfig, string sMac, CancellationToken objCancellationToken = default) =>
-            Task.CompletedTask;
     }
 
     private static CreateUnitRequest CreateRequest(Guid objCompanyId, string sSlug = "doce-matriz")

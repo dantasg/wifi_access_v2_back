@@ -23,13 +23,5 @@ namespace AccessWifi.Api.Infrastructure.Unifi
         /// </summary>
         Task<string> TestConnectionAsync(
             CompanyUnifi objConfig, CancellationToken objCancellationToken = default);
-
-        /// <summary>
-        /// Adianta, em segundo plano, o que der para adiantar da autorização deste aparelho — chamado
-        /// quando o portal abre, enquanto o visitante ainda preenche o formulário. Retorna na hora e
-        /// nunca lança: se não adiantar nada, o AuthorizeGuestAsync faz o trabalho completo.
-        /// </summary>
-        Task PrepareAsync(
-            CompanyUnifi objConfig, string sMac, CancellationToken objCancellationToken = default);
     }
 }

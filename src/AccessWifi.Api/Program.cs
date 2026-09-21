@@ -103,16 +103,6 @@ builder.Services.AddRateLimiter(objLimiterOptions =>
                 PermitLimit = 10,
                 Window = TimeSpan.FromMinutes(1),
             }));
-    // O portal chama o prepare uma vez ao abrir; 20/min por IP folga para vários aparelhos atrás
-    // do mesmo NAT da loja sem abrir espaço para usar a rota como sonda da controladora.
-    objLimiterOptions.AddPolicy("authorize-prepare", objHttpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            objHttpContext.Connection.RemoteIpAddress ?? IPAddress.Loopback,
-            _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = 20,
-                Window = TimeSpan.FromMinutes(1),
-            }));
     objLimiterOptions.AddPolicy("admin-login", objHttpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
             objHttpContext.Connection.RemoteIpAddress ?? IPAddress.Loopback,
@@ -138,8 +128,6 @@ builder.Services.AddHttpClient(UnifiCloudClient.HttpClientName, objUnifiHttpClie
     // D8: a Ubiquiti corta a chamada repassada em 25 s; 20 s deixa margem para respondermos antes.
     objUnifiHttpClient.Timeout = TimeSpan.FromSeconds(20);
 });
-// Guarda o ID do aparelho adiantado pelo /authorize/prepare (ver UnifiCloudClient.PrepareAsync).
-builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<UnifiLocalClient>();
 builder.Services.AddSingleton<UnifiCloudClient>();
 // O router escolhe o caminho pelo Mode da unidade — os controllers não precisam saber qual é.

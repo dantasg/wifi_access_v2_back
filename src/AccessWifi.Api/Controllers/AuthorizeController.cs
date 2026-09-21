@@ -30,35 +30,6 @@ public class AuthorizeController : ControllerBase
         _objLogger = objLogger;
     }
 
-    /// <summary>
-    /// Chamado pelo portal assim que abre, enquanto o visitante ainda preenche o formulário:
-    /// adianta a busca do aparelho na controladora para o toque em "Conectar" só precisar
-    /// autorizar. Responde 202 na hora — o trabalho segue em segundo plano e, se não der certo,
-    /// o POST /authorize faz tudo como sempre fez. Não grava nada nem autoriza ninguém.
-    /// </summary>
-    [HttpPost("prepare")]
-    [EnableRateLimiting("authorize-prepare")]
-    [RequestSizeLimit(4 * 1024)]
-    public async Task<IActionResult> Prepare(
-        PrepareAuthorizeRequest objRequest, CancellationToken objCancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(objRequest.Mac)
-            || (string.IsNullOrWhiteSpace(objRequest.Unit) && string.IsNullOrWhiteSpace(objRequest.Host)))
-        {
-            return BadRequest(new AuthorizeResponse(false, Error: "Unidade e MAC são obrigatórios."));
-        }
-
-        Unit? objUnit = await UnitResolver.FindAsync(
-            _objDbContext.Units.AsNoTracking(), objRequest.Unit, objRequest.Host, objCancellationToken);
-        if (objUnit is null || !objUnit.Active)
-        {
-            return NotFound(new AuthorizeResponse(false, Error: "Unidade não encontrada ou inativa."));
-        }
-
-        await _objUnifiClient.PrepareAsync(objUnit.Unifi, objRequest.Mac, objCancellationToken);
-        return Accepted();
-    }
-
     /// <summary>Grava o lead e autoriza o dispositivo do visitante na controladora UniFi da unidade.</summary>
     [HttpPost]
     [RequestSizeLimit(16 * 1024)]
