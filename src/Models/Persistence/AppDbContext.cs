@@ -46,6 +46,8 @@ namespace Models.Persistence
                 objUnit.HasIndex(unit => unit.PortalHost)
                     .IsUnique()
                     .HasFilter("\"PortalHost\" <> ''");
+                // Mesmo limite da URL "Geral" da empresa (PortalSettings.RedirectUrl).
+                objUnit.Property(unit => unit.RedirectUrl).HasMaxLength(2048);
                 objUnit.HasOne<Company>()
                     .WithMany()
                     .HasForeignKey(unit => unit.IDCompany)

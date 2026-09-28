@@ -32,13 +32,16 @@ namespace AccessWifi.Api.Features.Units
         bool Active,
         DateTime CreatedAt,
         string PortalHost,
-        UnitUnifiDto Unifi)
+        UnitUnifiDto Unifi,
+        // Vazio = usa a URL "Geral" da empresa. Editada em Configurações (PUT /admin/settings).
+        string RedirectUrl)
     {
         public static UnitDto FromEntity(Unit objUnit)
         {
             return new UnitDto(
                 objUnit.Id, objUnit.IDCompany, objUnit.Name, objUnit.Slug, objUnit.Active,
-                objUnit.CreatedAt, objUnit.PortalHost, UnitUnifiDto.FromEntity(objUnit.Unifi));
+                objUnit.CreatedAt, objUnit.PortalHost, UnitUnifiDto.FromEntity(objUnit.Unifi),
+                objUnit.RedirectUrl);
         }
     }
 

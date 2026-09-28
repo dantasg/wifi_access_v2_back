@@ -81,7 +81,8 @@ public class AuthorizeController : ControllerBase
         objLead.Timestamp = DateTime.UtcNow;
         await _objDbContext.SaveChangesAsync(objCancellationToken);
 
-        // Configurações da empresa dona da unidade (tempo de liberação + URL de redirecionamento).
+        // Configurações da empresa dona da unidade (tempo de liberação + URL "Geral" de
+        // redirecionamento, usada quando a unidade não tem a sua).
         var objCompanySettings = await _objDbContext.PortalSettings
             .AsNoTracking()
             .Where(settings => settings.IDCompany == objUnit.IDCompany)
@@ -116,13 +117,27 @@ public class AuthorizeController : ControllerBase
                 new AuthorizeResponse(false, Error: "Falha ao autorizar na UniFi."));
         }
 
-        // Precedência: URL configurada pela empresa (ex.: Instagram) vence; senão a URL que a
-        // UniFi enviou; por fim, o fallback fixo.
-        string sRedirect = objCompanySettings?.RedirectUrl is { Length: > 0 } sCompanyUrl
-            ? sCompanyUrl
-            : string.IsNullOrWhiteSpace(objRequest.Url)
-                ? "https://www.google.com"
-                : objRequest.Url;
+        string sRedirect = EscolherRedirect(
+            objUnit.RedirectUrl, objCompanySettings?.RedirectUrl, objRequest.Url);
         return Ok(new AuthorizeResponse(true, Redirect: sRedirect));
+    }
+
+    /// <summary>
+    /// Para onde o visitante vai depois de liberado, na ordem: a URL da unidade (ex.: o Instagram
+    /// da loja); senão a "Geral" da empresa; senão a URL que a UniFi enviou; por fim, o Google.
+    /// </summary>
+    private static string EscolherRedirect(string? sUnitUrl, string? sCompanyUrl, string? sUnifiUrl)
+    {
+        if (!string.IsNullOrWhiteSpace(sUnitUrl))
+        {
+            return sUnitUrl;
+        }
+
+        if (!string.IsNullOrWhiteSpace(sCompanyUrl))
+        {
+            return sCompanyUrl;
+        }
+
+        return string.IsNullOrWhiteSpace(sUnifiUrl) ? "https://www.google.com" : sUnifiUrl;
     }
 }

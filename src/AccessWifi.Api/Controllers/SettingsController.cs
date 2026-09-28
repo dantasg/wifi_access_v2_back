@@ -108,6 +108,34 @@ public partial class SettingsController : ControllerBase
             return BadRequest(new ErrorResponse(sValidationError));
         }
 
+        // URLs próprias das unidades: tudo é conferido antes de gravar qualquer coisa, para um erro
+        // numa unidade não deixar o resto salvo pela metade.
+        List<(Unit objUnit, string sUrl)> objUnitRedirects = [];
+        if (objRequest.UnitRedirects is { Count: > 0 })
+        {
+            List<Guid> objUnitIds = objRequest.UnitRedirects.Select(item => item.UnitId).Distinct().ToList();
+            Dictionary<Guid, Unit> objUnits = await _objDbContext.Units
+                .Where(unit => unit.IDCompany == objCompanyId && objUnitIds.Contains(unit.Id))
+                .ToDictionaryAsync(unit => unit.Id, objCancellationToken);
+
+            foreach (UnitRedirectDto objItem in objRequest.UnitRedirects)
+            {
+                // Unidade de outra empresa ou inexistente: a mesma resposta, sem dizer qual das duas.
+                if (!objUnits.TryGetValue(objItem.UnitId, out Unit? objUnit))
+                {
+                    return BadRequest(new ErrorResponse("Unidade não encontrada nesta empresa."));
+                }
+
+                string? sUrlError = ValidateRedirectUrl(objItem.RedirectUrl);
+                if (sUrlError is not null)
+                {
+                    return BadRequest(new ErrorResponse($"Unidade {objUnit.Name}: {sUrlError}"));
+                }
+
+                objUnitRedirects.Add((objUnit, objItem.RedirectUrl?.Trim() ?? ""));
+            }
+        }
+
         PortalSettings? objSettings = await _objDbContext.PortalSettings
             .FirstOrDefaultAsync(
                 settings => settings.IDCompany == objCompanyId, objCancellationToken);
@@ -127,6 +155,11 @@ public partial class SettingsController : ControllerBase
             ? null
             : objRequest.RedirectUrl.Trim();
         objSettings.UpdatedAt = DateTime.UtcNow;
+
+        foreach ((Unit objUnit, string sUrl) in objUnitRedirects)
+        {
+            objUnit.RedirectUrl = sUrl;
+        }
 
         await _objDbContext.SaveChangesAsync(objCancellationToken);
 
@@ -186,20 +219,32 @@ public partial class SettingsController : ControllerBase
             return $"Tempo de acesso deve ficar entre 1 e {MaxAccessMinutes} minutos.";
         }
 
-        if (!string.IsNullOrWhiteSpace(objRequest.RedirectUrl))
+        return ValidateRedirectUrl(objRequest.RedirectUrl);
+    }
+
+    /// <summary>
+    /// A mesma regra para a URL "Geral" da empresa e para a de cada unidade: vazia (usa o padrão)
+    /// ou um endereço http/https completo dentro do limite.
+    /// </summary>
+    private static string? ValidateRedirectUrl(string? sUrl)
+    {
+        if (string.IsNullOrWhiteSpace(sUrl))
         {
-            string sRedirectUrl = objRequest.RedirectUrl.Trim();
-            if (sRedirectUrl.Length > MaxRedirectUrlChars)
-            {
-                return $"URL de redirecionamento muito longa (máximo de {MaxRedirectUrlChars} caracteres).";
-            }
-            bool bUrlValida =
-                Uri.TryCreate(sRedirectUrl, UriKind.Absolute, out Uri? objUri) &&
-                (objUri.Scheme == Uri.UriSchemeHttp || objUri.Scheme == Uri.UriSchemeHttps);
-            if (!bUrlValida)
-            {
-                return "URL de redirecionamento inválida (informe um endereço http ou https completo).";
-            }
+            return null;
+        }
+
+        string sRedirectUrl = sUrl.Trim();
+        if (sRedirectUrl.Length > MaxRedirectUrlChars)
+        {
+            return $"URL de redirecionamento muito longa (máximo de {MaxRedirectUrlChars} caracteres).";
+        }
+
+        bool bUrlValida =
+            Uri.TryCreate(sRedirectUrl, UriKind.Absolute, out Uri? objUri) &&
+            (objUri.Scheme == Uri.UriSchemeHttp || objUri.Scheme == Uri.UriSchemeHttps);
+        if (!bUrlValida)
+        {
+            return "URL de redirecionamento inválida (informe um endereço http ou https completo).";
         }
 
         return null;

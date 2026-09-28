@@ -250,6 +250,61 @@ public class AuthorizeControllerTests
     }
 
     [Fact]
+    public async Task Post_UnidadeComUrlPropria_VenceAGeralDaEmpresa()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Unit objUnit = CreateUnit(objDbContext);
+        objUnit.RedirectUrl = "https://instagram.com/doce-matriz";
+        objDbContext.PortalSettings.Add(new PortalSettings
+        {
+            IDCompany = objUnit.IDCompany,
+            RedirectUrl = "https://instagram.com/doce",
+        });
+        objDbContext.SaveChanges();
+        AuthorizeController objController = CreateController(objDbContext, new FakeUnifiClient());
+
+        ActionResult<AuthorizeResponse> objResult =
+            await objController.Post(CreateRequest(), CancellationToken.None);
+
+        AuthorizeResponse objResponse = Assert.IsType<AuthorizeResponse>(
+            Assert.IsType<OkObjectResult>(objResult.Result).Value);
+        Assert.Equal("https://instagram.com/doce-matriz", objResponse.Redirect);
+    }
+
+    [Fact]
+    public async Task Post_UnidadeComUrlPropriaESemGeral_UsaADaUnidade()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Unit objUnit = CreateUnit(objDbContext);
+        objUnit.RedirectUrl = "https://instagram.com/doce-matriz";
+        objDbContext.SaveChanges();
+        AuthorizeController objController = CreateController(objDbContext, new FakeUnifiClient());
+
+        ActionResult<AuthorizeResponse> objResult =
+            await objController.Post(CreateRequest(), CancellationToken.None);
+
+        AuthorizeResponse objResponse = Assert.IsType<AuthorizeResponse>(
+            Assert.IsType<OkObjectResult>(objResult.Result).Value);
+        // Vence também a URL que a UniFi mandou no request.
+        Assert.Equal("https://instagram.com/doce-matriz", objResponse.Redirect);
+    }
+
+    [Fact]
+    public async Task Post_SemNenhumaUrl_VaiParaOGoogle()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        CreateUnit(objDbContext);
+        AuthorizeController objController = CreateController(objDbContext, new FakeUnifiClient());
+
+        ActionResult<AuthorizeResponse> objResult =
+            await objController.Post(CreateRequest() with { Url = null }, CancellationToken.None);
+
+        AuthorizeResponse objResponse = Assert.IsType<AuthorizeResponse>(
+            Assert.IsType<OkObjectResult>(objResult.Result).Value);
+        Assert.Equal("https://www.google.com", objResponse.Redirect);
+    }
+
+    [Fact]
     public async Task Post_SemRedirectUrl_UsaAUrlDoRequest()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();

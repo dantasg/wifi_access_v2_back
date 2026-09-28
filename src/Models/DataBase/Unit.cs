@@ -19,6 +19,12 @@ namespace Models.DataBase
         /// que o portal descobre de qual unidade ele é quando não vem "?unit=". Vazio = não usa.
         /// </summary>
         public string PortalHost { get; set; } = "";
+
+        /// <summary>
+        /// Para onde o visitante desta unidade vai depois de liberado (ex.: o Instagram da loja).
+        /// Vazio = usa a URL "Geral" da empresa (<see cref="PortalSettings.RedirectUrl"/>).
+        /// </summary>
+        public string RedirectUrl { get; set; } = "";
         public bool Active { get; set; } = true;
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
