@@ -1,7 +1,12 @@
 # Proposta — Redirecionamento (Instagram) por unidade, com o da empresa como "Geral"
 
-> **Status (2026-09-28): implementada com as recomendações (D1–D6).** Unidades existentes começaram
-> vazias: Itaituba continua indo para o Instagram que está na Geral da Lojas Regional.
+> **Status (2026-09-28): implementada, com a D2 trocada pela alternativa.** Primeiro a URL da unidade
+> ficou em Configurações; depois você pediu que ela fique **no formulário da unidade** (tela
+> Unidades). Consequência na **D3**: como a tela Unidades é só do super admin, **só ele** edita a URL
+> de uma unidade. A URL Geral continua em Configurações, editável também pelo admin da empresa.
+> Gravação: `POST`/`PUT /admin/units` levam `redirectUrl` (nulo = manter, `""` = limpar); o
+> `PUT /admin/settings` não recebe mais as URLs das unidades. Unidades existentes começaram vazias:
+> Itaituba continua indo para o Instagram que está na Geral da Lojas Regional.
 
 ## 1. Entendimento do pedido
 

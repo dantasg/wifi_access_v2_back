@@ -12,10 +12,7 @@ public record SettingsDto(
     string? RedirectUrl,
     // Slug da unidade resolvida. Só sai na leitura do portal (o front precisa dele para o
     // /authorize quando a unidade veio pelo host); ignorado no PUT do painel.
-    string? Unit = null,
-    // Só no PUT do painel: URL de redirecionamento própria de cada unidade da empresa. Nula =
-    // não mexe nas unidades. Nunca sai na leitura pública do portal.
-    IReadOnlyList<UnitRedirectDto>? UnitRedirects = null)
+    string? Unit = null)
 {
     public static SettingsDto FromEntity(PortalSettings objSettings, string? sUnitSlug = null)
     {
@@ -30,9 +27,6 @@ public record SettingsDto(
             Unit: sUnitSlug);
     }
 }
-
-/// <summary>URL própria de uma unidade. Vazia = a unidade volta a usar a "Geral" da empresa.</summary>
-public record UnitRedirectDto(Guid UnitId, string? RedirectUrl);
 
 public record ThemeColorsDto(
     string Brand,

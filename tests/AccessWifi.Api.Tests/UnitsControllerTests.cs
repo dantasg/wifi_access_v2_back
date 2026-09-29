@@ -5,6 +5,7 @@ using AccessWifi.Api.Features.Units;
 using Models.Persistence;
 using AccessWifi.Api.Infrastructure.Unifi;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AccessWifi.Api.Tests;
@@ -166,6 +167,96 @@ public class UnitsControllerTests
         Assert.Equal("https://10.0.0.1", objUnit.Unifi.Host);
         // Senha nula no update = mantém a atual (que segue cifrada, decifrando para o valor original).
         Assert.Equal("unifi-pass", TestHelpers.CreateEncryptor().Decrypt(objUnit.Unifi.Password));
+    }
+
+    [Fact]
+    public async Task Create_ComUrlDeRedirecionamento_GravaSemEspacos()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext);
+        UnitsController objController = CreateController(objDbContext);
+
+        ActionResult<UnitDto> objResult = await objController.Create(
+            CreateRequest(objCompany.Id) with { RedirectUrl = "  https://instagram.com/doce-matriz  " },
+            CancellationToken.None);
+
+        UnitDto objDto = Assert.IsType<UnitDto>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
+        Assert.Equal("https://instagram.com/doce-matriz", objDto.RedirectUrl);
+        Assert.Equal("https://instagram.com/doce-matriz", objDbContext.Units.Single().RedirectUrl);
+    }
+
+    [Fact]
+    public async Task Create_SemUrlDeRedirecionamento_FicaVaziaEUsaAGeral()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext);
+        UnitsController objController = CreateController(objDbContext);
+
+        await objController.Create(CreateRequest(objCompany.Id), CancellationToken.None);
+
+        Assert.Equal("", objDbContext.Units.Single().RedirectUrl);
+    }
+
+    [Fact]
+    public async Task Update_UrlDeRedirecionamentoNula_MantemAAtual()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext);
+        Unit objUnit = new Unit
+        {
+            IDCompany = objCompany.Id, Name = "Matriz", Slug = "doce-matriz",
+            RedirectUrl = "https://instagram.com/doce-matriz",
+        };
+        objDbContext.Units.Add(objUnit);
+        objDbContext.SaveChanges();
+        UnitsController objController = CreateController(objDbContext);
+
+        await objController.Update(
+            objUnit.Id, new UpdateUnitRequest("Matriz Centro", true, null), CancellationToken.None);
+
+        Assert.Equal("https://instagram.com/doce-matriz", objUnit.RedirectUrl);
+        Assert.Equal("Matriz Centro", objUnit.Name);
+    }
+
+    [Fact]
+    public async Task Update_UrlDeRedirecionamentoVazia_VoltaAUsarAGeral()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext);
+        Unit objUnit = new Unit
+        {
+            IDCompany = objCompany.Id, Name = "Matriz", Slug = "doce-matriz",
+            RedirectUrl = "https://instagram.com/doce-matriz",
+        };
+        objDbContext.Units.Add(objUnit);
+        objDbContext.SaveChanges();
+        UnitsController objController = CreateController(objDbContext);
+
+        await objController.Update(
+            objUnit.Id, new UpdateUnitRequest("Matriz", true, null, RedirectUrl: "   "),
+            CancellationToken.None);
+
+        Assert.Equal("", objUnit.RedirectUrl);
+    }
+
+    [Fact]
+    public async Task Update_UrlDeRedirecionamentoInvalida_Retorna400ENaoGrava()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext);
+        Unit objUnit = new Unit { IDCompany = objCompany.Id, Name = "Matriz", Slug = "doce-matriz" };
+        objDbContext.Units.Add(objUnit);
+        objDbContext.SaveChanges();
+        UnitsController objController = CreateController(objDbContext);
+
+        ActionResult<UnitDto> objResult = await objController.Update(
+            objUnit.Id, new UpdateUnitRequest("Matriz", true, null, RedirectUrl: "instagram.com/sem-https"),
+            CancellationToken.None);
+
+        ErrorResponse objError = Assert.IsType<ErrorResponse>(
+            Assert.IsType<BadRequestObjectResult>(objResult.Result).Value);
+        Assert.Contains("redirecionamento", objError.Error);
+        Assert.Equal("", objDbContext.Units.AsNoTracking().Single().RedirectUrl);
     }
 
     [Fact]

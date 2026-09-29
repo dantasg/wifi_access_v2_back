@@ -120,6 +120,12 @@ public partial class UnitsController : ControllerBase
             return BadRequest(new ErrorResponse(sHostError));
         }
 
+        string? sRedirectError = ApplyRedirectUrl(objUnit, objRequest.RedirectUrl);
+        if (sRedirectError is not null)
+        {
+            return BadRequest(new ErrorResponse(sRedirectError));
+        }
+
         ApplyUnifi(objUnit, objRequest.Unifi);
 
         _objDbContext.Units.Add(objUnit);
@@ -128,7 +134,10 @@ public partial class UnitsController : ControllerBase
         return Ok(UnitDto.FromEntity(objUnit));
     }
 
-    /// <summary>Atualiza nome, situação e config UniFi (senha nula = manter a atual).</summary>
+    /// <summary>
+    /// Atualiza nome, situação, endereço do portal, URL de redirecionamento e config UniFi
+    /// (nulos = manter o atual).
+    /// </summary>
     [HttpPut("{id:guid}")]
     [Authorize(Roles = ClaimsExtensions.RoleSuperAdmin)]
     public async Task<ActionResult<UnitDto>> Update(
@@ -154,6 +163,12 @@ public partial class UnitsController : ControllerBase
         if (sHostError is not null)
         {
             return BadRequest(new ErrorResponse(sHostError));
+        }
+
+        string? sRedirectError = ApplyRedirectUrl(objUnit, objRequest.RedirectUrl);
+        if (sRedirectError is not null)
+        {
+            return BadRequest(new ErrorResponse(sRedirectError));
         }
 
         ApplyUnifi(objUnit, objRequest.Unifi);
@@ -232,6 +247,28 @@ public partial class UnitsController : ControllerBase
         }
 
         objUnit.PortalHost = sHost;
+        return null;
+    }
+
+    /// <summary>
+    /// Grava para onde o visitante desta unidade vai depois de liberado (ex.: o Instagram da loja).
+    /// Nulo mantém a atual; "" limpa, e a unidade volta a usar a URL "Geral" da empresa. Devolve a
+    /// mensagem de erro ou null.
+    /// </summary>
+    private static string? ApplyRedirectUrl(Unit objUnit, string? sRedirectUrl)
+    {
+        if (sRedirectUrl is null)
+        {
+            return null;
+        }
+
+        string? sErro = RedirectUrlRules.Validate(sRedirectUrl);
+        if (sErro is not null)
+        {
+            return sErro;
+        }
+
+        objUnit.RedirectUrl = sRedirectUrl.Trim();
         return null;
     }
 

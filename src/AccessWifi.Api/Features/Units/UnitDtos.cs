@@ -33,7 +33,7 @@ namespace AccessWifi.Api.Features.Units
         DateTime CreatedAt,
         string PortalHost,
         UnitUnifiDto Unifi,
-        // Vazio = usa a URL "Geral" da empresa. Editada em Configurações (PUT /admin/settings).
+        // Vazio = usa a URL "Geral" da empresa. Editada no formulário da unidade.
         string RedirectUrl)
     {
         public static UnitDto FromEntity(Unit objUnit)
@@ -59,12 +59,15 @@ namespace AccessWifi.Api.Features.Units
         string? ApiKey = null,
         string? SiteId = null);
 
-    // PortalHost nulo = manter o atual; "" limpa.
+    // PortalHost e RedirectUrl: nulo = manter o atual; "" limpa (sem URL própria, a unidade usa
+    // a "Geral" da empresa).
     public record CreateUnitRequest(
-        Guid IDCompany, string Name, string Slug, UnitUnifiRequest? Unifi, string? PortalHost = null);
+        Guid IDCompany, string Name, string Slug, UnitUnifiRequest? Unifi, string? PortalHost = null,
+        string? RedirectUrl = null);
 
     public record UpdateUnitRequest(
-        string Name, bool Active, UnitUnifiRequest? Unifi, string? PortalHost = null);
+        string Name, bool Active, UnitUnifiRequest? Unifi, string? PortalHost = null,
+        string? RedirectUrl = null);
 
     /// <summary>Resultado do botão "Testar conexão" (D7). Sucesso falso não é erro HTTP.</summary>
     public record UnifiTestResponse(bool Success, string Message);
