@@ -1,4 +1,5 @@
 using AccessWifiService;
+using AccessWifiService.Campaigns;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,5 +35,12 @@ objBuilder.Services.AddScoped<ReportService>();
 objBuilder.Services.AddScoped<LeadRetentionService>();
 
 objBuilder.Services.AddHostedService<SrvWifiService>();
+
+// Campanhas: agendador + execução. Por enquanto só em simulação (D14): nada é enviado.
+objBuilder.Services.Configure<CampaignEngineOptions>(
+    objBuilder.Configuration.GetSection(CampaignEngineOptions.SectionName));
+objBuilder.Services.AddSingleton<IMessageChannel, SimulatedMessageChannel>();
+objBuilder.Services.AddScoped<CampaignEngine>();
+objBuilder.Services.AddHostedService<CampaignWorker>();
 
 objBuilder.Build().Run();

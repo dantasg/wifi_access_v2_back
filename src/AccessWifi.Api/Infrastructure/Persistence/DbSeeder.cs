@@ -1,6 +1,7 @@
 using AccessWifi.Api.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Models.Campaigns;
 using Models.DataBase;
 using Models.Persistence;
 
@@ -32,6 +33,14 @@ public static class DbSeeder
                 objLogger.LogInformation("Seed: super admin '{Username}' criado.", objAdminOptions.Username);
 
                 await objDbContext.SaveChangesAsync();
+            }
+
+            // Campanhas: monta a base de clientes a partir dos cadastros que já existiam (só na
+            // primeira vez, com a tabela vazia). Depois disso, cada conexão atualiza o cliente.
+            int iClientes = await CustomerDirectory.BackfillIfEmptyAsync(objDbContext, DateTime.UtcNow);
+            if (iClientes > 0)
+            {
+                objLogger.LogInformation("Seed: {Count} cliente(s) montados a partir dos cadastros.", iClientes);
             }
         }
         catch (Exception objException)

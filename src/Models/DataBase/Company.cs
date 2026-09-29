@@ -25,5 +25,34 @@ namespace Models.DataBase
         /// o serviço não reenvia se já enviou no mês corrente. Nulo = nunca enviado.
         /// </summary>
         public DateTime? LastReportSentAt { get; set; }
+
+        /// <summary>
+        /// Fuso horário das lojas (IANA). As campanhas disparam no horário daqui e o "dia" do cliente
+        /// (aniversário, visita) é contado nele. Padrão: Belém (-03, sem horário de verão).
+        /// </summary>
+        public string TimeZone { get; set; } = CompanyTimeZone.Default;
+    }
+
+    public static class CompanyTimeZone
+    {
+        public const string Default = "America/Belem";
+
+        /// <summary>Resolve o fuso da empresa; um valor inválido cai no padrão em vez de derrubar a campanha.</summary>
+        public static TimeZoneInfo Resolve(string? sTimeZone)
+        {
+            if (!string.IsNullOrWhiteSpace(sTimeZone)
+                && TimeZoneInfo.TryFindSystemTimeZoneById(sTimeZone, out TimeZoneInfo? objZone))
+            {
+                return objZone;
+            }
+            return TimeZoneInfo.FindSystemTimeZoneById(Default);
+        }
+
+        public static bool IsValid(string? sTimeZone) =>
+            !string.IsNullOrWhiteSpace(sTimeZone) && TimeZoneInfo.TryFindSystemTimeZoneById(sTimeZone, out _);
+
+        /// <summary>Dia de hoje no fuso informado.</summary>
+        public static DateOnly Today(TimeZoneInfo objZone, DateTime dtUtc) =>
+            DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(dtUtc, DateTimeKind.Utc), objZone));
     }
 }

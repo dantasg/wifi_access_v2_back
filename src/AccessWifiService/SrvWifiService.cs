@@ -34,7 +34,7 @@ namespace AccessWifiService
                 }
                 catch (Exception objException)
                 {
-                    _objLogger.LogError(objException, "Falha no ciclo de envio de relatórios.");
+                    _objLogger.LogError(objException, "Falha no ciclo diário.");
                 }
 
                 TimeSpan tsDelay = TimeUntilNextCheck(DateTime.Now);
@@ -51,17 +51,44 @@ namespace AccessWifiService
             _objLogger.LogInformation("AccessWifiService encerrado.");
         }
 
+        /// <summary>
+        /// Tarefas do dia. Cada uma tem a sua proteção: um relatório que falha (ex.: SMTP fora do ar)
+        /// não pode impedir o expurgo da LGPD, e vice-versa.
+        /// </summary>
         private async Task RunOnceAsync(CancellationToken objCancellationToken)
         {
-            using IServiceScope objScope = _objScopeFactory.CreateScope();
-            ReportService objReportService = objScope.ServiceProvider.GetRequiredService<ReportService>();
-            // Referência em UTC (leads, período e o carimbo LastReportSentAt são todos UTC).
-            await objReportService.SendDueReportsAsync(DateTime.UtcNow.Date, objCancellationToken);
+            await RunJobAsync("envio de relatórios", async objScope =>
+            {
+                ReportService objReportService = objScope.ServiceProvider.GetRequiredService<ReportService>();
+                // Referência em UTC (leads, período e o carimbo LastReportSentAt são todos UTC).
+                await objReportService.SendDueReportsAsync(DateTime.UtcNow.Date, objCancellationToken);
+            }, objCancellationToken);
 
-            // Expurgo de leads fora do prazo de retenção (LGPD).
-            LeadRetentionService objRetentionService =
-                objScope.ServiceProvider.GetRequiredService<LeadRetentionService>();
-            await objRetentionService.PurgeExpiredLeadsAsync(DateTime.UtcNow, objCancellationToken);
+            await RunJobAsync("retenção (LGPD)", async objScope =>
+            {
+                LeadRetentionService objRetentionService =
+                    objScope.ServiceProvider.GetRequiredService<LeadRetentionService>();
+                await objRetentionService.PurgeExpiredLeadsAsync(DateTime.UtcNow, objCancellationToken);
+            }, objCancellationToken);
+        }
+
+        private async Task RunJobAsync(
+            string sNome, Func<IServiceScope, Task> objJob, CancellationToken objCancellationToken)
+        {
+            try
+            {
+                // Escopo próprio: um erro de banco numa tarefa não contamina a outra.
+                using IServiceScope objScope = _objScopeFactory.CreateScope();
+                await objJob(objScope);
+            }
+            catch (OperationCanceledException) when (objCancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception objException)
+            {
+                _objLogger.LogError(objException, "Falha no ciclo diário: {Tarefa}.", sNome);
+            }
         }
 
         /// <summary>Tempo até a próxima verificação diária (amanhã no horário configurado).</summary>

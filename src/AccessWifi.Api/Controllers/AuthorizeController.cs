@@ -2,6 +2,7 @@ using AccessWifi.Api.Features.Authorize;
 using AccessWifi.Api.Features.Units;
 using Models.Persistence;
 using AccessWifi.Api.Infrastructure.Unifi;
+using Models.Campaigns;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -110,6 +111,9 @@ public class AuthorizeController : ControllerBase
         // o SaveChanges não gera comando algum.
         await _objDbContext.SaveChangesAsync(objCancellationToken);
 
+        // Base de clientes das campanhas (D2). Fica depois da UniFi para não atrasar a liberação.
+        await RegistrarClienteAsync(objUnit, objRequest, objCancellationToken);
+
         if (bUnifiFalhou)
         {
             return StatusCode(
@@ -120,6 +124,33 @@ public class AuthorizeController : ControllerBase
         string sRedirect = EscolherRedirect(
             objUnit.RedirectUrl, objCompanySettings?.RedirectUrl, objRequest.Url);
         return Ok(new AuthorizeResponse(true, Redirect: sRedirect));
+    }
+
+    /// <summary>
+    /// Atualiza o cliente da empresa (um por telefone) com esta conexão. É invisível para o visitante e
+    /// nunca pode derrubar a liberação do Wi-Fi: qualquer falha aqui só fica no log.
+    /// </summary>
+    private async Task RegistrarClienteAsync(
+        Unit objUnit, AuthorizeRequest objRequest, CancellationToken objCancellationToken)
+    {
+        try
+        {
+            string? sTimeZone = await _objDbContext.Companies.AsNoTracking()
+                .Where(company => company.Id == objUnit.IDCompany)
+                .Select(company => company.TimeZone)
+                .FirstOrDefaultAsync(objCancellationToken);
+            await CustomerDirectory.RegisterVisitAsync(
+                _objDbContext, objUnit.IDCompany, CompanyTimeZone.Resolve(sTimeZone), objUnit.Id,
+                objRequest.Nome, objRequest.Instagram, objRequest.Telefone, objRequest.Nascimento,
+                DateTime.UtcNow, objCancellationToken);
+            await _objDbContext.SaveChangesAsync(objCancellationToken);
+        }
+        catch (Exception objException) when (objException is not OperationCanceledException)
+        {
+            // Ex.: o mesmo telefone conectando em dois aparelhos no mesmo instante (a segunda gravação
+            // esbarra na chave única). O cliente se acerta na próxima conexão.
+            _objLogger.LogWarning(objException, "Cliente não atualizado na unidade {Slug}.", objUnit.Slug);
+        }
     }
 
     /// <summary>

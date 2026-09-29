@@ -19,6 +19,16 @@ namespace Models.Persistence
         public DbSet<Configuration> Configurations => Set<Configuration>();
         public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
+        // ------------------------------------------------------------ Campanhas
+        public DbSet<Customer> Customers => Set<Customer>();
+        public DbSet<CustomerUnit> CustomerUnits => Set<CustomerUnit>();
+        public DbSet<CompanyCampaignKind> CompanyCampaignKinds => Set<CompanyCampaignKind>();
+        public DbSet<Campaign> Campaigns => Set<Campaign>();
+        public DbSet<CampaignVersion> CampaignVersions => Set<CampaignVersion>();
+        public DbSet<CampaignRun> CampaignRuns => Set<CampaignRun>();
+        public DbSet<CampaignRecipient> CampaignRecipients => Set<CampaignRecipient>();
+        public DbSet<CampaignEvent> CampaignEvents => Set<CampaignEvent>();
+
         protected override void OnModelCreating(ModelBuilder objModelBuilder)
         {
             objModelBuilder.Entity<Configuration>(objConfiguration =>
@@ -33,6 +43,8 @@ namespace Models.Persistence
                 objCompany.Property(company => company.Name).HasMaxLength(120);
                 objCompany.Property(company => company.Slug).HasMaxLength(40);
                 objCompany.Property(company => company.ReportEmail).HasMaxLength(200);
+                objCompany.Property(company => company.TimeZone).HasMaxLength(60)
+                    .HasDefaultValue(CompanyTimeZone.Default);
                 objCompany.HasIndex(company => company.Slug).IsUnique();
             });
 
@@ -126,6 +138,135 @@ namespace Models.Persistence
                     objColors.Property(colors => colors.Muted).HasMaxLength(7);
                     objColors.Property(colors => colors.Line).HasMaxLength(7);
                 });
+            });
+
+            ConfigureCampaigns(objModelBuilder);
+        }
+
+        private static void ConfigureCampaigns(ModelBuilder objModelBuilder)
+        {
+            objModelBuilder.Entity<Customer>(objCustomer =>
+            {
+                objCustomer.Property(customer => customer.Phone).HasMaxLength(20);
+                objCustomer.Property(customer => customer.Name).HasMaxLength(200);
+                objCustomer.Property(customer => customer.Instagram).HasMaxLength(100);
+                // D1: um cliente por telefone dentro da empresa.
+                objCustomer.HasIndex(customer => new { customer.IDCompany, customer.Phone }).IsUnique();
+                objCustomer.HasIndex(customer => new { customer.IDCompany, customer.LastVisitAt });
+                objCustomer.HasIndex(customer => new { customer.IDCompany, customer.FirstVisitDate });
+                objCustomer.HasOne<Company>()
+                    .WithMany()
+                    .HasForeignKey(customer => customer.IDCompany)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            objModelBuilder.Entity<CustomerUnit>(objCustomerUnit =>
+            {
+                objCustomerUnit.HasKey(link => new { link.IDCustomer, link.IDUnit });
+                objCustomerUnit.HasIndex(link => link.IDUnit);
+                objCustomerUnit.HasOne<Customer>()
+                    .WithMany()
+                    .HasForeignKey(link => link.IDCustomer)
+                    .OnDelete(DeleteBehavior.Cascade);
+                objCustomerUnit.HasOne<Unit>()
+                    .WithMany()
+                    .HasForeignKey(link => link.IDUnit)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            objModelBuilder.Entity<CompanyCampaignKind>(objKind =>
+            {
+                objKind.HasKey(kind => new { kind.IDCompany, kind.Kind });
+                objKind.Property(kind => kind.Kind).HasMaxLength(30);
+                objKind.Property(kind => kind.EnabledBy).HasMaxLength(60);
+                objKind.HasOne<Company>()
+                    .WithMany()
+                    .HasForeignKey(kind => kind.IDCompany)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            objModelBuilder.Entity<Campaign>(objCampaign =>
+            {
+                objCampaign.Property(campaign => campaign.Kind).HasMaxLength(30);
+                objCampaign.Property(campaign => campaign.Name).HasMaxLength(120);
+                objCampaign.Property(campaign => campaign.Status).HasMaxLength(20);
+                objCampaign.Property(campaign => campaign.ConfigJson).HasColumnType("jsonb");
+                objCampaign.HasIndex(campaign => campaign.IDCompany);
+                // O agendador procura por aqui: "ativas com disparo vencido".
+                objCampaign.HasIndex(campaign => new { campaign.Status, campaign.NextRunAt });
+                objCampaign.HasOne<Company>()
+                    .WithMany()
+                    .HasForeignKey(campaign => campaign.IDCompany)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            objModelBuilder.Entity<CampaignVersion>(objVersion =>
+            {
+                objVersion.Property(version => version.Name).HasMaxLength(120);
+                objVersion.Property(version => version.ConfigJson).HasColumnType("jsonb");
+                objVersion.Property(version => version.Changes).HasMaxLength(2000);
+                objVersion.Property(version => version.Username).HasMaxLength(60);
+                objVersion.HasIndex(version => new { version.IDCampaign, version.Number }).IsUnique();
+                objVersion.HasOne<Campaign>()
+                    .WithMany()
+                    .HasForeignKey(version => version.IDCampaign)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            objModelBuilder.Entity<CampaignRun>(objRun =>
+            {
+                objRun.Property(run => run.Status).HasMaxLength(20);
+                objRun.Property(run => run.Error).HasMaxLength(1000);
+                // Uma execução por campanha por dia (D1): nem reinício do serviço nem troca de horário
+                // no mesmo dia duplicam o disparo.
+                objRun.HasIndex(run => new { run.IDCampaign, run.LocalDate }).IsUnique();
+                objRun.HasIndex(run => run.Status);
+                objRun.HasIndex(run => new { run.IDCompany, run.LocalDate });
+                objRun.HasOne<Campaign>()
+                    .WithMany()
+                    .HasForeignKey(run => run.IDCampaign)
+                    .OnDelete(DeleteBehavior.Cascade);
+                // NoAction (conferido no fim do comando): apagar a campanha leva versões e execuções
+                // juntas sem depender da ordem da cascata.
+                objRun.HasOne<CampaignVersion>()
+                    .WithMany()
+                    .HasForeignKey(run => run.IDCampaignVersion)
+                    .OnDelete(DeleteBehavior.NoAction);
+            });
+
+            objModelBuilder.Entity<CampaignRecipient>(objRecipient =>
+            {
+                objRecipient.Property(recipient => recipient.Phone).HasMaxLength(20);
+                objRecipient.Property(recipient => recipient.Name).HasMaxLength(200);
+                objRecipient.Property(recipient => recipient.Message).HasMaxLength(4000);
+                objRecipient.Property(recipient => recipient.Status).HasMaxLength(20);
+                objRecipient.Property(recipient => recipient.Reason).HasMaxLength(300);
+                // D1: um destinatário por cliente (= por telefone) em cada execução.
+                objRecipient.HasIndex(recipient => new { recipient.IDRun, recipient.IDCustomer }).IsUnique();
+                // Os lotes: "pendentes desta execução, em ordem".
+                objRecipient.HasIndex(recipient => new { recipient.IDRun, recipient.Status, recipient.Id });
+                objRecipient.HasIndex(recipient => recipient.IDCustomer);
+                objRecipient.HasOne<CampaignRun>()
+                    .WithMany()
+                    .HasForeignKey(recipient => recipient.IDRun)
+                    .OnDelete(DeleteBehavior.Cascade);
+                // Cliente apagado pela retenção (D4) leva junto as mensagens dele; os números da
+                // execução continuam no resumo.
+                objRecipient.HasOne<Customer>()
+                    .WithMany()
+                    .HasForeignKey(recipient => recipient.IDCustomer)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            objModelBuilder.Entity<CampaignEvent>(objEvent =>
+            {
+                objEvent.Property(evt => evt.Action).HasMaxLength(40);
+                objEvent.Property(evt => evt.Username).HasMaxLength(60);
+                objEvent.HasIndex(evt => new { evt.IDCampaign, evt.CreatedAt });
+                objEvent.HasOne<Campaign>()
+                    .WithMany()
+                    .HasForeignKey(evt => evt.IDCampaign)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
         }
     }

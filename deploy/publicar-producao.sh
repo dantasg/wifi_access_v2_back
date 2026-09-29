@@ -243,11 +243,17 @@ CONF="$SITE/security/90-accesswifi-api.conf"
 if cmp -s "$P/90-accesswifi-api.conf" "$CONF"; then
   ok "encaminhamento da API no nginx em dia"
 else
+  # Guarda o que está valendo: se a nova não passar no teste, volta a anterior. Apagar o arquivo
+  # tiraria /authorize e /settings do ar na próxima recarga do nginx — o portal pararia.
+  ANTERIOR="$(mktemp)"
+  if [ -f "$CONF" ]; then cp "$CONF" "$ANTERIOR"; fi
   cp "$P/90-accesswifi-api.conf" "$CONF"
   if ! docker exec ic-nginx-B0Yo nginx -t >/dev/null 2>&1; then
-    rm -f "$CONF"
-    falha "configuração do nginx inválida"
+    if [ -s "$ANTERIOR" ]; then cp "$ANTERIOR" "$CONF"; else rm -f "$CONF"; fi
+    rm -f "$ANTERIOR"
+    falha "configuração nova do nginx inválida — a anterior foi mantida"
   fi
+  rm -f "$ANTERIOR"
   docker exec ic-nginx-B0Yo nginx -s reload
   ok "encaminhamento da API no nginx (re)colocado"
 fi

@@ -6,6 +6,7 @@ using AccessWifi.Api.Infrastructure.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Models.Campaigns;
 using Models.DataBase;
 
 namespace AccessWifi.Api.Controllers;
@@ -37,8 +38,15 @@ public partial class CompaniesController : ControllerBase
             .AsNoTracking()
             .OrderBy(company => company.Name)
             .ToListAsync(objCancellationToken);
+        Dictionary<Guid, List<string>> objKinds = (await _objDbContext.CompanyCampaignKinds.AsNoTracking()
+                .Select(kind => new { kind.IDCompany, kind.Kind })
+                .ToListAsync(objCancellationToken))
+            .GroupBy(kind => kind.IDCompany)
+            .ToDictionary(group => group.Key, group => group.Select(kind => kind.Kind).ToList());
 
-        return Ok(objCompanies.Select(CompanyDto.FromEntity).ToList());
+        return Ok(objCompanies
+            .Select(company => CompanyDto.FromEntity(company, objKinds.GetValueOrDefault(company.Id) ?? []))
+            .ToList());
     }
 
     /// <summary>Cria uma empresa. O slug identifica o portal (?company=slug) e é imutável.</summary>
@@ -64,7 +72,8 @@ public partial class CompaniesController : ControllerBase
             return BadRequest(new ErrorResponse("Já existe uma empresa com esse slug."));
         }
 
-        string? sReportError = ValidateReport(objRequest.ReportEmail, objRequest.ReportSendDay);
+        string? sReportError = ValidateReport(objRequest.ReportEmail, objRequest.ReportSendDay)
+            ?? ValidateCampaignSettings(objRequest.TimeZone, objRequest.CampaignKinds);
         if (sReportError is not null)
         {
             return BadRequest(new ErrorResponse(sReportError));
@@ -76,11 +85,16 @@ public partial class CompaniesController : ControllerBase
             Slug = objRequest.Slug,
         };
         ApplyReport(objCompany, objRequest.ReportEmail, objRequest.ReportSendDay);
+        if (objRequest.TimeZone is not null)
+        {
+            objCompany.TimeZone = objRequest.TimeZone.Trim();
+        }
 
         _objDbContext.Companies.Add(objCompany);
+        await ApplyCampaignKindsAsync(objCompany.Id, objRequest.CampaignKinds, objCancellationToken);
         await _objDbContext.SaveChangesAsync(objCancellationToken);
 
-        return Ok(CompanyDto.FromEntity(objCompany));
+        return Ok(CompanyDto.FromEntity(objCompany, await KindsOfAsync(objCompany.Id, objCancellationToken)));
     }
 
     /// <summary>Atualiza nome, situação e configuração de relatório da empresa.</summary>
@@ -100,7 +114,8 @@ public partial class CompaniesController : ControllerBase
             return BadRequest(new ErrorResponse("Nome é obrigatório (máximo de 120 caracteres)."));
         }
 
-        string? sReportError = ValidateReport(objRequest.ReportEmail, objRequest.ReportSendDay);
+        string? sReportError = ValidateReport(objRequest.ReportEmail, objRequest.ReportSendDay)
+            ?? ValidateCampaignSettings(objRequest.TimeZone, objRequest.CampaignKinds);
         if (sReportError is not null)
         {
             return BadRequest(new ErrorResponse(sReportError));
@@ -109,10 +124,86 @@ public partial class CompaniesController : ControllerBase
         objCompany.Name = objRequest.Name.Trim();
         objCompany.Active = objRequest.Active;
         ApplyReport(objCompany, objRequest.ReportEmail, objRequest.ReportSendDay);
+        if (objRequest.TimeZone is not null)
+        {
+            objCompany.TimeZone = objRequest.TimeZone.Trim();
+        }
 
+        await ApplyCampaignKindsAsync(objCompany.Id, objRequest.CampaignKinds, objCancellationToken);
         await _objDbContext.SaveChangesAsync(objCancellationToken);
 
-        return Ok(CompanyDto.FromEntity(objCompany));
+        // Fuso ou tipos liberados mudaram a agenda: recalcula o próximo disparo das campanhas.
+        if (objRequest.TimeZone is not null || objRequest.CampaignKinds is not null)
+        {
+            await RefreshCampaignScheduleAsync(objCompany, objCancellationToken);
+        }
+
+        return Ok(CompanyDto.FromEntity(objCompany, await KindsOfAsync(objCompany.Id, objCancellationToken)));
+    }
+
+    private static string? ValidateCampaignSettings(string? sTimeZone, IReadOnlyList<string>? objKinds)
+    {
+        if (sTimeZone is not null && !CompanyTimeZone.IsValid(sTimeZone.Trim()))
+        {
+            return "Fuso horário inválido.";
+        }
+        if (objKinds is not null && objKinds.Any(sKind => !CampaignKind.IsValid(sKind)))
+        {
+            return "Tipo de campanha inválido.";
+        }
+        return null;
+    }
+
+    /// <summary>Liga/desliga os tipos de campanha da empresa (D6). Nulo = manter como está.</summary>
+    private async Task ApplyCampaignKindsAsync(
+        Guid objCompanyId, IReadOnlyList<string>? objKinds, CancellationToken objCancellationToken)
+    {
+        if (objKinds is null)
+        {
+            return;
+        }
+
+        List<CompanyCampaignKind> objAtuais = await _objDbContext.CompanyCampaignKinds
+            .Where(kind => kind.IDCompany == objCompanyId)
+            .ToListAsync(objCancellationToken);
+        HashSet<string> objDesejados = objKinds.ToHashSet();
+
+        _objDbContext.CompanyCampaignKinds.RemoveRange(
+            objAtuais.Where(kind => !objDesejados.Contains(kind.Kind)));
+        foreach (string sKind in objDesejados.Where(sKind => objAtuais.All(kind => kind.Kind != sKind)))
+        {
+            _objDbContext.CompanyCampaignKinds.Add(new CompanyCampaignKind
+            {
+                IDCompany = objCompanyId,
+                Kind = sKind,
+                EnabledBy = User.GetUsername() ?? "",
+            });
+        }
+    }
+
+    private async Task<List<string>> KindsOfAsync(Guid objCompanyId, CancellationToken objCancellationToken) =>
+        await _objDbContext.CompanyCampaignKinds.AsNoTracking()
+            .Where(kind => kind.IDCompany == objCompanyId)
+            .Select(kind => kind.Kind)
+            .ToListAsync(objCancellationToken);
+
+    /// <summary>
+    /// Tipo desligado: as campanhas dele ficam sem agenda (não disparam). Religado ou fuso trocado: o
+    /// próximo disparo é recalculado a partir de agora.
+    /// </summary>
+    private async Task RefreshCampaignScheduleAsync(Company objCompany, CancellationToken objCancellationToken)
+    {
+        HashSet<string> objLigados = (await KindsOfAsync(objCompany.Id, objCancellationToken)).ToHashSet();
+        List<Campaign> objCampaigns = await _objDbContext.Campaigns
+            .Where(campaign => campaign.IDCompany == objCompany.Id && campaign.Status == CampaignStatus.Active)
+            .ToListAsync(objCancellationToken);
+        TimeZoneInfo objZone = CompanyTimeZone.Resolve(objCompany.TimeZone);
+        foreach (Campaign objCampaign in objCampaigns)
+        {
+            CampaignScheduling.RefreshNextRun(
+                objCampaign, objZone, DateTime.UtcNow, objLigados.Contains(objCampaign.Kind));
+        }
+        await _objDbContext.SaveChangesAsync(objCancellationToken);
     }
 
     /// <summary>Valida e-mail do relatório (se informado) e o dia de envio (1 a 28).</summary>

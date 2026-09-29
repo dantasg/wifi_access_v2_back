@@ -333,6 +333,24 @@ public class AuthorizeControllerTests
     }
 
     [Fact]
+    public async Task Post_RegistraOClienteDaEmpresaPeloTelefone_SemMudarAResposta()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Unit objUnit = CreateUnit(objDbContext);
+        AuthorizeController objController = CreateController(objDbContext, new FakeUnifiClient());
+
+        ActionResult<AuthorizeResponse> objResult =
+            await objController.Post(CreateRequest(), CancellationToken.None);
+
+        Assert.IsType<OkObjectResult>(objResult.Result);
+        Customer objCustomer = Assert.Single(objDbContext.Customers);
+        Assert.Equal(objUnit.IDCompany, objCustomer.IDCompany);
+        Assert.Equal("91988881234", objCustomer.Phone);
+        Assert.Equal(new DateOnly(1998, 3, 12), objCustomer.BirthDate);
+        Assert.Equal(objUnit.Id, objCustomer.IDLastUnit);
+    }
+
+    [Fact]
     public async Task Post_FalhaNaUnifi_Retorna502MasMantemOLead()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
