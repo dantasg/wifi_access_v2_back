@@ -174,7 +174,7 @@ public class AdminController : ControllerBase
              join unit in objUnitsQuery on lead.IDUnit equals unit.Id
              orderby lead.Timestamp descending
              select new LeadDto(
-                 lead.Timestamp, lead.Nome, lead.Instagram, lead.Telefone,
+                 lead.Timestamp, lead.CreatedAt, lead.Nome, lead.Instagram, lead.Telefone,
                  lead.Nascimento, lead.Mac, lead.Ap, lead.Ssid,
                  unit.Slug, unit.Name))
             .ToListAsync(objCancellationToken);

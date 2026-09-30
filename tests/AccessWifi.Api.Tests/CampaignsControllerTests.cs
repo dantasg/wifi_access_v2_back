@@ -151,6 +151,7 @@ public class CampaignsControllerTests
         Assert.Equal(
             new[] { CampaignEventAction.Resumed, CampaignEventAction.Paused, CampaignEventAction.Created },
             objEventos.Select(evt => evt.Action).ToArray());
+        Assert.All(objEventos, evt => Assert.Null(evt.RunDate));
     }
 
     [Fact]
@@ -222,6 +223,7 @@ public class CampaignsControllerTests
         {
             IDCampaign = objCampanha.Id, IDCompany = objCompany.Id, Status = CampaignRunStatus.Running,
             IDCampaignVersion = objDbContext.CampaignVersions.Single().Id, VersionNumber = 1,
+            LocalDate = new DateOnly(2026, 9, 30),
         };
         objDbContext.CampaignRuns.Add(objRun);
         objDbContext.SaveChanges();
@@ -233,6 +235,12 @@ public class CampaignsControllerTests
         Assert.Contains("já terminou", Erro(await objController.CancelRun(objRun.Id, null, CancellationToken.None)));
 
         Assert.Equal(3, objDbContext.CampaignEvents.Count(evt => evt.IDRun == objRun.Id));
+
+        // O histórico diz de qual dia é a execução pausada/retomada/cancelada.
+        List<CampaignEventDto> objEventos = Ok(await objController.Events(objCampanha.Id, null, CancellationToken.None));
+        Assert.All(objEventos.Where(evt => evt.RunId == objRun.Id),
+            evt => Assert.Equal(new DateOnly(2026, 9, 30), evt.RunDate));
+        Assert.Null(objEventos.Single(evt => evt.Action == CampaignEventAction.Created).RunDate);
     }
 }
 

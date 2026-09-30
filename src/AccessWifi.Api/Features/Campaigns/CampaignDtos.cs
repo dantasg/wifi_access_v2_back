@@ -81,7 +81,8 @@ namespace AccessWifi.Api.Features.Campaigns
     public record CampaignVersionDto(
         int Number, string Name, string Changes, DateTime CreatedAt, string Username, CampaignConfig Config);
 
-    public record CampaignEventDto(string Action, DateTime CreatedAt, string Username, Guid? RunId);
+    /// <param name="RunDate">Ação sobre uma execução: o dia dela (fuso da empresa). Nulo nas ações da campanha.</param>
+    public record CampaignEventDto(string Action, DateTime CreatedAt, string Username, Guid? RunId, DateOnly? RunDate);
 
     public record CampaignRecipientDto(
         long Id, string Phone, string Name, string Message, string Status, string? Reason, int? Milestone,

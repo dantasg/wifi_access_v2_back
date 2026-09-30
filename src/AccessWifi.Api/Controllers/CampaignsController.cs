@@ -356,7 +356,11 @@ public class CampaignsController : ControllerBase
             .Where(evt => evt.IDCampaign == id)
             .OrderByDescending(evt => evt.CreatedAt)
             .Take(500)
-            .Select(evt => new CampaignEventDto(evt.Action, evt.CreatedAt, evt.Username, evt.IDRun))
+            .Select(evt => new CampaignEventDto(evt.Action, evt.CreatedAt, evt.Username, evt.IDRun,
+                _objDbContext.CampaignRuns
+                    .Where(run => run.Id == evt.IDRun)
+                    .Select(run => (DateOnly?)run.LocalDate)
+                    .FirstOrDefault()))
             .ToListAsync(objCancellationToken));
     }
 

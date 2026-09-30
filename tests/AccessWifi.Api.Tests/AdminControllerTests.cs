@@ -289,6 +289,27 @@ public class AdminControllerTests
     }
 
     [Fact]
+    public async Task GetLeads_TrazOPrimeiroCadastroSeparadoDoUltimoAcesso()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext, "doce");
+        Unit objUnit = CreateUnit(objDbContext, objCompany.Id, "doce-um");
+        DateTime dtPrimeiro = new DateTime(2026, 9, 21, 12, 0, 0, DateTimeKind.Utc);
+        DateTime dtUltimo = new DateTime(2026, 9, 29, 11, 26, 0, DateTimeKind.Utc);
+        objDbContext.Leads.Add(new Lead { IDUnit = objUnit.Id, Nome = "Voltou", CreatedAt = dtPrimeiro, Timestamp = dtUltimo });
+        objDbContext.SaveChanges();
+        AdminController objController = CreateController(objDbContext);
+        TestHelpers.SetUser(objController, objCompany.Id);
+
+        ActionResult<List<LeadDto>> objResult = await objController.GetLeads(null, null, CancellationToken.None);
+
+        LeadDto objLead = Assert.Single(
+            Assert.IsType<List<LeadDto>>(Assert.IsType<OkObjectResult>(objResult.Result).Value));
+        Assert.Equal(dtPrimeiro, objLead.CreatedAt);
+        Assert.Equal(dtUltimo, objLead.Timestamp);
+    }
+
+    [Fact]
     public async Task GetLeads_SuperAdminSemSlug_Retorna400()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
