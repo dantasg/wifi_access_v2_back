@@ -95,12 +95,14 @@ builder.Services.AddAuthorization();
 builder.Services.AddRateLimiter(objLimiterOptions =>
 {
     objLimiterOptions.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    // Todos os clientes de uma loja chegam pelo MESMO IP (a internet da loja): o limite vale para a loja
+    // inteira, não por pessoa. 120/min cobre fila de inauguração e ainda barra abuso.
     objLimiterOptions.AddPolicy("authorize", objHttpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
             objHttpContext.Connection.RemoteIpAddress ?? IPAddress.Loopback,
             _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 10,
+                PermitLimit = 120,
                 Window = TimeSpan.FromMinutes(1),
             }));
     objLimiterOptions.AddPolicy("admin-login", objHttpContext =>
