@@ -26,7 +26,7 @@ namespace AccessWifiService
                     objLead.CreatedAt.ToString("o", CultureInfo.InvariantCulture),
                     objRow.UnitName,
                     objLead.Nome,
-                    objLead.Instagram,
+                    InstagramLink(objLead.Instagram),
                     objLead.Telefone,
                     objLead.Nascimento,
                     objLead.Mac ?? "",
@@ -38,6 +38,16 @@ namespace AccessWifiService
 
             // BOM para o Excel abrir os acentos corretamente.
             return new UTF8Encoding(encoderShouldEmitUTF8Identifier: true).GetBytes(objBuilder.ToString());
+        }
+
+        /// <summary>
+        /// O link do perfil, para abrir com um clique. Os cadastros novos já vêm com ele; os antigos (só o @)
+        /// ganham o link aqui se estiverem no formato. Fora disso, sai como a pessoa digitou.
+        /// </summary>
+        private static string InstagramLink(string sInstagram)
+        {
+            string sUrl = InstagramHandle.ProfileUrl(sInstagram);
+            return sUrl.Length > 0 ? sUrl : sInstagram;
         }
 
         private static string Escape(string sField)

@@ -351,6 +351,36 @@ public class AuthorizeControllerTests
     }
 
     [Fact]
+    public async Task Post_GravaOLinkDoPerfilNoLeadENoCliente()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        CreateUnit(objDbContext);
+        AuthorizeController objController = CreateController(objDbContext, new FakeUnifiClient());
+
+        // Sem o "@" no começo também vale.
+        await objController.Post(CreateRequest() with { Instagram = " Ana.Souza " }, CancellationToken.None);
+
+        Assert.Equal("https://www.instagram.com/ana.souza", Assert.Single(objDbContext.Leads).Instagram);
+        Assert.Equal("https://www.instagram.com/ana.souza", Assert.Single(objDbContext.Customers).Instagram);
+    }
+
+    [Fact]
+    public async Task Post_InstagramForaDoFormato_GravaVazioELiberaMesmoAssim()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        CreateUnit(objDbContext);
+        FakeUnifiClient objUnifi = new FakeUnifiClient();
+        AuthorizeController objController = CreateController(objDbContext, objUnifi);
+
+        ActionResult<AuthorizeResponse> objResult = await objController.Post(
+            CreateRequest() with { Instagram = "biell6555@gmail.com" }, CancellationToken.None);
+
+        Assert.IsType<OkObjectResult>(objResult.Result);
+        Assert.Equal("AA:BB:CC:DD:EE:FF", objUnifi.SMacAutorizado);
+        Assert.Equal("", Assert.Single(objDbContext.Leads).Instagram);
+    }
+
+    [Fact]
     public async Task Post_FalhaNaUnifi_Retorna502MasMantemOLead()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();

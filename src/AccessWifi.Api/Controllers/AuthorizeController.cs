@@ -74,7 +74,7 @@ public class AuthorizeController : ControllerBase
         }
 
         objLead.Nome = objRequest.Nome;
-        objLead.Instagram = objRequest.Instagram;
+        objLead.Instagram = InstagramHandle.ProfileUrl(objRequest.Instagram);
         objLead.Telefone = objRequest.Telefone;
         objLead.Nascimento = objRequest.Nascimento;
         objLead.Ap = objRequest.Ap;
@@ -141,7 +141,7 @@ public class AuthorizeController : ControllerBase
                 .FirstOrDefaultAsync(objCancellationToken);
             await CustomerDirectory.RegisterVisitAsync(
                 _objDbContext, objUnit.IDCompany, CompanyTimeZone.Resolve(sTimeZone), objUnit.Id,
-                objRequest.Nome, objRequest.Instagram, objRequest.Telefone, objRequest.Nascimento,
+                objRequest.Nome, InstagramHandle.ProfileUrl(objRequest.Instagram), objRequest.Telefone, objRequest.Nascimento,
                 DateTime.UtcNow, objCancellationToken);
             await _objDbContext.SaveChangesAsync(objCancellationToken);
         }
