@@ -6,6 +6,7 @@
 #   ./deploy/publicar-producao.sh            API + worker + portal
 #   ./deploy/publicar-producao.sh api        só API e worker (com migrations)
 #   ./deploy/publicar-producao.sh portal     só o portal (o front)
+#   ./deploy/publicar-producao.sh rotinas    só as rotinas de proteção (backup diário e avisos); não reinicia nada
 #   ./deploy/publicar-producao.sh reverter   volta API, worker e portal para a versão anterior
 #
 # O que ele garante, na ordem:
@@ -15,6 +16,7 @@
 #   4. Backup do banco ANTES das migrations.
 #   5. Se a API não responder depois de subir, volta sozinho para a versão anterior.
 #   6. Recoloca o encaminhamento do nginx se o painel tiver apagado.
+#   7. Instala/atualiza as rotinas de proteção (backup diário e avisos) — alvos tudo, api e rotinas.
 #
 # Detalhes da produção: PRODUCAO.md
 # =============================================================================
@@ -50,8 +52,17 @@ quieto() {
 }
 
 case "$ALVO" in
-  tudo|api|portal|reverter) ;;
-  *) falha "Alvo desconhecido: '$ALVO'. Use: tudo | api | portal | reverter" ;;
+  tudo|api|portal|rotinas|reverter) ;;
+  *) falha "Alvo desconhecido: '$ALVO'. Use: tudo | api | portal | rotinas | reverter" ;;
+esac
+
+# O que entra em cada alvo. "rotinas" só instala o backup diário e os avisos: não reinicia nada.
+COM_API=0; COM_PORTAL=0; COM_ROTINAS=0
+case "$ALVO" in
+  tudo)    COM_API=1; COM_PORTAL=1; COM_ROTINAS=1 ;;
+  api)     COM_API=1; COM_ROTINAS=1 ;;
+  portal)  COM_PORTAL=1 ;;
+  rotinas) COM_ROTINAS=1 ;;
 esac
 
 [ -f "$CHAVE" ] || falha "Chave SSH não encontrada em $CHAVE"
@@ -102,11 +113,11 @@ repo_limpo() {
 }
 
 VERSAO=""
-if [ "$ALVO" != portal ]; then
+if [ $COM_API = 1 ] || [ $COM_ROTINAS = 1 ]; then
   repo_limpo "$RAIZ_BACK" "back"
   VERSAO="back $(git -C "$RAIZ_BACK" log -1 --format=%h)"
 fi
-if [ "$ALVO" != api ]; then
+if [ $COM_PORTAL = 1 ]; then
   [ -n "$RAIZ_FRONT" ] || falha "Repositório do front não encontrado ao lado do back ($RAIZ_BACK/../AccessWifi_V2_FRONT)."
   repo_limpo "$RAIZ_FRONT" "front"
   VERSAO="$VERSAO${VERSAO:+ · }front $(git -C "$RAIZ_FRONT" log -1 --format=%h)"
@@ -118,7 +129,7 @@ trap 'rm -rf "$PACOTE"' EXIT
 # -----------------------------------------------------------------------------
 # 2. Compilar aqui
 # -----------------------------------------------------------------------------
-if [ "$ALVO" != portal ]; then
+if [ $COM_API = 1 ]; then
   etapa "Compilando API e worker (Linux x64)"
   quieto dotnet publish "$RAIZ_BACK/src/AccessWifi.Api/AccessWifi.Api.csproj" \
     -c Release -r linux-x64 --self-contained false -o "$PACOTE/api" -v q --nologo
@@ -134,7 +145,7 @@ if [ "$ALVO" != portal ]; then
   ok "$(grep -c 'INSERT INTO "__EFMigrationsHistory"' "$PACOTE/migrate.sql") migrations no script"
 fi
 
-if [ "$ALVO" != api ]; then
+if [ $COM_PORTAL = 1 ]; then
   etapa "Compilando o portal"
   # --mode vps: o Vite NÃO carrega o .env.production (que aponta para o ngrok). Sem VITE_API_URL,
   # o front chama a própria origem — portal e API moram no mesmo endereço.
@@ -158,6 +169,7 @@ if [ -d "$PACOTE/portal" ]; then
   ok "portal chama a própria origem"
 fi
 cp "$RAIZ_BACK/deploy/nginx/90-accesswifi-api.conf" "$PACOTE/"
+if [ $COM_ROTINAS = 1 ]; then cp -r "$RAIZ_BACK/deploy/ops" "$PACOTE/ops"; fi
 printf '%s — publicado em %s\n' "$VERSAO" "$(date '+%d/%m/%Y %H:%M')" > "$PACOTE/VERSAO"
 
 # -----------------------------------------------------------------------------
@@ -172,14 +184,14 @@ ok "enviado"
 # 5. Aplicar no servidor
 # -----------------------------------------------------------------------------
 etapa "Aplicando no servidor"
-"${SSH[@]}" "ALVO=$ALVO bash -s" <<'REMOTO'
+"${SSH[@]}" "ALVO=$ALVO COM_API=$COM_API COM_PORTAL=$COM_PORTAL COM_ROTINAS=$COM_ROTINAS bash -s" <<'REMOTO'
 set -euo pipefail
 P=/tmp/accesswifi-pub
 SITE=/etc/icontainer/apps/nginx/nginx/www/sites/vps11702.panel.icontainer.online
 ok()    { echo "    ✓ $1"; }
 falha() { echo "    ✗ $1"; exit 1; }
 
-if [ "$ALVO" != portal ]; then
+if [ "$COM_API" = 1 ]; then
   # Backup antes de qualquer migration. Guarda os 10 mais recentes.
   install -d -m 700 /var/backups/accesswifi
   B=/var/backups/accesswifi/antes-$(date +%Y%m%d-%H%M%S).dump
@@ -205,6 +217,8 @@ if [ "$ALVO" != portal ]; then
   done
   chown -R root:root /opt/accesswifi
   chmod -R a+rX /opt/accesswifi
+  # Avisa o vigia (rotinas de proteção) que o reinício é proposital: não manda alerta por 5 minutos.
+  install -d -m 755 /run/accesswifi-ops && touch /run/accesswifi-ops/manutencao
   systemctl restart accesswifi-api accesswifi-worker
 
   # Espera a API responder (GET /settings sem parâmetro = 400, prova de que subiu).
@@ -228,7 +242,7 @@ if [ "$ALVO" != portal ]; then
   ok "API no ar; worker: $(systemctl is-active accesswifi-worker)"
 fi
 
-if [ "$ALVO" != api ]; then
+if [ "$COM_PORTAL" = 1 ]; then
   rm -rf "$SITE/index.anterior"
   cp -a "$SITE/index" "$SITE/index.anterior"
   rm -rf "$SITE/index"/*
@@ -258,8 +272,14 @@ else
   ok "encaminhamento da API no nginx (re)colocado"
 fi
 
-if [ -f /opt/accesswifi/VERSAO ]; then cp /opt/accesswifi/VERSAO /opt/accesswifi/VERSAO.anterior; fi
-cp "$P/VERSAO" /opt/accesswifi/VERSAO
+if [ "$COM_ROTINAS" = 1 ]; then
+  bash "$P/ops/instalar.sh"
+fi
+
+if [ "$COM_API" = 1 ] || [ "$COM_PORTAL" = 1 ]; then
+  if [ -f /opt/accesswifi/VERSAO ]; then cp /opt/accesswifi/VERSAO /opt/accesswifi/VERSAO.anterior; fi
+  cp "$P/VERSAO" /opt/accesswifi/VERSAO
+fi
 rm -rf "$P"
 REMOTO
 
@@ -277,4 +297,8 @@ confere "portal"                "https://$DOMINIO/guest/s/default/" 200
 confere "API"                   "https://$DOMINIO/settings"         400
 confere "painel admin (página)" "https://$DOMINIO/admin"            200
 
-printf '\n\033[1;32mPublicado: %s\033[0m\n' "$("${SSH[@]}" 'cat /opt/accesswifi/VERSAO')"
+if [ "$ALVO" = rotinas ]; then
+  printf '\n\033[1;32mRotinas de proteção instaladas. No ar, sem mudança: %s\033[0m\n' "$("${SSH[@]}" 'cat /opt/accesswifi/VERSAO')"
+else
+  printf '\n\033[1;32mPublicado: %s\033[0m\n' "$("${SSH[@]}" 'cat /opt/accesswifi/VERSAO')"
+fi

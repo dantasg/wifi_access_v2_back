@@ -1,0 +1,9 @@
+[Unit]
+Description=AccessWifi: confere API, worker, banco, portal, UniFi, disco, certificado e backup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/accesswifi/ops/accesswifi_ops.py vigiar
+TimeoutStartSec=5min

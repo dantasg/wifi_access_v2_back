@@ -16,3 +16,6 @@ publish/
 *.local.json
 # Config de desenvolvimento pode conter segredos (JWT, hash do admin) — nunca versionar.
 appsettings.Development.json
+
+# Cache do Python (deploy/ops)
+__pycache__/

@@ -1,0 +1,10 @@
+[Unit]
+Description=AccessWifi: backup diario do banco as 03:15
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

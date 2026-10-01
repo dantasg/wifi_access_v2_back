@@ -1,0 +1,11 @@
+[Unit]
+Description=AccessWifi: backup do banco (criptografado, enviado ao Telegram)
+After=postgresql.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/accesswifi/ops/accesswifi_ops.py backup
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=45min
