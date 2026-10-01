@@ -184,6 +184,30 @@ Outros comandos, no servidor: `accesswifi_ops.py testar` (mensagem de teste nos 
 `accesswifi_ops.py backup` (backup agora), `accesswifi_ops.py vigiar --simular` (mostra o que avisaria).
 Segredos em `/etc/accesswifi/ops.env` (só o root lê).
 
+**O que ter em mãos para configurar:**
+
+1. **Token do robô do Telegram.** No Telegram, abra o **@BotFather** (o com selo azul de verificado) →
+   **Iniciar** → mande `/newbot` → um nome (ex.: `AccessWifi Avisos`) → um usuário terminado em `bot`
+   (ex.: `accesswifi_regional_avisos_bot`). A resposta "Done! Congratulations…" traz o token
+   (`7123456789:AAH…`). Não mande o token para ninguém: quem o tem controla o robô. Durante o
+   `configurar`, quando ele pedir, abra `t.me/<usuário do robô>` e toque em **Iniciar**.
+2. **Senha do backup**, com 12 caracteres ou mais. Gere no gerenciador de senhas ou com
+   `openssl rand -base64 24` (Git Bash) e **salve antes de usar**.
+3. **E-mail que envia** (no Gmail, com "senha de app", que exige a verificação em duas etapas ligada) e
+   **e-mail(s) que recebem** os avisos.
+
+**Alterar depois** (trocar o SMTP, o e-mail que recebe, o robô ou a senha): rode o mesmo `configurar`.
+Cada pergunta mostra o valor salvo; **Enter mantém**. Senhas e token aparecem como `[mantém o atual]`; o chat
+do Telegram e a senha do backup perguntam "Manter…? [S/n]". No fim ele testa os dois canais de novo
+(e oferece um backup — `n` se não precisar).
+
+- **Trocou a senha do backup?** Só os backups **novos** usam a nova. Os que já estão no Telegram continuam
+  abrindo **só com a antiga**: guarde as duas, anotando a partir de que data vale a nova.
+- **Token vazou ou o robô foi apagado?** No @BotFather: `/revoke` (gera outro token para o mesmo robô) ou
+  `/newbot`. Depois, `configurar` com o token novo.
+- **A senha de app do Gmail foi revogada?** Os avisos por e-mail param (o Telegram segue). Gere outra no
+  Google e rode o `configurar`.
+
 > ⚠️ **Guarde a `Encryption__Key` fora do servidor** (`/root/accesswifi-encryption-key.txt`). Ela
 > decifra a chave da UniFi e as senhas guardadas no banco. Backup sem ela restaura um banco com
 > essas informações ilegíveis.
