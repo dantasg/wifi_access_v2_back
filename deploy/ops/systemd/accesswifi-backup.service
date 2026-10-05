@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 /opt/accesswifi/ops/accesswifi_ops.py backup
+ExecStart=/usr/bin/dotnet /opt/accesswifi/ops/AccessWifi.Ops.dll backup
 Nice=10
 IOSchedulingClass=idle
 TimeoutStartSec=45min

@@ -5,5 +5,5 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 /opt/accesswifi/ops/accesswifi_ops.py vigiar
+ExecStart=/usr/bin/dotnet /opt/accesswifi/ops/AccessWifi.Ops.dll vigiar
 TimeoutStartSec=5min

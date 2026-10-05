@@ -172,17 +172,53 @@ sudo -u postgres pg_restore -d accesswifi_conferencia accesswifi.dump
 #     (sem a Encryption__Key dele, a chave da UniFi e as senhas guardadas ficam ilegíveis).
 ```
 
-**As rotinas** (backup e avisos) ficam em `deploy/ops/` e são instaladas pelo script de publicação
-(alvos `tudo`, `api` e `rotinas`). Configuração (Telegram, senha do backup, e-mail dos avisos) — rode
-**num terminal seu**, porque ele pergunta as senhas:
+**As rotinas** (backup e avisos) são o programa **`AccessWifi.Ops`** (C#, `src/AccessWifi.Ops`), separado
+da API e do worker de propósito: se eles caírem, os avisos saem mesmo assim. **Cada rotina roda num serviço
+systemd próprio** — se uma travar, as outras seguem:
+
+| Serviço | Quando | Comando |
+| --- | --- | --- |
+| `accesswifi-unifi` | sempre ligado (reinicia sozinho em 10 s) | `seguir-unifi` — avisa na hora quando a UniFi recusa uma liberação |
+| `accesswifi-vigia` (timer) | a cada 5 min | `vigiar` — API, worker, banco, portal, certificado, disco, backup e o vigia acima |
+| `accesswifi-backup` (timer) | 03:15 | `backup` — backup criptografado, enviado ao Telegram |
+
+São instaladas pelo script de publicação (alvos `tudo`, `api` e `rotinas`; o `rotinas` não reinicia nada). No
+servidor, o atalho é **`accesswifi-ops <comando>`**. Configuração (Telegram, senha do backup, e-mail dos avisos)
+— rode **num terminal seu**, porque ele pergunta as senhas sem mostrá-las:
 
 ```bash
-ssh -t -i "C:\Users\Genival Dantas\.ssh\accesswifi_vps" root@216.22.13.216 python3 /opt/accesswifi/ops/accesswifi_ops.py configurar
+ssh -t -i "C:\Users\Genival Dantas\.ssh\accesswifi_vps" root@216.22.13.216 accesswifi-ops configurar
 ```
 
-Outros comandos, no servidor: `accesswifi_ops.py testar` (mensagem de teste nos dois canais),
-`accesswifi_ops.py backup` (backup agora), `accesswifi_ops.py vigiar --simular` (mostra o que avisaria).
-Segredos em `/etc/accesswifi/ops.env` (só o root lê).
+Outros comandos, no servidor: `accesswifi-ops testar` (mensagem de teste nos dois canais), `accesswifi-ops backup`
+(backup agora), `accesswifi-ops vigiar --simular` e `accesswifi-ops backup --simular` (fazem tudo, mas só mostram
+o que mandariam). Segredos em `/etc/accesswifi/ops.env` (só o root lê). O e-mail usa **STARTTLS, porta 587**
+(a 465 não é suportada). No fim, o `configurar` oferece gravar a mesma conta de e-mail no banco (chaves `SMTP_*`
+da tabela `Configuration`, senha cifrada com a `Encryption__Key`) — é a conta que o worker usa no relatório
+mensal; assim existe uma conta só.
+
+**Manutenção do `AccessWifi.Ops`:**
+
+| Arquivo | O que faz |
+| --- | --- |
+| `Program.cs` | Lê o comando e chama a rotina |
+| `BackupJob.cs` | Backup (pg_dump → tar → gpg AES-256 → Telegram; 14 cópias locais) |
+| `HealthCheckJob.cs` + `CheckTracker.cs` | Conferência de 5 em 5 min; o `CheckTracker` é a regra "avisa, lembra, avisa que voltou" |
+| `UnifiWatcher.cs` + `UnifiMonitor.cs` | Vigia da UniFi; o `UnifiMonitor` é só a regra (testável), o `UnifiWatcher` lê o `journalctl -f` |
+| `SetupWizard.cs` | `configurar` e `testar` |
+| `Notifier.cs`, `TelegramClient.cs`, `AlertEmail.cs` | Envio dos avisos (Telegram + e-mail, nunca derruba quem chamou) |
+| `OpsSettings.cs`, `OpsState.cs`, `EnvFile.cs` | `ops.env` e `estado.json` (com trava, porque backup e conferência podem rodar juntos) |
+| `AppDatabase.cs` | Banco da aplicação com a configuração da API (`/etc/accesswifi/accesswifi.env`) |
+| `deploy/ops/systemd/*` e `deploy/ops/instalar.sh` | Os três serviços e a instalação (o programa novo só substitui o atual se rodar) |
+
+As rotinas só rodam no servidor (Linux: `systemctl`, `journalctl`, `pg_dump`, `gpg`). A lógica tem testes
+automáticos — **`dotnet test tests/AccessWifi.Ops.Tests`** — inclusive a sequência real de recusas de 05/10/2026 e a
+leitura dos arquivos que já estão no servidor. Para testar uma mudança no servidor sem trocar o que está rodando:
+`dotnet publish src/AccessWifi.Ops -c Release -r linux-x64 --self-contained false -o pub`, copie `pub/` para
+`/tmp/teste` e rode `dotnet /tmp/teste/AccessWifi.Ops.dll vigiar --simular` (ou `backup --simular`).
+
+*(Histórico: de 01/10 a 05/10/2026 as rotinas foram um script Python, `deploy/ops/accesswifi_ops.py`; a versão em
+C# lê os mesmos `ops.env` e `estado.json`, então a troca não exigiu configurar de novo.)*
 
 **O que ter em mãos para configurar:**
 

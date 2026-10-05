@@ -145,6 +145,15 @@ if [ $COM_API = 1 ]; then
   ok "$(grep -c 'INSERT INTO "__EFMigrationsHistory"' "$PACOTE/migrate.sql") migrations no script"
 fi
 
+if [ $COM_ROTINAS = 1 ]; then
+  etapa "Compilando as rotinas de proteção (AccessWifi.Ops)"
+  # Programa C# separado da API e do worker: cada rotina roda num serviço systemd próprio (deploy/ops).
+  quieto dotnet publish "$RAIZ_BACK/src/AccessWifi.Ops/AccessWifi.Ops.csproj" \
+    -c Release -r linux-x64 --self-contained false -o "$PACOTE/ops/bin" -v q --nologo
+  cp -r "$RAIZ_BACK/deploy/ops/systemd" "$RAIZ_BACK/deploy/ops/instalar.sh" "$PACOTE/ops/"
+  ok "rotinas"
+fi
+
 if [ $COM_PORTAL = 1 ]; then
   etapa "Compilando o portal"
   # --mode vps: o Vite NÃO carrega o .env.production (que aponta para o ngrok). Sem VITE_API_URL,
@@ -158,7 +167,7 @@ fi
 # 3. Travas de segurança no pacote
 # -----------------------------------------------------------------------------
 etapa "Conferindo o pacote"
-if ls "$PACOTE"/api/appsettings.Development* "$PACOTE"/worker/appsettings.Development* >/dev/null 2>&1; then
+if ls "$PACOTE"/api/appsettings.Development* "$PACOTE"/worker/appsettings.Development* "$PACOTE"/ops/bin/appsettings.Development* >/dev/null 2>&1; then
   falha "O pacote contém appsettings.Development — segredo de desenvolvimento não vai para produção."
 fi
 ok "sem configuração de desenvolvimento"
@@ -169,7 +178,6 @@ if [ -d "$PACOTE/portal" ]; then
   ok "portal chama a própria origem"
 fi
 cp "$RAIZ_BACK/deploy/nginx/90-accesswifi-api.conf" "$PACOTE/"
-if [ $COM_ROTINAS = 1 ]; then cp -r "$RAIZ_BACK/deploy/ops" "$PACOTE/ops"; fi
 printf '%s — publicado em %s\n' "$VERSAO" "$(date '+%d/%m/%Y %H:%M')" > "$PACOTE/VERSAO"
 
 # -----------------------------------------------------------------------------
