@@ -216,8 +216,9 @@ do Telegram e a senha do backup perguntam "Manter…? [S/n]". No fim ele testa o
 
 ## 7. Diagnóstico
 
-**Avisos automáticos (Telegram + e-mail).** A cada 5 minutos o servidor confere, por conta própria (fora
-da API — se ela cair, o aviso sai mesmo assim):
+**Avisos automáticos (Telegram + e-mail).** O servidor confere por conta própria (fora da API — se ela
+cair, o aviso sai mesmo assim). As **recusas da UniFi são avisadas na hora** por um serviço que acompanha o
+log da API (`accesswifi-unifi`); o resto, a cada 5 minutos:
 
 | O quê | Avisa quando | Repete enquanto durar |
 | --- | --- | --- |
@@ -226,7 +227,8 @@ da API — se ela cair, o aviso sai mesmo assim):
 | Banco | não responde | a cada 1 h |
 | Portal (cada endereço das unidades) | não abre pelo HTTPS | a cada 1 h |
 | Certificado HTTPS | faltam menos de 15 dias para vencer | a cada 24 h |
-| UniFi | recusou alguma liberação (cliente ficou sem internet) — com unidade e motivo | no máx. a cada 30 min |
+| UniFi | **na 1ª recusa, em segundos** (cliente ficou sem internet) — com unidade e motivo | resumo a cada 10 min; "✅ voltou" na próxima liberação boa |
+| Vigia da UniFi | o serviço `accesswifi-unifi` parou (as recusas deixariam de ser avisadas) | a cada 6 h |
 | Disco | acima de 85% | a cada 24 h |
 | Backup | nenhum guardado fora há mais de 26 h | a cada 24 h |
 
@@ -236,7 +238,8 @@ inteira cair, ninguém avisa.
 
 ```bash
 systemctl list-timers 'accesswifi-*'                       # quando roda o próximo backup/conferência
-journalctl -u accesswifi-vigia -u accesswifi-backup --since today --no-pager   # o que fizeram hoje
+systemctl status accesswifi-unifi                           # vigia das liberações da UniFi (sempre ligado)
+journalctl -u accesswifi-vigia -u accesswifi-backup -u accesswifi-unifi --since today --no-pager   # o que fizeram hoje
 ```
 
 ```bash

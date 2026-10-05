@@ -21,8 +21,11 @@ for UNIDADE in "$ORIGEM"/systemd/accesswifi-*.service "$ORIGEM"/systemd/accesswi
 done
 systemctl daemon-reload
 systemctl enable --now accesswifi-backup.timer accesswifi-vigia.timer >/dev/null 2>&1
+# O vigia das liberações roda o tempo todo: reinicia para carregar a versão nova do script.
+systemctl enable accesswifi-unifi.service >/dev/null 2>&1
+systemctl restart accesswifi-unifi.service
 
-echo "    ✓ rotinas de proteção: backup diário às 03:15 e conferência a cada 5 min"
+echo "    ✓ rotinas de proteção: backup diário às 03:15, conferência a cada 5 min e vigia da UniFi ($(systemctl is-active accesswifi-unifi))"
 if [ ! -s /etc/accesswifi/ops.env ]; then
   echo "    ! falta configurar o Telegram, o e-mail e a senha do backup — PRODUCAO.md §6"
 fi

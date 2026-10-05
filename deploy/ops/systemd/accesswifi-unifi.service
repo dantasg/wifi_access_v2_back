@@ -1,0 +1,12 @@
+[Unit]
+Description=AccessWifi: avisa na hora quando a UniFi recusa a liberacao de um cliente
+After=network-online.target accesswifi-api.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/accesswifi/ops/accesswifi_ops.py seguir-unifi
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

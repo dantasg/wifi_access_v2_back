@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-Rotinas de proteção do AccessWifi na VPS. Rodam fora da API (systemd timers): se a API cair, o aviso
-sai mesmo assim. Só biblioteca padrão do Python.
+Rotinas de proteção do AccessWifi na VPS. Rodam fora da API (systemd): se a API cair, o aviso sai mesmo
+assim. Só biblioteca padrão do Python.
 
   accesswifi_ops.py backup            backup do banco + configuração, criptografado, enviado ao Telegram
-  accesswifi_ops.py vigiar            confere API, worker, banco, portal, UniFi, disco, certificado e backup
+  accesswifi_ops.py vigiar            confere API, worker, banco, portal, disco, certificado e backup (5 em 5 min)
+  accesswifi_ops.py seguir-unifi      serviço: avisa NA HORA quando a UniFi recusa uma liberação
   accesswifi_ops.py avisar TITULO TEXTO
   accesswifi_ops.py configurar        passo guiado: robô do Telegram, senha do backup, e-mail dos avisos
   accesswifi_ops.py testar            manda uma mensagem de teste pelos canais configurados
@@ -50,7 +51,6 @@ LIMITE_TELEGRAM = 49 * 1024 * 1024
 DISCO_LIMITE = 85              # % de uso do disco que gera aviso
 CERTIFICADO_DIAS = 15          # aviso quando faltar menos que isso
 BACKUP_ATRASADO_H = 26         # sem backup bom há mais que isso → aviso
-UNIFI_INTERVALO_MIN = 30       # no máximo um aviso de falha na UniFi a cada 30 min (acumula)
 MANUTENCAO_MIN = 5             # depois de uma publicação, ignora API/worker/portal por 5 min
 
 FUSO = dt.timezone(dt.timedelta(hours=-3))  # Belém (sem horário de verão)
@@ -352,19 +352,119 @@ def _portal(host):
         return False, f'https://{host} não abre: {erro}', None
 
 
-def _falhas_unifi(desde):
-    """Conta no log da API as liberações que a UniFi recusou desde o momento dado."""
-    saida = rodar(['journalctl', '-u', 'accesswifi-api', '--since', f'@{int(desde)}', '--no-pager', '-o', 'cat'],
-                  timeout=60).stdout
-    por_unidade, motivos = {}, {}
-    for linha in saida.splitlines():
-        achou = re.search(r'Falha ao autorizar guest na UniFi da unidade (\S+?)\.?$', linha.strip())
+FALHA_UNIFI = re.compile(r'Falha ao autorizar guest na UniFi da unidade (\S+?)\.?$')
+SUCESSO_UNIFI = 'Autorização UniFi'  # "Autorização UniFi (nuvem) pelo caminho clássico em 812 ms."
+
+
+class MonitorUnifi:
+    """
+    Liberações recusadas pela UniFi (cliente preencheu o portal e ficou sem internet): avisa na PRIMEIRA,
+    manda um resumo a cada 10 min enquanto continuar e avisa quando a próxima liberação dá certo.
+
+    Só lógica — quem lê o log (journalctl -f) é o `seguir_unifi`. O tempo vem de fora (`agora`, em segundos),
+    para dar para testar sem esperar. Limites conhecidos: a linha de sucesso não diz a unidade (com várias
+    unidades, qualquer liberação boa fecha o incidente) e só o modo nuvem registra sucesso.
+    """
+
+    ESPERA_MOTIVO_S = 3        # o motivo vem na linha seguinte do log
+    RESUMO_S = 10 * 60
+
+    def __init__(self, avisar_fn):
+        self._avisar = avisar_fn
+        self.incidente = None   # recusas desde o primeiro aviso
+        self._pendente = None   # (unidade, momento) de uma recusa cujo motivo ainda não chegou
+
+    def linha(self, texto, agora):
+        texto = texto.strip()
+        achou = FALHA_UNIFI.search(texto)
         if achou:
-            por_unidade[achou.group(1)] = por_unidade.get(achou.group(1), 0) + 1
-        elif 'UnifiException:' in linha:
-            motivo = linha.split('UnifiException:', 1)[1].strip()
-            motivos[motivo] = motivos.get(motivo, 0) + 1
-    return por_unidade, motivos
+            self._sem_motivo(agora)
+            self._pendente = (achou.group(1), agora)
+        elif 'UnifiException:' in texto and self._pendente:
+            unidade, momento = self._pendente
+            self._pendente = None
+            self._recusa(unidade, texto.split('UnifiException:', 1)[1].strip(), momento)
+        elif SUCESSO_UNIFI in texto:
+            self._sem_motivo(agora)
+            if self.incidente:
+                inc = self.incidente
+                self.incidente = None
+                self._avisar('✅ UniFi voltou a liberar os clientes',
+                             f'{inc["tentativas"]} tentativa(s) recusada(s) entre {_hora(inc["desde"])} e '
+                             f'{_hora(inc["ultima"])} ({_por_unidade(inc["unidades"])}).\n'
+                             f'A liberação das {_hora(agora)} deu certo.')
+
+    def tick(self, agora):
+        """Chamado a cada segundo sem linha nova: fecha recusa sem motivo e manda o resumo, se for a hora."""
+        if self._pendente and agora - self._pendente[1] >= self.ESPERA_MOTIVO_S:
+            self._sem_motivo(agora)
+        inc = self.incidente
+        if inc and inc['novas'] and agora - inc['ultimo_aviso'] >= self.RESUMO_S:
+            self._avisar('🔴 UniFi continua recusando liberações',
+                         f'Mais {inc["novas"]} tentativa(s) recusada(s) desde o último aviso — {inc["tentativas"]} '
+                         f'desde {_hora(inc["desde"])} ({_por_unidade(inc["unidades"])}).\n'
+                         f'Motivo: {_motivos(inc["motivos"])}')
+            inc['novas'] = 0
+            inc['ultimo_aviso'] = agora
+
+    def _sem_motivo(self, agora):
+        if self._pendente:
+            unidade, momento = self._pendente
+            self._pendente = None
+            self._recusa(unidade, None, momento)
+
+    def _recusa(self, unidade, motivo, momento):
+        motivo = motivo or '(sem detalhe no log)'
+        if self.incidente is None:
+            self.incidente = {'desde': momento, 'ultima': momento, 'tentativas': 1, 'novas': 0,
+                              'unidades': {unidade: 1}, 'motivos': {motivo: 1}, 'ultimo_aviso': momento}
+            self._avisar('🔴 UniFi recusou a liberação de um cliente',
+                         f'Unidade: {unidade}\nMotivo: {motivo}\n\n'
+                         'O cliente preencheu o portal e NÃO ganhou internet. Se continuar, chega um resumo a cada '
+                         '10 min; quando a próxima liberação der certo, chega o aviso de que voltou.\n'
+                         'Ver PRODUCAO.md §7 (tabela de causas).')
+            return
+        inc = self.incidente
+        inc['tentativas'] += 1
+        inc['novas'] += 1
+        inc['ultima'] = momento
+        inc['unidades'][unidade] = inc['unidades'].get(unidade, 0) + 1
+        inc['motivos'][motivo] = inc['motivos'].get(motivo, 0) + 1
+
+
+def _hora(segundos):
+    return dt.datetime.fromtimestamp(segundos, FUSO).strftime('%H:%M:%S')
+
+
+def _por_unidade(unidades):
+    return ', '.join(f'{unidade}: {qtd}' for unidade, qtd in sorted(unidades.items()))
+
+
+def _motivos(motivos):
+    return '; '.join(f'{motivo} ({qtd}x)' for motivo, qtd in motivos.items())
+
+
+def seguir_unifi():
+    """Serviço (accesswifi-unifi): acompanha o log da API em tempo real e alimenta o MonitorUnifi."""
+    import selectors
+    monitor = MonitorUnifi(avisar)
+    processo = subprocess.Popen(['journalctl', '-u', 'accesswifi-api', '-f', '-n', '0', '-o', 'cat', '--no-pager'],
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    seletor = selectors.DefaultSelector()
+    seletor.register(processo.stdout, selectors.EVENT_READ)
+    log('vigia da UniFi: acompanhando o log da API')
+    resto = b''
+    while True:
+        if seletor.select(timeout=1):
+            bloco = os.read(processo.stdout.fileno(), 65536)
+            if not bloco:
+                log('journalctl encerrou — o systemd reinicia este serviço')
+                return 1
+            resto += bloco
+            while b'\n' in resto:
+                linha, resto = resto.split(b'\n', 1)
+                monitor.linha(linha.decode(errors='replace'), time.time())
+        monitor.tick(time.time())
 
 
 def _checar(estado, chave, peca, ok, detalhe, repetir_h):
@@ -421,27 +521,13 @@ def vigiar():
                     f'O certificado de {host} vence em {dias} dia(s), em {fmt(vence)}. '
                     'Sem ele, os celulares mostram "site não seguro".', repetir_h=24)
 
-    # UniFi: cada falha é um cliente que ficou sem internet. Acumula e avisa no máximo a cada 30 min.
-    desde = estado.get('unifi_lido_ate', time.time() - 300)
-    ate = time.time()
-    por_unidade, motivos = _falhas_unifi(desde)
-    pendente = estado.setdefault('unifi_pendente', {'unidades': {}, 'motivos': {}})
-    for unidade, quantidade in por_unidade.items():
-        pendente['unidades'][unidade] = pendente['unidades'].get(unidade, 0) + quantidade
-    for motivo, quantidade in motivos.items():
-        pendente['motivos'][motivo] = pendente['motivos'].get(motivo, 0) + quantidade
-    estado['unifi_lido_ate'] = ate
-    ultimo = estado.get('unifi_ultimo_aviso', 0)
-    if pendente['unidades'] and time.time() - ultimo >= UNIFI_INTERVALO_MIN * 60:
-        total = sum(pendente['unidades'].values())
-        linhas = [f'• {unidade}: {quantidade}' for unidade, quantidade in sorted(pendente['unidades'].items())]
-        linhas += ['', 'Motivo(s) no log:'] + [f'• {motivo} ({quantidade}x)'
-                                               for motivo, quantidade in pendente['motivos'].items()]
-        avisar(f'🟠 {total} liberação(ões) recusada(s) pela UniFi',
-               'Clientes preencheram o portal e NÃO ganharam internet:\n' + '\n'.join(linhas) +
-               '\n\nVer PRODUCAO.md §7 (tabela de causas).')
-        estado['unifi_pendente'] = {'unidades': {}, 'motivos': {}}
-        estado['unifi_ultimo_aviso'] = time.time()
+    # As recusas da UniFi são avisadas NA HORA pelo serviço accesswifi-unifi (seguir_unifi); aqui só se
+    # confere que ele está de pé — sem ele, uma recusa passaria em silêncio.
+    ok, detalhe = _servico_ativo('accesswifi-unifi')
+    _checar(estado, 'vigia-unifi', 'Vigia das liberações da UniFi', ok,
+            f'{detalhe}. Recusas da UniFi NÃO estão sendo avisadas na hora.', repetir_h=6)
+    for antiga in ('unifi_lido_ate', 'unifi_pendente', 'unifi_ultimo_aviso'):  # da versão de 5 em 5 min
+        estado.pop(antiga, None)
 
     uso = shutil.disk_usage('/')
     porcento = round(uso.used * 100 / uso.total)
@@ -562,6 +648,8 @@ def main(argumentos):
         return backup()
     if comando == 'vigiar':
         return vigiar()
+    if comando == 'seguir-unifi':
+        return seguir_unifi()
     if comando == 'avisar' and len(argumentos) >= 2:
         avisar(argumentos[1], ' '.join(argumentos[2:]))
         return 0
