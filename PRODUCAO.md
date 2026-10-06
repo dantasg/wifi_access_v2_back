@@ -12,7 +12,7 @@
 https://vps11702.panel.icontainer.online
  │
  ├── nginx do painel iContainer  (container Docker, rede "host", portas 80/443, HTTPS)
- │    ├── /authorize, /settings, /admin/login|refresh|logout|leads|settings|companies|units|users
+ │    ├── /authorize, /settings, /admin/login|refresh|logout|leads|settings|system-settings|companies|units|users|campaigns
  │    │        └──► API .NET  (systemd: accesswifi-api, 127.0.0.1:5000) ──► PostgreSQL 18
  │    └── todo o resto ──► portal (arquivos estáticos, SPA com fallback para index.html)
  │
@@ -196,11 +196,15 @@ ssh -t -i "C:\Users\Genival Dantas\.ssh\accesswifi_vps" root@216.22.13.216 acces
 Outros comandos, no servidor: `accesswifi-ops testar` (mensagem de teste nos dois canais), `accesswifi-ops backup`
 (backup agora), `accesswifi-ops vigiar --simular` e `accesswifi-ops backup --simular` (fazem tudo, mas só mostram
 o que mandariam). Segredos em `/etc/accesswifi/ops.env` (só o root lê). O e-mail usa **STARTTLS, porta 587**
-(a 465 não é suportada). No fim, o `configurar` oferece gravar a mesma conta de e-mail no banco (chaves `SMTP_*`
-da tabela `Configuration`, senha cifrada com a `Encryption__Key`) — é a conta que o worker usa no relatório
-mensal e nos PDFs das campanhas; assim existe uma conta só. Para gravar sem passar pelo `configurar` de novo:
-`accesswifi-ops smtp-no-banco`. Sem essas chaves, o relatório não sai e as campanhas ficam como falha
-("O SMTP não está configurado"), com o motivo no histórico.
+(a 465 não é suportada).
+
+**E-mail do sistema (relatório mensal e PDFs das campanhas)** é outra conta, global, configurada no **painel**:
+super admin, sem empresa escolhida → **Configurações** (Configurações do sistema). Servidor, porta, usuário, senha,
+remetente e STARTTLS ficam nas chaves `SMTP_*` da tabela `Configuration`; a senha vai cifrada com a
+`Encryption__Key` e **nunca volta para a tela** (só aparece "guardada"; vazio mantém). O botão **Enviar e-mail de
+teste** usa o que está salvo. Sem servidor configurado, o relatório não sai e as campanhas ficam como falha ("O SMTP
+não está configurado"), com o motivo no histórico. Para usar a mesma conta dos avisos sem digitar de novo:
+`accesswifi-ops smtp-no-banco` (o `configurar` também oferece, no fim).
 
 **Manutenção do `AccessWifi.Ops`:**
 
@@ -344,9 +348,9 @@ e `216.22.13.216`.
   acompanha uma troca de provedor. Com domínio próprio, cada unidade ganha o seu endereço.
 - **Dôce Cafeteria foi apagada em 01/10/2026** (empresa, unidade e tema; não tinha cadastros) para ser
   cadastrada de novo. Backup de antes: `/var/backups/accesswifi/doce-antes-de-apagar-20261001-134811.dump`.
-- **Relatório mensal e campanhas por e-mail não saem ainda.** O SMTP do worker (tabela `Configuration`,
-  chaves `SMTP_*`) está vazio (resolve com `accesswifi-ops smtp-no-banco`, §6) e a unidade Itaituba não tem
-  e-mail (painel → Unidades → Editar). Os avisos (§7) usam uma configuração própria.
+- **Relatório mensal e campanhas por e-mail não saem ainda.** Falta a conta de envio (painel → Configurações
+  do sistema, §6) e o e-mail da unidade Itaituba (painel → Unidades → Editar). Os avisos (§7) usam uma
+  configuração própria.
 - **Trocar a chave da UniFi da Itaituba.** A atual passou por conversa. O painel ainda não tem tela
   para isso (PARTE 6 do `FRONT_CHANGES.md`); até lá, via `PUT /admin/units/{id}`.
 - **Vercel.** Não serve mais a Itaituba. O plano gratuito não permite uso comercial.

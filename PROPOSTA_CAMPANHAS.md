@@ -327,5 +327,5 @@ lista e faz o contato. Estas decisões substituem a D14 (simulação) e mudam a 
 | **D26** | E-mail que falha | **Tenta de novo a cada 5 minutos, até 3 vezes**; depois fica como falha, com o motivo, nos clientes daquela unidade |
 
 O limite de 1 contato por cliente por dia (D11) continua: o mesmo cliente não aparece em dois PDFs no mesmo dia.
-Para sair, o worker precisa do SMTP no banco (`accesswifi-ops smtp-no-banco`, PRODUCAO.md §6) e cada unidade,
+Para sair, o worker precisa da conta de envio (painel → Configurações do sistema, PRODUCAO.md §6) e cada unidade,
 do e-mail em Unidades.

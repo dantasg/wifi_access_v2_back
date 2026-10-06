@@ -1,4 +1,4 @@
-namespace AccessWifiService
+namespace Models.Email
 {
     /// <summary>Opções de SMTP, preenchidas a partir da tabela Configuration (chaves SMTP_*).</summary>
     public class SmtpOptions

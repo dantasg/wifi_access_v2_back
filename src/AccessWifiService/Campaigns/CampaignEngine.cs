@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Models.Campaigns;
 using Models.DataBase;
+using Models.Email;
 using Models.Persistence;
 
 namespace AccessWifiService.Campaigns

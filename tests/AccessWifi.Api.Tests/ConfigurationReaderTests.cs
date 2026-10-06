@@ -1,5 +1,5 @@
-using AccessWifiService;
 using Models.DataBase;
+using Models.Email;
 using Models.Persistence;
 
 namespace AccessWifi.Api.Tests;

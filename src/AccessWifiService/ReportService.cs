@@ -2,6 +2,7 @@ using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Models.DataBase;
+using Models.Email;
 using Models.Persistence;
 
 namespace AccessWifiService

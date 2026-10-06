@@ -1,4 +1,4 @@
-namespace AccessWifiService
+namespace Models.Email
 {
     /// <summary>Envio de e-mail com um anexo opcional (o relatório em CSV).</summary>
     public interface IEmailSender

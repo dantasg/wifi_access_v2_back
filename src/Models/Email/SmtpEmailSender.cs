@@ -3,7 +3,7 @@ using System.Net;
 using System.Net.Mail;
 using System.Net.Mime;
 
-namespace AccessWifiService
+namespace Models.Email
 {
     /// <summary>
     /// Envio via SMTP. Lê as credenciais da tabela Configuration (chaves SMTP_*). Sem SMTP configurado,
@@ -28,13 +28,15 @@ namespace AccessWifiService
             if (string.IsNullOrWhiteSpace(objSmtp.Host))
             {
                 throw new InvalidOperationException(
-                    "O SMTP não está configurado (tabela Configuration, SMTP_HOST vazio). Ver PRODUCAO.md §6.");
+                    "O SMTP não está configurado (painel → Configurações do sistema).");
             }
 
             using SmtpClient objClient = new SmtpClient(objSmtp.Host, objSmtp.Port)
             {
                 Credentials = new NetworkCredential(objSmtp.Username, objSmtp.Password),
-                EnableSsl = objSmtp.UseStartTls
+                EnableSsl = objSmtp.UseStartTls,
+                // Servidor errado ou porta bloqueada não pode prender o serviço (nem o teste do painel).
+                Timeout = 30_000,
             };
 
             using MailMessage objMessage = new MailMessage

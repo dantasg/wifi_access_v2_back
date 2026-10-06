@@ -1,8 +1,8 @@
-namespace AccessWifiService
+namespace Models.Email
 {
     /// <summary>
     /// Chaves esperadas na tabela Configuration (coluna IDConfiguration).
-    /// Preencha os valores direto no banco.
+    /// Editadas no painel do super admin (Configurações do sistema) — a senha vai cifrada.
     /// </summary>
     public static class ConfigurationKeys
     {

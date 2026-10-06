@@ -1,4 +1,4 @@
-using AccessWifiService;
+using Models.Email;
 
 namespace AccessWifi.Api.Tests;
 

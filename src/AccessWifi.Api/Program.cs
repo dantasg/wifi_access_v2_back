@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Models.Email;
 using Models.Persistence;
 using Models.Security;
 
@@ -134,6 +135,10 @@ builder.Services.AddSingleton<UnifiLocalClient>();
 builder.Services.AddSingleton<UnifiCloudClient>();
 // O router escolhe o caminho pelo Mode da unidade — os controllers não precisam saber qual é.
 builder.Services.AddSingleton<IUnifiClient, UnifiClientRouter>();
+// Conta de e-mail do sistema (Configurações do sistema): a API só usa para o e-mail de teste; quem manda o
+// relatório e as campanhas é o worker, com o mesmo código.
+builder.Services.AddScoped<ConfigurationReader>();
+builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
 
 builder.Services.AddControllers().AddJsonOptions(objJsonOptions =>
     objJsonOptions.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull);

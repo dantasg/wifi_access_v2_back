@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Models.Campaigns;
 using Models.DataBase;
+using Models.Email;
 using Models.Persistence;
 using Models.Security;
 

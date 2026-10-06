@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Models.Persistence;
 using Models.Security;
 
-namespace AccessWifiService
+namespace Models.Email
 {
     /// <summary>Lê as configurações globais da tabela Configuration (chave-valor).</summary>
     public class ConfigurationReader
