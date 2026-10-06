@@ -23,6 +23,13 @@ public class CampaignsController : ControllerBase
     private const int MaxNameChars = 120;
     private const int MaxPageSize = 200;
 
+    /// <summary>Quem entra no PDF de novo pelo histórico: todos que foram para a unidade (os ignorados nunca foram).</summary>
+    private static readonly string[] s_arrNoPdf =
+    [
+        CampaignRecipientStatus.Pending, CampaignRecipientStatus.Sent, CampaignRecipientStatus.Failed,
+        CampaignRecipientStatus.Cancelled,
+    ];
+
     private readonly AppDbContext _objDbContext;
 
     public CampaignsController(AppDbContext objDbContext)
@@ -54,7 +61,7 @@ public class CampaignsController : ControllerBase
         return Ok(CampaignKind.All
             .Select(sKind => new CampaignCatalogItemDto(
                 sKind, CampaignKind.Label(sKind), CampaignKind.IsSystem(sKind), objLigados.Contains(sKind),
-                objSistema.TryGetValue(sKind, out Guid objId) ? objId : null))
+                objSistema.TryGetValue(sKind, out Guid objId) ? objId : null, CampaignKind.IsAvailable(sKind)))
             .ToList());
     }
 
@@ -130,6 +137,11 @@ public class CampaignsController : ControllerBase
         if (!CampaignKind.IsValid(sKind))
         {
             return BadRequest(new ErrorResponse("Tipo de campanha inválido."));
+        }
+        if (!CampaignKind.IsAvailable(sKind))
+        {
+            return BadRequest(new ErrorResponse(
+                $"A campanha \"{CampaignKind.Label(sKind)}\" ainda não está disponível (em breve)."));
         }
         HashSet<string> objLigados = await EnabledKindsAsync(objCompany.Id, objCancellationToken);
         if (!objLigados.Contains(sKind))
@@ -418,15 +430,70 @@ public class CampaignsController : ControllerBase
         }
 
         int iTotal = await objQuery.CountAsync(objCancellationToken);
-        List<CampaignRecipientDto> objItems = await objQuery
+        List<CampaignRecipient> objPagina = await objQuery
             .OrderBy(recipient => recipient.Id)
             .Skip((iPage - 1) * iPageSize)
             .Take(iPageSize)
+            .ToListAsync(objCancellationToken);
+        Dictionary<Guid, string> objUnidades = await UnitNamesAsync(objRun.IDCompany, objCancellationToken);
+        List<CampaignRecipientDto> objItems = objPagina
             .Select(recipient => new CampaignRecipientDto(
                 recipient.Id, recipient.Phone, recipient.Name, recipient.Message, recipient.Status,
-                recipient.Reason, recipient.Milestone, recipient.ProcessedAt))
-            .ToListAsync(objCancellationToken);
+                recipient.Reason, recipient.Milestone, recipient.ProcessedAt,
+                recipient.IDUnit is Guid objUnitId ? objUnidades.GetValueOrDefault(objUnitId, "") : "",
+                recipient.Instagram, recipient.Info, recipient.EventDate))
+            .ToList();
         return Ok(new PagedDto<CampaignRecipientDto>(objItems, iTotal, iPage, iPageSize));
+    }
+
+    /// <summary>Os e-mails da execução, um por unidade (D17): para onde foi, quando, tentativas e falhas.</summary>
+    [HttpGet("runs/{runId:guid}/deliveries")]
+    public async Task<ActionResult<List<CampaignDeliveryDto>>> Deliveries(
+        Guid runId, [FromQuery(Name = "company")] string? sCompanySlug, CancellationToken objCancellationToken)
+    {
+        (CampaignRun? objRun, ActionResult? objError) = await FindRunAsync(runId, sCompanySlug, objCancellationToken);
+        if (objRun is null)
+        {
+            return objError!;
+        }
+
+        List<CampaignDelivery> objDeliveries = await _objDbContext.CampaignDeliveries.AsNoTracking()
+            .Where(delivery => delivery.IDRun == runId)
+            .OrderBy(delivery => delivery.UnitName)
+            .ToListAsync(objCancellationToken);
+        return Ok(objDeliveries.Select(CampaignDeliveryDto.FromEntity).ToList());
+    }
+
+    /// <summary>
+    /// O PDF de uma unidade de novo, montado com o que ficou gravado na execução (os mesmos clientes e a
+    /// mesma mensagem; a logo e as cores são as de hoje).
+    /// </summary>
+    [HttpGet("runs/{runId:guid}/deliveries/{deliveryId:guid}/pdf")]
+    public async Task<IActionResult> DeliveryPdf(
+        Guid runId, Guid deliveryId, [FromQuery(Name = "company")] string? sCompanySlug,
+        CancellationToken objCancellationToken)
+    {
+        (CampaignRun? objRun, ActionResult? objError) = await FindRunAsync(runId, sCompanySlug, objCancellationToken);
+        if (objRun is null)
+        {
+            return objError!;
+        }
+        CampaignDelivery? objDelivery = await _objDbContext.CampaignDeliveries.AsNoTracking()
+            .FirstOrDefaultAsync(delivery => delivery.Id == deliveryId && delivery.IDRun == runId, objCancellationToken);
+        if (objDelivery is null)
+        {
+            return NotFound(new ErrorResponse("Envio não encontrado."));
+        }
+
+        CampaignPdfData objDados = await CampaignDeliveryDocument.LoadAsync(
+            _objDbContext, objRun, objDelivery.IDUnit, s_arrNoPdf, objCancellationToken);
+        if (objDados.Rows.Count == 0)
+        {
+            return NotFound(new ErrorResponse("Este envio não tem clientes."));
+        }
+        // A unidade pode ter mudado de nome: o PDF mostra o nome de quando saiu.
+        objDados = objDados with { UnitName = objDelivery.UnitName };
+        return File(CampaignPdf.Build(objDados), "application/pdf", objDelivery.FileName);
     }
 
     /// <summary>Todos os destinatários da execução em CSV (abre no Excel: BOM + CRLF).</summary>
@@ -445,14 +512,16 @@ public class CampaignsController : ControllerBase
             .OrderBy(recipient => recipient.Id)
             .ToListAsync(objCancellationToken);
 
+        Dictionary<Guid, string> objUnidades = await UnitNamesAsync(objRun.IDCompany, objCancellationToken);
         StringBuilder objCsv = new StringBuilder();
-        objCsv.Append("telefone,nome,situacao,motivo,processado_em,mensagem\r\n");
+        objCsv.Append("telefone,nome,unidade,informacao,situacao,motivo,processado_em,mensagem\r\n");
         foreach (CampaignRecipient objRecipient in objRecipients)
         {
+            string sUnidade = objRecipient.IDUnit is Guid objUnitId ? objUnidades.GetValueOrDefault(objUnitId, "") : "";
             objCsv.Append(string.Join(',',
-                Csv(objRecipient.Phone), Csv(objRecipient.Name), Csv(StatusLabel(objRecipient.Status)),
-                Csv(objRecipient.Reason ?? ""), Csv(objRecipient.ProcessedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? ""),
-                Csv(objRecipient.Message)));
+                Csv(objRecipient.Phone), Csv(objRecipient.Name), Csv(sUnidade), Csv(objRecipient.Info),
+                Csv(StatusLabel(objRecipient.Status)), Csv(objRecipient.Reason ?? ""),
+                Csv(objRecipient.ProcessedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? ""), Csv(objRecipient.Message)));
             objCsv.Append("\r\n");
         }
 
@@ -636,12 +705,19 @@ public class CampaignsController : ControllerBase
             : (objRun, null);
     }
 
+    /// <summary>Tipos liberados para a empresa e já disponíveis (os "em breve" não contam, D23).</summary>
     private async Task<HashSet<string>> EnabledKindsAsync(Guid objCompanyId, CancellationToken objCancellationToken) =>
         (await _objDbContext.CompanyCampaignKinds.AsNoTracking()
             .Where(kind => kind.IDCompany == objCompanyId)
             .Select(kind => kind.Kind)
             .ToListAsync(objCancellationToken))
+        .Where(CampaignKind.IsAvailable)
         .ToHashSet();
+
+    private async Task<Dictionary<Guid, string>> UnitNamesAsync(Guid objCompanyId, CancellationToken objCancellationToken) =>
+        await _objDbContext.Units.AsNoTracking()
+            .Where(unit => unit.IDCompany == objCompanyId)
+            .ToDictionaryAsync(unit => unit.Id, unit => unit.Name, objCancellationToken);
 
     /// <summary>Quem está fazendo a ação, para o histórico (o token traz o usuário; o id vem do banco).</summary>
     private async Task<(Guid?, string)> CurrentUserAsync(CancellationToken objCancellationToken)
@@ -673,7 +749,7 @@ public class CampaignsController : ControllerBase
     private static string StatusLabel(string sStatus) => sStatus switch
     {
         CampaignRecipientStatus.Pending => "pendente",
-        CampaignRecipientStatus.Sent => "enviado",
+        CampaignRecipientStatus.Sent => "enviado à unidade",
         CampaignRecipientStatus.Simulated => "simulado",
         CampaignRecipientStatus.Failed => "falhou",
         CampaignRecipientStatus.Ignored => "ignorado",

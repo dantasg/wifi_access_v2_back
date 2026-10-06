@@ -20,9 +20,6 @@ public partial class CompaniesController : ControllerBase
     [GeneratedRegex("^[a-z0-9-]{2,40}$")]
     private static partial Regex SlugRegex();
 
-    [GeneratedRegex(@"^[^@\s]+@[^@\s]+\.[^@\s]+$")]
-    private static partial Regex EmailRegex();
-
     private readonly AppDbContext _objDbContext;
 
     public CompaniesController(AppDbContext objDbContext)
@@ -72,7 +69,7 @@ public partial class CompaniesController : ControllerBase
             return BadRequest(new ErrorResponse("Já existe uma empresa com esse slug."));
         }
 
-        string? sReportError = ValidateReport(objRequest.ReportEmail, objRequest.ReportSendDay)
+        string? sReportError = ValidateReport(objRequest.ReportSendDay)
             ?? ValidateCampaignSettings(objRequest.TimeZone, objRequest.CampaignKinds);
         if (sReportError is not null)
         {
@@ -84,7 +81,7 @@ public partial class CompaniesController : ControllerBase
             Name = objRequest.Name.Trim(),
             Slug = objRequest.Slug,
         };
-        ApplyReport(objCompany, objRequest.ReportEmail, objRequest.ReportSendDay);
+        ApplyReport(objCompany, objRequest.ReportSendDay);
         if (objRequest.TimeZone is not null)
         {
             objCompany.TimeZone = objRequest.TimeZone.Trim();
@@ -114,7 +111,7 @@ public partial class CompaniesController : ControllerBase
             return BadRequest(new ErrorResponse("Nome é obrigatório (máximo de 120 caracteres)."));
         }
 
-        string? sReportError = ValidateReport(objRequest.ReportEmail, objRequest.ReportSendDay)
+        string? sReportError = ValidateReport(objRequest.ReportSendDay)
             ?? ValidateCampaignSettings(objRequest.TimeZone, objRequest.CampaignKinds);
         if (sReportError is not null)
         {
@@ -123,7 +120,7 @@ public partial class CompaniesController : ControllerBase
 
         objCompany.Name = objRequest.Name.Trim();
         objCompany.Active = objRequest.Active;
-        ApplyReport(objCompany, objRequest.ReportEmail, objRequest.ReportSendDay);
+        ApplyReport(objCompany, objRequest.ReportSendDay);
         if (objRequest.TimeZone is not null)
         {
             objCompany.TimeZone = objRequest.TimeZone.Trim();
@@ -150,6 +147,11 @@ public partial class CompaniesController : ControllerBase
         if (objKinds is not null && objKinds.Any(sKind => !CampaignKind.IsValid(sKind)))
         {
             return "Tipo de campanha inválido.";
+        }
+        if (objKinds?.FirstOrDefault(sKind => !CampaignKind.IsAvailable(sKind)) is string sEmBreve)
+        {
+            // D23: a filtrada aparece como "em breve" e ainda não pode ser liberada.
+            return $"A campanha \"{CampaignKind.Label(sEmBreve)}\" ainda não está disponível (em breve).";
         }
         return null;
     }
@@ -206,14 +208,9 @@ public partial class CompaniesController : ControllerBase
         await _objDbContext.SaveChangesAsync(objCancellationToken);
     }
 
-    /// <summary>Valida e-mail do relatório (se informado) e o dia de envio (1 a 28).</summary>
-    private static string? ValidateReport(string? sReportEmail, int? iReportSendDay)
+    /// <summary>Valida o dia de envio do relatório mensal (1 a 28). O e-mail fica em cada unidade (D24).</summary>
+    private static string? ValidateReport(int? iReportSendDay)
     {
-        if (!string.IsNullOrWhiteSpace(sReportEmail) && !EmailRegex().IsMatch(sReportEmail.Trim()))
-        {
-            return "E-mail do relatório inválido.";
-        }
-
         if (iReportSendDay is not null && (iReportSendDay < 1 || iReportSendDay > 28))
         {
             return "Dia de envio do relatório deve ficar entre 1 e 28.";
@@ -222,10 +219,8 @@ public partial class CompaniesController : ControllerBase
         return null;
     }
 
-    private static void ApplyReport(Company objCompany, string? sReportEmail, int? iReportSendDay)
+    private static void ApplyReport(Company objCompany, int? iReportSendDay)
     {
-        // Vazio limpa o e-mail (empresa deixa de receber relatório).
-        objCompany.ReportEmail = string.IsNullOrWhiteSpace(sReportEmail) ? null : sReportEmail.Trim();
         // Dia nulo = mantém o atual (na criação, o padrão da entidade é 1).
         if (iReportSendDay is not null)
         {

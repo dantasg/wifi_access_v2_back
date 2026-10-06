@@ -34,14 +34,17 @@ namespace AccessWifi.Api.Features.Units
         string PortalHost,
         UnitUnifiDto Unifi,
         // Vazio = usa a URL "Geral" da empresa. Editada no formulário da unidade.
-        string RedirectUrl)
+        string RedirectUrl,
+        // E-mail do gerente: relatório mensal e PDF das campanhas (D17/D24). Vazio = não recebe.
+        string Email,
+        DateTime? LastReportSentAt)
     {
         public static UnitDto FromEntity(Unit objUnit)
         {
             return new UnitDto(
                 objUnit.Id, objUnit.IDCompany, objUnit.Name, objUnit.Slug, objUnit.Active,
                 objUnit.CreatedAt, objUnit.PortalHost, UnitUnifiDto.FromEntity(objUnit.Unifi),
-                objUnit.RedirectUrl);
+                objUnit.RedirectUrl, objUnit.Email, objUnit.LastReportSentAt);
         }
     }
 
@@ -59,15 +62,15 @@ namespace AccessWifi.Api.Features.Units
         string? ApiKey = null,
         string? SiteId = null);
 
-    // PortalHost e RedirectUrl: nulo = manter o atual; "" limpa (sem URL própria, a unidade usa
-    // a "Geral" da empresa).
+    // PortalHost, RedirectUrl e Email: nulo = manter o atual; "" limpa (sem URL própria, a unidade usa
+    // a "Geral" da empresa; sem e-mail, a unidade não recebe relatório nem campanhas).
     public record CreateUnitRequest(
         Guid IDCompany, string Name, string Slug, UnitUnifiRequest? Unifi, string? PortalHost = null,
-        string? RedirectUrl = null);
+        string? RedirectUrl = null, string? Email = null);
 
     public record UpdateUnitRequest(
         string Name, bool Active, UnitUnifiRequest? Unifi, string? PortalHost = null,
-        string? RedirectUrl = null);
+        string? RedirectUrl = null, string? Email = null);
 
     /// <summary>Resultado do botão "Testar conexão" (D7). Sucesso falso não é erro HTTP.</summary>
     public record UnifiTestResponse(bool Success, string Message);

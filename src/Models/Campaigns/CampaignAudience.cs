@@ -42,11 +42,12 @@ namespace Models.Campaigns
             switch (sKind)
             {
                 case CampaignKind.Birthday:
+                    // D21: os aniversariantes de hoje até sábado (na segunda, desde domingo), como
+                    // "mês × 100 + dia" para a consulta virar um IN simples.
+                    int[] arrDias = CampaignCalendar.BirthdayKeys(dtLocalDate);
                     objQuery = objQuery.Where(customer =>
                         customer.BirthDate != null
-                        && customer.BirthDate.Value.Month == iMonth
-                        && (customer.BirthDate.Value.Day == iDay
-                            || (bInclui29DeFevereiro && customer.BirthDate.Value.Day == 29)));
+                        && arrDias.Contains(customer.BirthDate.Value.Month * 100 + customer.BirthDate.Value.Day));
                     break;
 
                 case CampaignKind.SignupAnniversary:
@@ -56,11 +57,6 @@ namespace Models.Campaigns
                         && customer.FirstVisitDate.Month == iMonth
                         && (customer.FirstVisitDate.Day == iDay
                             || (bInclui29DeFevereiro && customer.FirstVisitDate.Day == 29)));
-                    break;
-
-                case CampaignKind.Welcome:
-                    DateOnly dtOntem = dtLocalDate.AddDays(-1);
-                    objQuery = objQuery.Where(customer => customer.FirstVisitDate == dtOntem);
                     break;
 
                 case CampaignKind.WeMissYou:

@@ -304,3 +304,28 @@ explícito.
 
 Me responda **"ok"** para eu seguir com as recomendações, ou diga qual decisão (D1–D16) quer mudar.
 Começo pela **Fase 1**.
+
+---
+
+## 14. Mudança de 06/10/2026: a campanha vai por e-mail para a unidade
+
+Decidido com o sócio: **sem automação de WhatsApp por enquanto** (levantamento de custos e riscos no doc
+"WhatsApp nas campanhas: custos e riscos"). A campanha não fala com o cliente: o gerente da unidade recebe a
+lista e faz o contato. Estas decisões substituem a D14 (simulação) e mudam a D9 (boas-vindas) e a D6 (filtrada).
+
+| # | Decisão | Como ficou |
+| --- | --- | --- |
+| **D17** | Para quem vai | Cada execução manda **um e-mail por unidade**, com o PDF dos clientes dela, para o **e-mail da unidade** (gerente). O cliente vai para a unidade da **última visita** |
+| **D18** | Unidade sem e-mail | Os clientes dela ficam como **falha**, com o motivo ("a unidade X não tem e-mail cadastrado"), no histórico. Nada se perde em silêncio |
+| **D19** | Dia sem cliente | **Não sai e-mail**; a execução fica no histórico com 0 clientes |
+| **D20** | O PDF | "PDF de campanha" com a **logo e as cores do portal** da empresa (títulos e links escurecidos até dar para ler no papel). Mostra a campanha, a unidade, o dia, **a mensagem como foi escrita** na tela, o passo a passo e a lista: nome, **WhatsApp como link** (abre a conversa com a mensagem pronta, já com o nome), **Instagram como link** e uma coluna de informação (aniversário: dia e idade; cadastro: anos; frequente: visita; sumido: última visita). Emojis não aparecem no PDF (a fonte embutida não tem), mas vão no link. Gerado com QuestPDF (licença Community: gratuita para faturamento anual abaixo de US$ 1 milhão) |
+| **D21** | Aniversário semanal | Dispara **de segunda a sábado**; cada lista vai **de hoje até sábado**; a de **segunda pega também o domingo**; no domingo não dispara. A idade da mensagem é a que o cliente completa no dia dele |
+| **D22** | Boas-vindas | **Saiu do sistema**, com a campanha, o histórico e a liberação (migração `CampanhasPorEmailDaUnidade`) |
+| **D23** | Filtrada | **"Em breve"**: não dá para liberar nem criar. O motor continua sabendo rodar, para quando voltar |
+| **D24** | Relatório mensal | **Um por unidade**, só com os cadastros dela, no e-mail dela. O dia de envio continua na empresa. O e-mail saiu da empresa |
+| **D25** | Histórico | Igual ao de antes (execuções, destinatários, CSV) **mais os e-mails**: para qual endereço, quando, tentativas, motivo da falha e **Baixar PDF** de novo |
+| **D26** | E-mail que falha | **Tenta de novo a cada 5 minutos, até 3 vezes**; depois fica como falha, com o motivo, nos clientes daquela unidade |
+
+O limite de 1 contato por cliente por dia (D11) continua: o mesmo cliente não aparece em dois PDFs no mesmo dia.
+Para sair, o worker precisa do SMTP no banco (`accesswifi-ops smtp-no-banco`, PRODUCAO.md §6) e cada unidade,
+do e-mail em Unidades.

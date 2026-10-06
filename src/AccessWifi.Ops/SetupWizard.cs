@@ -44,7 +44,7 @@ namespace AccessWifi.Ops
             objSettings.Save();
             Console.WriteLine("\n✓ configuração salva.");
 
-            if (Ask("\nUsar a mesma conta de e-mail no relatório mensal (gravar no banco)? [S/n]").ToLowerInvariant() != "n")
+            if (Ask("\nUsar a mesma conta de e-mail no relatório mensal e nas campanhas (gravar no banco)? [S/n]").ToLowerInvariant() != "n")
             {
                 await SyncReportSmtpAsync(objSettings);
             }
@@ -163,11 +163,17 @@ namespace AccessWifi.Ops
         }
 
         /// <summary>
-        /// Grava a mesma conta nas chaves SMTP_* da tabela Configuration, que o worker usa no relatório mensal —
-        /// assim existe uma conta só para configurar. A senha vai cifrada, com a mesma chave da API.
+        /// Grava a mesma conta nas chaves SMTP_* da tabela Configuration, que o worker usa no relatório mensal e
+        /// nos PDFs das campanhas — assim existe uma conta só para configurar. A senha vai cifrada, com a mesma
+        /// chave da API. Também é o comando "smtp-no-banco".
         /// </summary>
-        public static async Task SyncReportSmtpAsync(OpsSettings objSettings)
+        public static async Task<bool> SyncReportSmtpAsync(OpsSettings objSettings)
         {
+            if (!objSettings.HasEmail)
+            {
+                Console.WriteLine("   ✗ o e-mail dos avisos não está configurado: rode accesswifi-ops configurar");
+                return false;
+            }
             try
             {
                 IEncryptor objEncryptor = AppDatabase.Encryptor();
@@ -196,11 +202,14 @@ namespace AccessWifi.Ops
                     }
                 }
                 await objDb.SaveChangesAsync();
-                Console.WriteLine("   ✓ relatório mensal usando a mesma conta (falta só o e-mail de relatório da empresa, no painel)");
+                Console.WriteLine($"   ✓ relatório mensal e campanhas saem por {objSettings.SmtpFrom} " +
+                    "(falta só o e-mail de cada unidade, em Unidades no painel)");
+                return true;
             }
             catch (Exception objException)
             {
                 Console.WriteLine($"   ✗ não deu para gravar no banco ({objException.GetBaseException().Message}); os avisos seguem funcionando");
+                return false;
             }
         }
 

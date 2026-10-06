@@ -27,6 +27,7 @@ namespace Models.Persistence
         public DbSet<CampaignVersion> CampaignVersions => Set<CampaignVersion>();
         public DbSet<CampaignRun> CampaignRuns => Set<CampaignRun>();
         public DbSet<CampaignRecipient> CampaignRecipients => Set<CampaignRecipient>();
+        public DbSet<CampaignDelivery> CampaignDeliveries => Set<CampaignDelivery>();
         public DbSet<CampaignEvent> CampaignEvents => Set<CampaignEvent>();
 
         protected override void OnModelCreating(ModelBuilder objModelBuilder)
@@ -42,7 +43,6 @@ namespace Models.Persistence
             {
                 objCompany.Property(company => company.Name).HasMaxLength(120);
                 objCompany.Property(company => company.Slug).HasMaxLength(40);
-                objCompany.Property(company => company.ReportEmail).HasMaxLength(200);
                 objCompany.Property(company => company.TimeZone).HasMaxLength(60)
                     .HasDefaultValue(CompanyTimeZone.Default);
                 objCompany.HasIndex(company => company.Slug).IsUnique();
@@ -60,6 +60,7 @@ namespace Models.Persistence
                     .HasFilter("\"PortalHost\" <> ''");
                 // Mesmo limite da URL "Geral" da empresa (PortalSettings.RedirectUrl).
                 objUnit.Property(unit => unit.RedirectUrl).HasMaxLength(2048);
+                objUnit.Property(unit => unit.Email).HasMaxLength(200);
                 objUnit.HasOne<Company>()
                     .WithMany()
                     .HasForeignKey(unit => unit.IDCompany)
@@ -239,6 +240,8 @@ namespace Models.Persistence
                 objRecipient.Property(recipient => recipient.Phone).HasMaxLength(20);
                 objRecipient.Property(recipient => recipient.Name).HasMaxLength(200);
                 objRecipient.Property(recipient => recipient.Message).HasMaxLength(4000);
+                objRecipient.Property(recipient => recipient.Instagram).HasMaxLength(100);
+                objRecipient.Property(recipient => recipient.Info).HasMaxLength(120);
                 objRecipient.Property(recipient => recipient.Status).HasMaxLength(20);
                 objRecipient.Property(recipient => recipient.Reason).HasMaxLength(300);
                 // D1: um destinatário por cliente (= por telefone) em cada execução.
@@ -256,6 +259,26 @@ namespace Models.Persistence
                     .WithMany()
                     .HasForeignKey(recipient => recipient.IDCustomer)
                     .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            objModelBuilder.Entity<CampaignDelivery>(objDelivery =>
+            {
+                objDelivery.Property(delivery => delivery.UnitName).HasMaxLength(120);
+                objDelivery.Property(delivery => delivery.Email).HasMaxLength(200);
+                objDelivery.Property(delivery => delivery.Status).HasMaxLength(20);
+                objDelivery.Property(delivery => delivery.Error).HasMaxLength(500);
+                objDelivery.Property(delivery => delivery.FileName).HasMaxLength(200);
+                // Uma entrega por unidade em cada execução.
+                objDelivery.HasIndex(delivery => new { delivery.IDRun, delivery.IDUnit }).IsUnique();
+                objDelivery.HasOne<CampaignRun>()
+                    .WithMany()
+                    .HasForeignKey(delivery => delivery.IDRun)
+                    .OnDelete(DeleteBehavior.Cascade);
+                // Unidade apagada: o histórico do envio fica, com o nome e o e-mail gravados.
+                objDelivery.HasOne<Unit>()
+                    .WithMany()
+                    .HasForeignKey(delivery => delivery.IDUnit)
+                    .OnDelete(DeleteBehavior.SetNull);
             });
 
             objModelBuilder.Entity<CampaignEvent>(objEvent =>

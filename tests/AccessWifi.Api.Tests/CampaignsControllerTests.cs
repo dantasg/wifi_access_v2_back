@@ -43,7 +43,7 @@ public class CampaignsControllerTests
     public async Task Create_TipoNaoLiberadoParaAEmpresa_Recusa()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
-        Company objCompany = CreateCompany(objDbContext, arrKinds: CampaignKind.Filtered);
+        Company objCompany = CreateCompany(objDbContext, arrKinds: CampaignKind.WeMissYou);
 
         ActionResult<CampaignDetailDto> objResult = await CreateController(objDbContext, objCompany.Id).Create(
             new SaveCampaignRequest(CampaignKind.Birthday, "", Aniversario()), null, CancellationToken.None);
@@ -88,21 +88,23 @@ public class CampaignsControllerTests
     }
 
     [Fact]
-    public async Task Create_FiltradaUmaVezNoPassado_Recusa()
+    public async Task Create_Filtrada_EmBreve_RecusaMesmoLiberadaAntes()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        // Liberação antiga, de antes da filtrada virar "em breve" (D23).
         Company objCompany = CreateCompany(objDbContext, arrKinds: CampaignKind.Filtered);
         CampaignConfig objConfig = new CampaignConfig
         {
             Message = "Oi",
             SendTime = "09:00",
-            Schedule = new CampaignScheduleConfig { Recurrence = CampaignRecurrence.Once, StartDate = new DateOnly(2020, 1, 1) },
+            Schedule = new CampaignScheduleConfig { Recurrence = CampaignRecurrence.Daily, StartDate = new DateOnly(2030, 1, 1) },
         };
 
         ActionResult<CampaignDetailDto> objResult = await CreateController(objDbContext, objCompany.Id).Create(
             new SaveCampaignRequest(CampaignKind.Filtered, "Promo", objConfig), null, CancellationToken.None);
 
-        Assert.Contains("nenhum disparo daqui para frente", Erro(objResult));
+        Assert.Contains("em breve", Erro(objResult));
+        Assert.Empty(objDbContext.Campaigns);
     }
 
     [Fact]
@@ -208,7 +210,57 @@ public class CampaignsControllerTests
         Assert.IsType<BadRequestObjectResult>((await objSuper.GetAll(null, CancellationToken.None)).Result);
         List<CampaignCatalogItemDto> objCatalogo = Ok(await objSuper.Catalog(objCompany.Slug, CancellationToken.None));
         Assert.True(objCatalogo.Single(item => item.Kind == CampaignKind.Birthday).Enabled);
-        Assert.False(objCatalogo.Single(item => item.Kind == CampaignKind.Filtered).Enabled);
+        CampaignCatalogItemDto objFiltrada = objCatalogo.Single(item => item.Kind == CampaignKind.Filtered);
+        Assert.False(objFiltrada.Enabled);
+        Assert.False(objFiltrada.Available); // "em breve" (D23)
+        Assert.DoesNotContain(objCatalogo, item => item.Kind == "Welcome"); // saiu do sistema (D22)
+    }
+
+    [Fact]
+    public async Task Historico_MostraOsEmailsPorUnidade_EBaixaOPdfDeNovo()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext, arrKinds: CampaignKind.Birthday);
+        Unit objUnit = new Unit { IDCompany = objCompany.Id, Name = "Itaituba", Slug = "itaituba", Email = "gerente@regional.com.br" };
+        Customer objCliente = new Customer { IDCompany = objCompany.Id, Phone = "93991234567", Name = "Ana Souza", IDLastUnit = objUnit.Id };
+        objDbContext.AddRange(objUnit, objCliente);
+        objDbContext.SaveChanges();
+        CampaignsController objController = CreateController(objDbContext, objCompany.Id);
+        CampaignDetailDto objCampanha = Ok(await objController.Create(
+            new SaveCampaignRequest(CampaignKind.Birthday, "", Aniversario()), null, CancellationToken.None));
+        CampaignRun objRun = new CampaignRun
+        {
+            IDCampaign = objCampanha.Id, IDCompany = objCompany.Id, Status = CampaignRunStatus.Completed,
+            IDCampaignVersion = objDbContext.CampaignVersions.Single().Id, VersionNumber = 1,
+            LocalDate = new DateOnly(2026, 10, 12),
+        };
+        CampaignDelivery objDelivery = new CampaignDelivery
+        {
+            IDRun = objRun.Id, IDUnit = objUnit.Id, UnitName = "Itaituba", Email = "gerente@regional.com.br",
+            Status = CampaignDeliveryStatus.Sent, RecipientCount = 1, Attempts = 1,
+            FileName = "campanha-aniversario-itaituba-2026-10-12.pdf", SentAt = DateTime.UtcNow,
+        };
+        objDbContext.AddRange(objRun, objDelivery, new CampaignRecipient
+        {
+            IDRun = objRun.Id, IDCustomer = objCliente.Id, IDUnit = objUnit.Id, Phone = objCliente.Phone,
+            Name = objCliente.Name, Message = "Parabéns, Ana!", Info = "seg, 12/10 · 30 anos",
+            EventDate = new DateOnly(2026, 10, 12), Status = CampaignRecipientStatus.Sent,
+        });
+        objDbContext.SaveChanges();
+
+        CampaignDeliveryDto objEnvio = Assert.Single(Ok(await objController.Deliveries(objRun.Id, null, CancellationToken.None)));
+        Assert.Equal("gerente@regional.com.br", objEnvio.Email);
+        Assert.Equal(CampaignDeliveryStatus.Sent, objEnvio.Status);
+        CampaignRecipientDto objDestinatario = Assert.Single(Ok(await objController.Recipients(
+            objRun.Id, null, null, 1, 50, CancellationToken.None)).Items);
+        Assert.Equal("Itaituba", objDestinatario.Unit);
+        Assert.Equal("seg, 12/10 · 30 anos", objDestinatario.Info);
+
+        FileContentResult objPdf = Assert.IsType<FileContentResult>(
+            await objController.DeliveryPdf(objRun.Id, objEnvio.Id, null, CancellationToken.None));
+        Assert.Equal("application/pdf", objPdf.ContentType);
+        Assert.Equal("campanha-aniversario-itaituba-2026-10-12.pdf", objPdf.FileDownloadName);
+        Assert.Equal("%PDF", System.Text.Encoding.ASCII.GetString(objPdf.FileContents, 0, 4));
     }
 
     [Fact]
@@ -265,13 +317,13 @@ public class CompanyCampaignSettingsTests
         TestHelpers.SetUser(objController, null, "root");
 
         ActionResult<CompanyDto> objResult = await objController.Update(objCompany.Id,
-            new UpdateCompanyRequest("Regional", true, null, null, "America/Manaus", [CampaignKind.Filtered, CampaignKind.Welcome]),
+            new UpdateCompanyRequest("Regional", true, null, "America/Manaus", [CampaignKind.WeMissYou, CampaignKind.SignupAnniversary]),
             CancellationToken.None);
 
         CompanyDto objDto = Assert.IsType<CompanyDto>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
         Assert.Equal("America/Manaus", objDto.TimeZone);
-        Assert.Equal(new[] { CampaignKind.Welcome, CampaignKind.Filtered }, objDto.CampaignKinds);
-        Assert.Equal("root", objDbContext.CompanyCampaignKinds.Single(kind => kind.Kind == CampaignKind.Welcome).EnabledBy);
+        Assert.Equal(new[] { CampaignKind.SignupAnniversary, CampaignKind.WeMissYou }, objDto.CampaignKinds);
+        Assert.Equal("root", objDbContext.CompanyCampaignKinds.Single(kind => kind.Kind == CampaignKind.WeMissYou).EnabledBy);
         // Aniversário foi desligado: a campanha dele sai da agenda.
         Assert.Null(objDbContext.Campaigns.Single().NextRunAt);
     }
@@ -287,11 +339,19 @@ public class CompanyCampaignSettingsTests
         TestHelpers.SetUser(objController, null, "root");
 
         ActionResult<CompanyDto> objFuso = await objController.Update(objCompany.Id,
-            new UpdateCompanyRequest("Regional", true, null, null, "Lua/Crateras"), CancellationToken.None);
+            new UpdateCompanyRequest("Regional", true, null, "Lua/Crateras"), CancellationToken.None);
         ActionResult<CompanyDto> objTipo = await objController.Update(objCompany.Id,
-            new UpdateCompanyRequest("Regional", true, null, null, null, ["Inventado"]), CancellationToken.None);
+            new UpdateCompanyRequest("Regional", true, null, null, ["Inventado"]), CancellationToken.None);
+        ActionResult<CompanyDto> objBoasVindas = await objController.Update(objCompany.Id,
+            new UpdateCompanyRequest("Regional", true, null, null, ["Welcome"]), CancellationToken.None);
+        ActionResult<CompanyDto> objFiltrada = await objController.Update(objCompany.Id,
+            new UpdateCompanyRequest("Regional", true, null, null, [CampaignKind.Filtered]), CancellationToken.None);
 
         Assert.IsType<BadRequestObjectResult>(objFuso.Result);
         Assert.IsType<BadRequestObjectResult>(objTipo.Result);
+        Assert.IsType<BadRequestObjectResult>(objBoasVindas.Result); // saiu do sistema (D22)
+        Assert.Contains("em breve", Assert.IsType<ErrorResponse>(
+            Assert.IsType<BadRequestObjectResult>(objFiltrada.Result).Value).Error); // D23
+        Assert.Empty(objDbContext.CompanyCampaignKinds);
     }
 }

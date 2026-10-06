@@ -28,6 +28,9 @@ public partial class UnitsController : ControllerBase
     [GeneratedRegex(@"^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$")]
     private static partial Regex PortalHostRegex();
 
+    [GeneratedRegex(@"^[^@\s]+@[^@\s]+\.[^@\s]+$")]
+    private static partial Regex EmailRegex();
+
     private readonly AppDbContext _objDbContext;
     private readonly IEncryptor _objEncryptor;
     private readonly IUnifiClient _objUnifiClient;
@@ -120,7 +123,8 @@ public partial class UnitsController : ControllerBase
             return BadRequest(new ErrorResponse(sHostError));
         }
 
-        string? sRedirectError = ApplyRedirectUrl(objUnit, objRequest.RedirectUrl);
+        string? sRedirectError = ApplyRedirectUrl(objUnit, objRequest.RedirectUrl)
+            ?? ApplyEmail(objUnit, objRequest.Email);
         if (sRedirectError is not null)
         {
             return BadRequest(new ErrorResponse(sRedirectError));
@@ -165,7 +169,8 @@ public partial class UnitsController : ControllerBase
             return BadRequest(new ErrorResponse(sHostError));
         }
 
-        string? sRedirectError = ApplyRedirectUrl(objUnit, objRequest.RedirectUrl);
+        string? sRedirectError = ApplyRedirectUrl(objUnit, objRequest.RedirectUrl)
+            ?? ApplyEmail(objUnit, objRequest.Email);
         if (sRedirectError is not null)
         {
             return BadRequest(new ErrorResponse(sRedirectError));
@@ -269,6 +274,27 @@ public partial class UnitsController : ControllerBase
         }
 
         objUnit.RedirectUrl = sRedirectUrl.Trim();
+        return null;
+    }
+
+    /// <summary>
+    /// Grava o e-mail da unidade (relatório mensal e PDF das campanhas). Nulo mantém o atual; "" limpa.
+    /// Devolve a mensagem de erro ou null.
+    /// </summary>
+    private static string? ApplyEmail(Unit objUnit, string? sEmail)
+    {
+        if (sEmail is null)
+        {
+            return null;
+        }
+
+        string sValor = sEmail.Trim();
+        if (sValor.Length > 200 || (sValor.Length > 0 && !EmailRegex().IsMatch(sValor)))
+        {
+            return "E-mail da unidade inválido.";
+        }
+
+        objUnit.Email = sValor;
         return null;
     }
 

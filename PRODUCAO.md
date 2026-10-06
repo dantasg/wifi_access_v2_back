@@ -16,7 +16,8 @@ https://vps11702.panel.icontainer.online
  │    │        └──► API .NET  (systemd: accesswifi-api, 127.0.0.1:5000) ──► PostgreSQL 18
  │    └── todo o resto ──► portal (arquivos estáticos, SPA com fallback para index.html)
  │
- └── worker .NET (systemd: accesswifi-worker) — relatórios mensais e retenção de leads
+ └── worker .NET (systemd: accesswifi-worker) — campanhas (PDF por e-mail para cada unidade),
+                                                   relatório mensal por unidade e retenção de leads
 ```
 
 - **Portal e API no mesmo endereço.** Sem CORS e sem `VITE_API_URL`: o front chama a própria origem.
@@ -103,12 +104,14 @@ O script, em ordem:
 2. Compila **na sua máquina**; o servidor só tem o runtime.
 3. **Recusa o pacote** se ele tiver `appsettings.Development*` (segredo de dev) ou se o portal
    apontar para o ngrok/Vercel.
-4. Faz **backup do banco antes** das migrations.
-5. Aplica as migrations (script idempotente: roda só o que falta).
-6. Troca os binários guardando a versão atual como `anterior` e reinicia.
-7. **Se a API não responder em 20 s, volta sozinho para a versão anterior.**
-8. Recoloca o encaminhamento do nginx, se o painel tiver apagado (ver §8).
-9. Confere pela internet: portal, API e painel.
+4. No servidor, **testa o gerador do PDF de campanha** (`AccessWifiService.dll --testar-pdf`, biblioteca
+   nativa do QuestPDF). Se não rodar, para ali: nada é trocado, nem o banco.
+5. Faz **backup do banco antes** das migrations.
+6. Aplica as migrations (script idempotente: roda só o que falta).
+7. Troca os binários guardando a versão atual como `anterior` e reinicia.
+8. **Se a API não responder em 20 s, volta sozinho para a versão anterior.**
+9. Recoloca o encaminhamento do nginx, se o painel tiver apagado (ver §8).
+10. Confere pela internet: portal, API e painel.
 
 O serviço fica fora do ar por uns 5 segundos durante o reinício. Evite publicar no horário de
 movimento das lojas.
@@ -195,7 +198,9 @@ Outros comandos, no servidor: `accesswifi-ops testar` (mensagem de teste nos doi
 o que mandariam). Segredos em `/etc/accesswifi/ops.env` (só o root lê). O e-mail usa **STARTTLS, porta 587**
 (a 465 não é suportada). No fim, o `configurar` oferece gravar a mesma conta de e-mail no banco (chaves `SMTP_*`
 da tabela `Configuration`, senha cifrada com a `Encryption__Key`) — é a conta que o worker usa no relatório
-mensal; assim existe uma conta só.
+mensal e nos PDFs das campanhas; assim existe uma conta só. Para gravar sem passar pelo `configurar` de novo:
+`accesswifi-ops smtp-no-banco`. Sem essas chaves, o relatório não sai e as campanhas ficam como falha
+("O SMTP não está configurado"), com o motivo no histórico.
 
 **Manutenção do `AccessWifi.Ops`:**
 
@@ -339,8 +344,9 @@ e `216.22.13.216`.
   acompanha uma troca de provedor. Com domínio próprio, cada unidade ganha o seu endereço.
 - **Dôce Cafeteria foi apagada em 01/10/2026** (empresa, unidade e tema; não tinha cadastros) para ser
   cadastrada de novo. Backup de antes: `/var/backups/accesswifi/doce-antes-de-apagar-20261001-134811.dump`.
-- **Relatório mensal por e-mail não sai.** O SMTP do worker (tabela `Configuration`, chaves `SMTP_*`)
-  está vazio e a Regional não tem e-mail de relatório. Os avisos (§7) usam uma configuração própria.
+- **Relatório mensal e campanhas por e-mail não saem ainda.** O SMTP do worker (tabela `Configuration`,
+  chaves `SMTP_*`) está vazio (resolve com `accesswifi-ops smtp-no-banco`, §6) e a unidade Itaituba não tem
+  e-mail (painel → Unidades → Editar). Os avisos (§7) usam uma configuração própria.
 - **Trocar a chave da UniFi da Itaituba.** A atual passou por conversa. O painel ainda não tem tela
   para isso (PARTE 6 do `FRONT_CHANGES.md`); até lá, via `PUT /admin/units/{id}`.
 - **Vercel.** Não serve mais a Itaituba. O plano gratuito não permite uso comercial.

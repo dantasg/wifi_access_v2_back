@@ -71,8 +71,11 @@ namespace Models.DataBase
         /// <summary>Ver <see cref="CampaignRunStatus"/>.</summary>
         public string Status { get; set; } = CampaignRunStatus.Selecting;
 
-        /// <summary>Modo simulação (D14): percorre tudo sem enviar.</summary>
-        public bool Simulation { get; set; } = true;
+        /// <summary>
+        /// Modo simulação (D14): percorria tudo sem enviar. Só as execuções antigas; desde o envio por
+        /// e-mail à unidade (D17), as novas saem com false.
+        /// </summary>
+        public bool Simulation { get; set; }
 
         public int TotalCount { get; set; }
         public int SentCount { get; set; }
@@ -97,9 +100,27 @@ namespace Models.DataBase
         public long Id { get; set; }
         public Guid IDRun { get; set; }
         public Guid IDCustomer { get; set; }
+
+        /// <summary>
+        /// Unidade cujo gerente recebe este cliente no PDF: a da última visita (D17). Nulo = cliente sem
+        /// unidade, fica como falha.
+        /// </summary>
+        public Guid? IDUnit { get; set; }
         public string Phone { get; set; } = "";
         public string Name { get; set; } = "";
+
+        /// <summary>Usuário do Instagram, sem o @ ("" = não informou). Vira link no PDF.</summary>
+        public string Instagram { get; set; } = "";
         public string Message { get; set; } = "";
+
+        /// <summary>
+        /// A coluna de informação do PDF, já pronta: "sex, 09/10 · 29 anos" no aniversário, "2 anos de
+        /// cadastro", "5ª visita", "Última visita em 01/09/2026".
+        /// </summary>
+        public string Info { get; set; } = "";
+
+        /// <summary>Aniversário: o dia em que o cliente faz anos nesta semana (ordena o PDF e marca "hoje").</summary>
+        public DateOnly? EventDate { get; set; }
 
         /// <summary>Ver <see cref="CampaignRecipientStatus"/>.</summary>
         public string Status { get; set; } = CampaignRecipientStatus.Pending;
@@ -112,6 +133,37 @@ namespace Models.DataBase
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime? ProcessedAt { get; set; }
+    }
+
+    /// <summary>
+    /// O e-mail de uma unidade numa execução (D17): um PDF com os clientes dela, para o gerente fazer o
+    /// contato. Guarda para onde foi, quando, quantas tentativas e o motivo de uma falha.
+    /// </summary>
+    public class CampaignDelivery
+    {
+        public Guid Id { get; set; } = Guid.NewGuid();
+        public Guid IDRun { get; set; }
+
+        /// <summary>Nulo = clientes sem unidade (não tem para onde mandar).</summary>
+        public Guid? IDUnit { get; set; }
+
+        /// <summary>Nome e e-mail da unidade no momento do envio (o histórico não muda se a unidade mudar).</summary>
+        public string UnitName { get; set; } = "";
+        public string Email { get; set; } = "";
+
+        /// <summary>Ver <see cref="CampaignDeliveryStatus"/>.</summary>
+        public string Status { get; set; } = CampaignDeliveryStatus.Pending;
+        public int RecipientCount { get; set; }
+        public int Attempts { get; set; }
+
+        /// <summary>Quando tentar de novo depois de uma falha (UTC).</summary>
+        public DateTime? NextAttemptAt { get; set; }
+        public string? Error { get; set; }
+
+        /// <summary>Nome do PDF anexado (ex.: "campanha-aniversario-itaituba-2026-10-12.pdf").</summary>
+        public string FileName { get; set; } = "";
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime? SentAt { get; set; }
     }
 
     /// <summary>Ações sobre a campanha ou uma execução (ativar, pausar, retomar, cancelar), com quem fez.</summary>

@@ -260,6 +260,41 @@ public class UnitsControllerTests
     }
 
     [Fact]
+    public async Task Email_CriaComEmail_NuloMantem_VazioLimpa()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext);
+        UnitsController objController = CreateController(objDbContext);
+
+        UnitDto objCriada = Assert.IsType<UnitDto>(Assert.IsType<OkObjectResult>((await objController.Create(
+            CreateRequest(objCompany.Id) with { Email = "  gerente@loja.com.br  " }, CancellationToken.None)).Result).Value);
+        Assert.Equal("gerente@loja.com.br", objCriada.Email);
+
+        await objController.Update(objCriada.Id, new UpdateUnitRequest("Matriz", true, null), CancellationToken.None);
+        Assert.Equal("gerente@loja.com.br", objDbContext.Units.AsNoTracking().Single().Email);
+
+        await objController.Update(objCriada.Id, new UpdateUnitRequest("Matriz", true, null, Email: ""), CancellationToken.None);
+        Assert.Equal("", objDbContext.Units.AsNoTracking().Single().Email);
+    }
+
+    [Fact]
+    public async Task Email_Invalido_Retorna400ENaoGrava()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext);
+        Unit objUnit = new Unit { IDCompany = objCompany.Id, Name = "Matriz", Slug = "doce-matriz", Email = "a@a.com" };
+        objDbContext.Units.Add(objUnit);
+        objDbContext.SaveChanges();
+
+        ActionResult<UnitDto> objResult = await CreateController(objDbContext).Update(
+            objUnit.Id, new UpdateUnitRequest("Matriz", true, null, Email: "gerente-sem-arroba"), CancellationToken.None);
+
+        Assert.Equal("E-mail da unidade inválido.", Assert.IsType<ErrorResponse>(
+            Assert.IsType<BadRequestObjectResult>(objResult.Result).Value).Error);
+        Assert.Equal("a@a.com", objDbContext.Units.AsNoTracking().Single().Email);
+    }
+
+    [Fact]
     public async Task GetAll_SuperAdminComFiltroDeEmpresa_SoTrazAsUnidadesDaEmpresa()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();

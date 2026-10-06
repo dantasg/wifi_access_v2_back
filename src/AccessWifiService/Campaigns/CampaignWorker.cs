@@ -30,8 +30,8 @@ namespace AccessWifiService.Campaigns
         {
             TimeSpan tsIntervalo = TimeSpan.FromSeconds(Math.Max(1, _objOptions.TickSeconds));
             _objLogger.LogInformation(
-                "Campanhas: agendador ativo (a cada {Segundos} s, {PorMinuto} mensagens/min por execução, modo simulação).",
-                tsIntervalo.TotalSeconds, _objOptions.MessagesPerMinute);
+                "Campanhas: agendador ativo (a cada {Segundos} s; PDF por e-mail para cada unidade).",
+                tsIntervalo.TotalSeconds);
 
             while (!objStoppingToken.IsCancellationRequested)
             {

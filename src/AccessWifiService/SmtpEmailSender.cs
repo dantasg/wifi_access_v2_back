@@ -6,8 +6,9 @@ using System.Net.Mime;
 namespace AccessWifiService
 {
     /// <summary>
-    /// Envio via SMTP. Lê as credenciais da tabela Configuration (chaves SMTP_*).
-    /// A implementação do envio em si será feita depois — a fiação já está pronta.
+    /// Envio via SMTP. Lê as credenciais da tabela Configuration (chaves SMTP_*). Sem SMTP configurado,
+    /// lança erro: quem chama registra a falha (o relatório não marca como enviado, a campanha mostra o
+    /// motivo no histórico) em vez de achar que o e-mail saiu.
     /// </summary>
     public class SmtpEmailSender : IEmailSender
     {
@@ -26,10 +27,8 @@ namespace AccessWifiService
 
             if (string.IsNullOrWhiteSpace(objSmtp.Host))
             {
-                _objLogger.LogWarning(
-                    "SMTP não configurado na tabela Configuration (SMTP_HOST vazio) — e-mail para {To} não enviado.",
-                    sToEmail);
-                return;
+                throw new InvalidOperationException(
+                    "O SMTP não está configurado (tabela Configuration, SMTP_HOST vazio). Ver PRODUCAO.md §6.");
             }
 
             using SmtpClient objClient = new SmtpClient(objSmtp.Host, objSmtp.Port)
@@ -53,10 +52,15 @@ namespace AccessWifiService
             {
                 MemoryStream objStream = new MemoryStream(objAttachment);
 
-                Attachment objMailAttachment = new Attachment(
-                    objStream,
-                    sAttachmentName ?? "anexo.csv",
-                    MediaTypeNames.Application.Octet);
+                string sNome = sAttachmentName ?? "anexo.csv";
+                // Com o tipo certo, o celular abre o PDF direto do e-mail.
+                string sTipo = Path.GetExtension(sNome).ToLowerInvariant() switch
+                {
+                    ".pdf" => MediaTypeNames.Application.Pdf,
+                    ".csv" => MediaTypeNames.Text.Csv,
+                    _ => MediaTypeNames.Application.Octet,
+                };
+                Attachment objMailAttachment = new Attachment(objStream, sNome, sTipo);
 
                 objMessage.Attachments.Add(objMailAttachment);
             }

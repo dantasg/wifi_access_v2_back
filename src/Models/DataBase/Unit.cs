@@ -1,8 +1,8 @@
 namespace Models.DataBase
 {
     /// <summary>
-    /// Unidade (franquia/loja) de uma empresa. Tema/login/relatório continuam por empresa;
-    /// a controladora UniFi e os leads passam a ser por unidade.
+    /// Unidade (franquia/loja) de uma empresa. Tema e login continuam por empresa; a controladora
+    /// UniFi, os leads e o e-mail (relatório mensal e campanhas) são por unidade.
     /// </summary>
     public class Unit
     {
@@ -25,6 +25,19 @@ namespace Models.DataBase
         /// Vazio = usa a URL "Geral" da empresa (<see cref="PortalSettings.RedirectUrl"/>).
         /// </summary>
         public string RedirectUrl { get; set; } = "";
+
+        /// <summary>
+        /// E-mail da unidade (do gerente): recebe o relatório mensal com os cadastros desta unidade e o
+        /// PDF de cada campanha com os clientes dela. Vazio = não recebe nada.
+        /// </summary>
+        public string Email { get; set; } = "";
+
+        /// <summary>
+        /// Quando o último relatório mensal desta unidade foi enviado (UTC). Marcador de idempotência:
+        /// o serviço não reenvia no mesmo mês. Nulo = nunca enviado.
+        /// </summary>
+        public DateTime? LastReportSentAt { get; set; }
+
         public bool Active { get; set; } = true;
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

@@ -12,6 +12,7 @@ const string Usage = """
       accesswifi-ops avisar TITULO TEXTO
       accesswifi-ops configurar         passo guiado: robô do Telegram, senha do backup, e-mail dos avisos
       accesswifi-ops testar             manda uma mensagem de teste pelos canais configurados
+      accesswifi-ops smtp-no-banco      usa a conta de e-mail dos avisos também no relatório mensal e nas campanhas
       accesswifi-ops versao
 
       --simular (backup/vigiar)         faz tudo, mas não manda nada: só mostra o que mandaria
@@ -61,6 +62,8 @@ switch (sCommand)
         return await new SetupWizard(objTime).RunAsync();
     case "testar":
         return await SetupWizard.TestChannelsAsync(objSettings, objTime);
+    case "smtp-no-banco":
+        return await SetupWizard.SyncReportSmtpAsync(objSettings) ? 0 : 1;
     default:
         Console.WriteLine(Usage);
         return 2;

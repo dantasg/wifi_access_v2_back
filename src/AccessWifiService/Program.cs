@@ -4,8 +4,30 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Models.Campaigns;
+using Models.DataBase;
 using Models.Persistence;
 using Models.Security;
+
+// Teste do PDF de campanha, sem banco nem serviço: o publicar-producao.sh roda no servidor antes de trocar
+// a versão, para saber se o gerador (biblioteca nativa + fonte embutida) funciona lá.
+if (args.Contains("--testar-pdf"))
+{
+    try
+    {
+        byte[] arrPdf = CampaignPdf.Build(new CampaignPdfData(
+            "Empresa", "Unidade", "Aniversário", CampaignKind.Birthday, new DateOnly(2026, 10, 12),
+            "Feliz aniversário, {primeiro_nome}! 🎉", null, new ThemeColors(),
+            [new CampaignPdfRow("Cliente Teste", "93991234567", "cliente", "seg, 12/10 · 30 anos", true, "Feliz aniversário!")]));
+        Console.WriteLine($"PDF de campanha ok ({arrPdf.Length} bytes)");
+        return 0;
+    }
+    catch (Exception objException)
+    {
+        Console.WriteLine($"PDF de campanha falhou: {objException}");
+        return 1;
+    }
+}
 
 // ContentRoot no diretório do binário: como serviço (Windows/systemd) o diretório de
 // trabalho não é o da aplicação, então o appsettings.json precisa ser localizado por aqui.
@@ -36,11 +58,11 @@ objBuilder.Services.AddScoped<LeadRetentionService>();
 
 objBuilder.Services.AddHostedService<SrvWifiService>();
 
-// Campanhas: agendador + execução. Por enquanto só em simulação (D14): nada é enviado.
+// Campanhas: agendador + execução. Cada execução manda, por unidade, um e-mail com o PDF dos clientes (D17).
 objBuilder.Services.Configure<CampaignEngineOptions>(
     objBuilder.Configuration.GetSection(CampaignEngineOptions.SectionName));
-objBuilder.Services.AddSingleton<IMessageChannel, SimulatedMessageChannel>();
 objBuilder.Services.AddScoped<CampaignEngine>();
 objBuilder.Services.AddHostedService<CampaignWorker>();
 
 objBuilder.Build().Run();
+return 0;

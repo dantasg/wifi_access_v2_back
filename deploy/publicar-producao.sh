@@ -200,6 +200,14 @@ ok()    { echo "    ✓ $1"; }
 falha() { echo "    ✗ $1"; exit 1; }
 
 if [ "$COM_API" = 1 ]; then
+  # O PDF de campanha usa uma biblioteca nativa (QuestPDF): confere se ela roda aqui antes de mexer em
+  # qualquer coisa. Falhou = nada foi trocado, nem o banco.
+  if ! PDF_OK="$(/usr/bin/dotnet "$P/worker/AccessWifiService.dll" --testar-pdf 2>&1)"; then
+    echo "$PDF_OK" | tail -n 5 | sed 's/^/      /'
+    falha "o gerador do PDF de campanha não roda neste servidor — nada foi publicado"
+  fi
+  ok "$PDF_OK"
+
   # Backup antes de qualquer migration. Guarda os 10 mais recentes.
   install -d -m 700 /var/backups/accesswifi
   B=/var/backups/accesswifi/antes-$(date +%Y%m%d-%H%M%S).dump

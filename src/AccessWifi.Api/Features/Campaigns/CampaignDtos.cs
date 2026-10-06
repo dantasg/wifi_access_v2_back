@@ -3,8 +3,12 @@ using Models.DataBase;
 
 namespace AccessWifi.Api.Features.Campaigns
 {
-    /// <summary>Um tipo de campanha para a empresa: se está liberado (D6) e se já existe a de sistema.</summary>
-    public record CampaignCatalogItemDto(string Kind, string Label, bool IsSystem, bool Enabled, Guid? CampaignId);
+    /// <summary>
+    /// Um tipo de campanha para a empresa: se está liberado (D6), se já existe a de sistema e se já está
+    /// disponível (Available = false: "em breve", D23).
+    /// </summary>
+    public record CampaignCatalogItemDto(
+        string Kind, string Label, bool IsSystem, bool Enabled, Guid? CampaignId, bool Available);
 
     public record CampaignRunDto(
         Guid Id,
@@ -84,9 +88,35 @@ namespace AccessWifi.Api.Features.Campaigns
     /// <param name="RunDate">Ação sobre uma execução: o dia dela (fuso da empresa). Nulo nas ações da campanha.</param>
     public record CampaignEventDto(string Action, DateTime CreatedAt, string Username, Guid? RunId, DateOnly? RunDate);
 
+    /// <param name="Unit">Unidade cujo gerente recebeu o cliente no PDF (D17).</param>
+    /// <param name="Info">A coluna de informação do PDF (ex.: "sex, 16/10 · 29 anos").</param>
     public record CampaignRecipientDto(
         long Id, string Phone, string Name, string Message, string Status, string? Reason, int? Milestone,
-        DateTime? ProcessedAt);
+        DateTime? ProcessedAt, string Unit, string Instagram, string Info, DateOnly? EventDate);
+
+    /// <summary>O e-mail de uma unidade numa execução: para onde foi, quando, e o motivo de uma falha.</summary>
+    public record CampaignDeliveryDto(
+        Guid Id,
+        Guid? UnitId,
+        string UnitName,
+        string Email,
+        string Status,
+        int RecipientCount,
+        int Attempts,
+        DateTime? NextAttemptAt,
+        string? Error,
+        string FileName,
+        DateTime CreatedAt,
+        DateTime? SentAt)
+    {
+        public static CampaignDeliveryDto FromEntity(CampaignDelivery objDelivery)
+        {
+            return new CampaignDeliveryDto(
+                objDelivery.Id, objDelivery.IDUnit, objDelivery.UnitName, objDelivery.Email, objDelivery.Status,
+                objDelivery.RecipientCount, objDelivery.Attempts, objDelivery.NextAttemptAt, objDelivery.Error,
+                objDelivery.FileName, objDelivery.CreatedAt, objDelivery.SentAt);
+        }
+    }
 
     public record PagedDto<T>(IReadOnlyList<T> Items, int Total, int Page, int PageSize);
 

@@ -16,9 +16,8 @@ namespace AccessWifi.Api.Features.Companies
         string Slug,
         bool Active,
         DateTime CreatedAt,
-        string? ReportEmail,
+        // Dia do relatório mensal; o e-mail é de cada unidade (D24).
         int ReportSendDay,
-        DateTime? LastReportSentAt,
         // Fuso das lojas (IANA) e os tipos de campanha liberados para a empresa (D6/D8).
         string TimeZone,
         IReadOnlyList<string> CampaignKinds)
@@ -27,18 +26,19 @@ namespace AccessWifi.Api.Features.Companies
         {
             return new CompanyDto(
                 objCompany.Id, objCompany.Name, objCompany.Slug, objCompany.Active,
-                objCompany.CreatedAt, objCompany.ReportEmail, objCompany.ReportSendDay,
-                objCompany.LastReportSentAt, objCompany.TimeZone,
-                CampaignKind.All.Where(objCampaignKinds.Contains).ToList());
+                objCompany.CreatedAt, objCompany.ReportSendDay, objCompany.TimeZone,
+                CampaignKind.All
+                    .Where(sKind => CampaignKind.IsAvailable(sKind) && objCampaignKinds.Contains(sKind))
+                    .ToList());
         }
     }
 
     // TimeZone e CampaignKinds nulos = manter o atual (na criação: Belém e nenhuma campanha).
     public record CreateCompanyRequest(
-        string Name, string Slug, string? ReportEmail, int? ReportSendDay,
+        string Name, string Slug, int? ReportSendDay,
         string? TimeZone = null, IReadOnlyList<string>? CampaignKinds = null);
 
     public record UpdateCompanyRequest(
-        string Name, bool Active, string? ReportEmail, int? ReportSendDay,
+        string Name, bool Active, int? ReportSendDay,
         string? TimeZone = null, IReadOnlyList<string>? CampaignKinds = null);
 }
