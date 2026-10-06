@@ -38,6 +38,15 @@ namespace Models.Campaigns
                 .Replace(YearsSinceSignup, objData.YearsSinceSignup?.ToString() ?? "");
         }
 
+        /// <summary>
+        /// Preenche só os campos que são iguais para todos os clientes de um PDF (empresa e unidade). Os que
+        /// dependem do cliente ({primeiro_nome}, {idade}…) ficam entre chaves, para o gerente ver onde muda.
+        /// </summary>
+        public static string RenderShared(string sTemplate, string sCompanyName, string sUnitName) =>
+            sTemplate
+                .Replace(Company, sCompanyName)
+                .Replace(UnitField, sUnitName);
+
         /// <summary>Idade completa na data (o aniversário de 29/02 conta em 28/02 nos anos não bissextos).</summary>
         public static int? AgeOn(DateOnly? dtBirth, DateOnly dtDate)
         {

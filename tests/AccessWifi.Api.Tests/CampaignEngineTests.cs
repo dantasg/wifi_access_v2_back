@@ -520,7 +520,8 @@ public class CampaignEngineTests
         AddCustomer(objCenario, "93991230001", "Ana", dtBirth: new DateOnly(1998, 9, 29), sInstagram: "https://www.instagram.com/ana.souza");
         AddCustomer(objCenario, "93991230002", "Bia", dtBirth: new DateOnly(1998, 10, 1));
         AddCustomer(objCenario, "93991230003", "Caio", dtBirth: new DateOnly(1998, 9, 30), objUnit: objSantarem);
-        AddCampaign(objCenario, CampaignKind.Birthday, Mensagem("Feliz aniversário, {primeiro_nome}!"));
+        AddCampaign(objCenario, CampaignKind.Birthday,
+            Mensagem("Feliz aniversário, {primeiro_nome}! A {empresa} ({unidade}) deseja tudo de bom."));
 
         await CreateEngine(objCenario).TickAsync(s_dtNove.AddSeconds(3));
 
@@ -528,7 +529,9 @@ public class CampaignEngineTests
         FakeEmailSender.Email objItaituba = objCenario.Email.Enviados.Single(email => email.To == EmailDaUnidade);
         Assert.Contains("Itaituba", objItaituba.Subject);
         Assert.Contains("2 clientes", objItaituba.Subject);
-        Assert.Contains("Feliz aniversário, {primeiro_nome}!", objItaituba.Body); // a mensagem como foi escrita
+        // A mensagem com o que é igual para todos já preenchido; o que muda por cliente fica entre chaves.
+        Assert.Contains("Feliz aniversário, {primeiro_nome}! A Lojas Regional (Itaituba) deseja tudo de bom.", objItaituba.Body);
+        Assert.Contains("A Lojas Regional (Santarém)", objCenario.Email.Enviados.Single(email => email.To == "gerente.stm@regional.com.br").Body);
         Assert.Equal("campanha-aniversario-itaituba-2026-09-29.pdf", objItaituba.AttachmentName);
         Assert.Equal("%PDF", System.Text.Encoding.ASCII.GetString(objItaituba.Attachment!, 0, 4));
         Assert.Contains("1 cliente", objCenario.Email.Enviados.Single(email => email.To == "gerente.stm@regional.com.br").Subject);

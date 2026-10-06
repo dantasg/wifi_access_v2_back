@@ -36,6 +36,16 @@ public class CampaignPdfTests
     }
 
     [Fact]
+    public void RenderShared_PreencheEmpresaEUnidade_EDeixaOsCamposDoCliente()
+    {
+        string sTexto = CampaignMessage.RenderShared(
+            "{primeiro_nome}, a {empresa} de {unidade} lembra: {idade} anos, {anos_de_cadastro} de casa, {nome}.",
+            "Lojas Regional", "Itaituba");
+
+        Assert.Equal("{primeiro_nome}, a Lojas Regional de Itaituba lembra: {idade} anos, {anos_de_cadastro} de casa, {nome}.", sTexto);
+    }
+
+    [Fact]
     public void WithoutEmoji_TiraOsEmojisEAvisa_SemMexerNoResto()
     {
         string sLimpo = CampaignContact.WithoutEmoji(

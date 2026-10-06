@@ -75,7 +75,9 @@ namespace Models.Campaigns
             byte[]? arrLogo = null;
             string? sLogoSvg = null;
             ReadLogo(objData.LogoDataUrl, ref arrLogo, ref sLogoSvg);
-            string sMensagem = CampaignContact.WithoutEmoji(objData.MessageTemplate, out bool bTinhaEmoji);
+            string sMensagem = CampaignContact.WithoutEmoji(
+                CampaignMessage.RenderShared(objData.MessageTemplate, objData.CompanyName, objData.UnitName),
+                out bool bTinhaEmoji);
             string sTituloInfo = InfoHeader(objData.Kind);
             bool bComInfo = sTituloInfo.Length > 0 && objData.Rows.Any(row => row.Info.Length > 0);
 
@@ -155,7 +157,7 @@ namespace Models.Campaigns
                             if (sMensagem.Contains('{'))
                             {
                                 objCaixa.Item().Text(
-                                    "Os campos entre chaves, como {primeiro_nome}, viram os dados de cada cliente.")
+                                    "O que está entre chaves muda para cada cliente: no link do WhatsApp já vai preenchido.")
                                     .FontSize(9).FontColor(objCores.Muted);
                             }
                             if (bTinhaEmoji)

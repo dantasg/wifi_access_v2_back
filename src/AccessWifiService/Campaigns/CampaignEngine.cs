@@ -633,7 +633,8 @@ namespace AccessWifiService.Campaigns
                 objCorpo.Append($"São os aniversariantes de {CampaignPdf.ShortDate(dtInicio)} a {CampaignPdf.ShortDate(dtFim)}.\r\n");
             }
             objCorpo.Append("\r\nMensagem para enviar:\r\n");
-            objCorpo.Append(objDados.MessageTemplate.Replace("\r\n", "\n").Replace("\n", "\r\n"));
+            objCorpo.Append(CampaignMessage.RenderShared(objDados.MessageTemplate, objDados.CompanyName, objDados.UnitName)
+                .Replace("\r\n", "\n").Replace("\n", "\r\n"));
             objCorpo.Append("\r\n\r\nNo PDF, clique no WhatsApp de cada cliente: a conversa abre com a mensagem pronta, ");
             objCorpo.Append("já com o nome dele. É só conferir e enviar.\r\n\r\n");
             objCorpo.Append("Mensagem automática do AccessWifi.");
