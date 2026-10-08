@@ -87,7 +87,7 @@ public class PortalHostTests
         SettingsController objController = new SettingsController(objDbContext);
 
         ActionResult<SettingsDto> objResult =
-            await objController.Get(null, HostItaituba, CancellationToken.None);
+            await objController.Get(null, HostItaituba, null, CancellationToken.None);
 
         SettingsDto objSettings =
             Assert.IsType<SettingsDto>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
@@ -107,7 +107,7 @@ public class PortalHostTests
         SettingsController objController = new SettingsController(objDbContext);
 
         ActionResult<SettingsDto> objResult =
-            await objController.Get(null, sHost, CancellationToken.None);
+            await objController.Get(null, sHost, null, CancellationToken.None);
 
         Assert.IsType<OkObjectResult>(objResult.Result);
     }
@@ -122,7 +122,7 @@ public class PortalHostTests
         SettingsController objController = new SettingsController(objDbContext);
 
         ActionResult<SettingsDto> objResult =
-            await objController.Get("doce-matriz", HostItaituba, CancellationToken.None);
+            await objController.Get("doce-matriz", HostItaituba, null, CancellationToken.None);
 
         SettingsDto objSettings =
             Assert.IsType<SettingsDto>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
@@ -137,7 +137,7 @@ public class PortalHostTests
         SettingsController objController = new SettingsController(objDbContext);
 
         ActionResult<SettingsDto> objResult =
-            await objController.Get(null, "outro.dominio.com", CancellationToken.None);
+            await objController.Get(null, "outro.dominio.com", null, CancellationToken.None);
 
         Assert.IsType<NotFoundObjectResult>(objResult.Result);
     }
@@ -149,7 +149,7 @@ public class PortalHostTests
         SettingsController objController = new SettingsController(objDbContext);
 
         ActionResult<SettingsDto> objResult =
-            await objController.Get(null, null, CancellationToken.None);
+            await objController.Get(null, null, null, CancellationToken.None);
 
         Assert.IsType<BadRequestObjectResult>(objResult.Result);
     }
@@ -163,7 +163,7 @@ public class PortalHostTests
         SettingsController objController = new SettingsController(objDbContext);
 
         ActionResult<SettingsDto> objResult =
-            await objController.Get(null, "   ", CancellationToken.None);
+            await objController.Get(null, "   ", null, CancellationToken.None);
 
         Assert.IsType<BadRequestObjectResult>(objResult.Result);
     }

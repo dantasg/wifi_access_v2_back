@@ -9,6 +9,9 @@ namespace AccessWifi.Ops
     /// Só a regra — quem lê o log em tempo real é o <see cref="UnifiWatcher"/>. O horário entra por parâmetro,
     /// para os testes simularem a passagem do tempo. Limites conhecidos: a linha de sucesso não diz a unidade
     /// (com várias unidades, qualquer liberação boa encerra o incidente) e só o modo nuvem registra sucesso.
+    ///
+    /// Também avisa dos pontos de acesso (PROPOSTA_UNIDADE_PELO_AP.md): portal aberto por um AP que nenhuma
+    /// loja tem, AP em duas unidades e unidade cujos APs não foram lidos — cada um no máximo a cada 6 h.
     /// </summary>
     public partial class UnifiMonitor
     {
@@ -24,6 +27,19 @@ namespace AccessWifi.Ops
         private const string SuccessText = "Autorização UniFi"; // "...(nuvem) pelo caminho clássico em 812 ms."
         private const string ReasonText = "UnifiException:";
 
+        // Linhas do UnitLocator e do UnitDeviceSync (unidade pelo ponto de acesso).
+        [GeneratedRegex(@"ponto de acesso desconhecido (\S+) no endereço (\S+?):")]
+        private static partial Regex UnknownApRegex();
+
+        [GeneratedRegex(@"Ponto de acesso (\S+) em mais de uma unidade")]
+        private static partial Regex RepeatedApRegex();
+
+        [GeneratedRegex(@"Aparelhos da unidade (\S+) não lidos na nuvem da UniFi: (.+)$")]
+        private static partial Regex DevicesNotReadRegex();
+
+        public static readonly TimeSpan s_tsApRepeat = TimeSpan.FromHours(6);
+
+        private readonly Dictionary<string, DateTimeOffset> _objApWarnings = new Dictionary<string, DateTimeOffset>();
         private readonly INotifier _objNotifier;
         private Incident? _objIncident;
         private (string Unit, DateTimeOffset At)? _objPending;
@@ -41,6 +57,11 @@ namespace AccessWifi.Ops
         public async Task LineAsync(string sLine, DateTimeOffset dtNow)
         {
             string sText = sLine.Trim();
+            if (await ApLineAsync(sText, dtNow))
+            {
+                return;
+            }
+
             Match objFailure = FailureRegex().Match(sText);
             if (objFailure.Success)
             {
@@ -85,6 +106,53 @@ namespace AccessWifi.Ops
                 _objIncident.NewSinceAlert = 0;
                 _objIncident.LastAlert = dtNow;
             }
+        }
+
+        private async Task<bool> ApLineAsync(string sText, DateTimeOffset dtNow)
+        {
+            Match objMatch = UnknownApRegex().Match(sText);
+            if (objMatch.Success)
+            {
+                await ApWarningAsync("desconhecido:" + objMatch.Groups[1].Value, dtNow,
+                    "🟠 Portal aberto por um ponto de acesso que nenhuma loja tem",
+                    $"AP: {objMatch.Groups[1].Value}\nEndereço: {objMatch.Groups[2].Value}\n\n"
+                    + "O visitante viu \"Unidade não encontrada\". Em geral é loja nova ainda não cadastrada no painel "
+                    + "(unidade no modo nuvem, com o console), ou console que a chave de API não alcança.\n"
+                    + "Ver PRODUCAO.md (unidade pelo ponto de acesso).");
+                return true;
+            }
+
+            objMatch = RepeatedApRegex().Match(sText);
+            if (objMatch.Success)
+            {
+                await ApWarningAsync("repetido:" + objMatch.Groups[1].Value, dtNow,
+                    "🟠 Ponto de acesso em mais de uma unidade",
+                    $"AP: {objMatch.Groups[1].Value}\n\nDuas unidades com o mesmo console? O portal não escolhe a loja "
+                    + "por esse AP (só pelo endereço). Confira o console das unidades no painel.");
+                return true;
+            }
+
+            objMatch = DevicesNotReadRegex().Match(sText);
+            if (objMatch.Success)
+            {
+                await ApWarningAsync("leitura:" + objMatch.Groups[1].Value, dtNow,
+                    "🟠 Pontos de acesso de uma unidade não foram lidos",
+                    $"Unidade: {objMatch.Groups[1].Value}\nMotivo: {objMatch.Groups[2].Value}\n\n"
+                    + "Os APs já lidos continuam valendo; AP novo desta unidade não é reconhecido até resolver.");
+                return true;
+            }
+
+            return false;
+        }
+
+        private async Task ApWarningAsync(string sKey, DateTimeOffset dtNow, string sTitle, string sText)
+        {
+            if (_objApWarnings.TryGetValue(sKey, out DateTimeOffset dtLast) && dtNow - dtLast < s_tsApRepeat)
+            {
+                return;
+            }
+            _objApWarnings[sKey] = dtNow;
+            await _objNotifier.NotifyAsync(sTitle, sText);
         }
 
         private async Task CloseWithoutReasonAsync()

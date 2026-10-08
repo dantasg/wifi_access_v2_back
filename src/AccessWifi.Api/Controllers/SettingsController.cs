@@ -23,22 +23,26 @@ public partial class SettingsController : ControllerBase
     private static partial Regex HexColorRegex();
 
     private readonly AppDbContext _objDbContext;
+    private readonly UnitLocator _objUnitLocator;
 
-    public SettingsController(AppDbContext objDbContext)
+    public SettingsController(AppDbContext objDbContext, UnitLocator? objUnitLocator = null)
     {
         _objDbContext = objDbContext;
+        _objUnitLocator = objUnitLocator ?? new UnitLocator(objDbContext);
     }
 
     /// <summary>
     /// Tema/marca do portal — público, porque o visitante carrega o tema sem estar logado.
     /// A unidade vem por <c>?unit=slug</c> ou, quando a UniFi não pôde mandar a query string,
-    /// por <c>?host=</c> (o endereço em que o portal foi aberto). O tema é da empresa dona da
-    /// unidade; sem linha gravada, devolve os padrões da marca.
+    /// pelo ponto de acesso (<c>?ap=</c>, o MAC que a UniFi manda) e pelo endereço em que o portal foi
+    /// aberto (<c>?host=</c>) — ver <see cref="UnitLocator"/>. O tema é da empresa dona da unidade; sem
+    /// linha gravada, devolve os padrões da marca.
     /// </summary>
     [HttpGet("/settings")]
     public async Task<ActionResult<SettingsDto>> Get(
         [FromQuery(Name = "unit")] string? sUnitSlug,
         [FromQuery(Name = "host")] string? sPortalHost,
+        [FromQuery(Name = "ap")] string? sAp,
         CancellationToken objCancellationToken)
     {
         if (string.IsNullOrWhiteSpace(sUnitSlug) && string.IsNullOrWhiteSpace(sPortalHost))
@@ -46,8 +50,8 @@ public partial class SettingsController : ControllerBase
             return BadRequest(new ErrorResponse("Informe a unidade (?unit=slug) ou o host (?host=)."));
         }
 
-        Unit? objUnit = await UnitResolver.FindAsync(
-            _objDbContext.Units.AsNoTracking(), sUnitSlug, sPortalHost, objCancellationToken);
+        Unit? objUnit = await _objUnitLocator.FindAsync(
+            _objDbContext.Units.AsNoTracking(), sUnitSlug, sPortalHost, sAp, objCancellationToken);
         if (objUnit is null || !objUnit.Active)
         {
             return NotFound(new ErrorResponse("Unidade não encontrada."));

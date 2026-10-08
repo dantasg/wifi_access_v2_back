@@ -37,16 +37,30 @@ namespace AccessWifi.Api.Features.Units
         string RedirectUrl,
         // E-mail do gerente: relatório mensal e PDF das campanhas (D17/D24). Vazio = não recebe.
         string Email,
-        DateTime? LastReportSentAt)
+        DateTime? LastReportSentAt,
+        // Pontos de acesso lidos na nuvem da UniFi: é por eles que o portal sabe de qual loja é a visita.
+        int DeviceCount = 0,
+        DateTime? DevicesSyncedAt = null,
+        string DevicesSyncError = "")
     {
-        public static UnitDto FromEntity(Unit objUnit)
+        public static UnitDto FromEntity(Unit objUnit, int iDeviceCount = 0)
         {
             return new UnitDto(
                 objUnit.Id, objUnit.IDCompany, objUnit.Name, objUnit.Slug, objUnit.Active,
                 objUnit.CreatedAt, objUnit.PortalHost, UnitUnifiDto.FromEntity(objUnit.Unifi),
-                objUnit.RedirectUrl, objUnit.Email, objUnit.LastReportSentAt);
+                objUnit.RedirectUrl, objUnit.Email, objUnit.LastReportSentAt,
+                iDeviceCount, objUnit.DevicesSyncedAt, objUnit.DevicesSyncError);
         }
     }
+
+    public record UnitDeviceDto(string Mac, string Name, string Model, DateTime SyncedAt)
+    {
+        public static UnitDeviceDto FromEntity(UnitDevice objDevice) =>
+            new UnitDeviceDto(objDevice.Mac, objDevice.Name, objDevice.Model, objDevice.SyncedAt);
+    }
+
+    /// <summary>Resultado do botão "Ler pontos de acesso" (todas as unidades no modo nuvem).</summary>
+    public record UnitDeviceSyncResponse(int Units, int Devices, int Failures);
 
     // Password/ApiKey nulos = manter os atuais (não expomos nenhum dos dois na leitura).
     // Mode nulo = "Local", que é o comportamento histórico.

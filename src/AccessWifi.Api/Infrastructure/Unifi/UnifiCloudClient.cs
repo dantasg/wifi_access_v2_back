@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Models.DataBase;
 using Models.Security;
@@ -190,6 +191,63 @@ public partial class UnifiCloudClient : IUnifiClient
         SiteItem? objSite = objSites.FirstOrDefault(site => site.Id == sSiteId);
         return $"Console respondeu pela nuvem. Site em uso: \"{objSite?.Name ?? sSiteId}\""
             + $" ({objSites.Count} site(s) no console).";
+    }
+
+    /// <summary>Um aparelho de um console, como a nuvem da Ubiquiti lista (Site Manager).</summary>
+    public record CloudDevice(string HostId, string Mac, string Name, string Model);
+
+    /// <summary>
+    /// Todos os aparelhos de todos os consoles que a chave enxerga, numa chamada só (GET /v1/devices;
+    /// ~0,2 s para as 18 lojas da Regional, medido em 08/10/2026). A chave vem em texto puro — quem chama
+    /// decifra. O MAC sai no formato de <see cref="MacAddress.Normalize"/>.
+    /// </summary>
+    public async Task<List<CloudDevice>> ListDevicesAsync(string sApiKey, CancellationToken objCancellationToken = default)
+    {
+        HttpClient objHttpClient = _objHttpClientFactory.CreateClient(HttpClientName);
+        List<CloudDevice> objDevices = [];
+        string? sNext = null;
+        int iPaginas = 0;
+        do
+        {
+            string sUrl = "v1/devices?pageSize=500" + (sNext is null ? "" : "&nextToken=" + Uri.EscapeDataString(sNext));
+            using HttpRequestMessage objRequest = new HttpRequestMessage(HttpMethod.Get, sUrl);
+            objRequest.Headers.Add(ApiKeyHeader, sApiKey);
+
+            using HttpResponseMessage objResponse = await SendAsync(objHttpClient, objRequest, objCancellationToken);
+            await EnsureSuccessAsync(objResponse, "listar os aparelhos", objCancellationToken);
+
+            JsonNode? objPage;
+            try
+            {
+                objPage = JsonNode.Parse(await objResponse.Content.ReadAsStringAsync(objCancellationToken));
+            }
+            catch (JsonException objException)
+            {
+                throw new UnifiException("A nuvem da UniFi devolveu uma resposta inesperada.", objException);
+            }
+
+            foreach (JsonNode? objGrupo in objPage?["data"]?.AsArray() ?? [])
+            {
+                string sHostId = objGrupo?["hostId"]?.ToString() ?? "";
+                foreach (JsonNode? objDevice in objGrupo?["devices"]?.AsArray() ?? [])
+                {
+                    string sMac = MacAddress.Normalize(objDevice?["mac"]?.ToString());
+                    if (sMac.Length == 0)
+                    {
+                        continue;
+                    }
+                    objDevices.Add(new CloudDevice(
+                        sHostId, sMac, objDevice?["name"]?.ToString() ?? "",
+                        objDevice?["model"]?.ToString() ?? objDevice?["shortname"]?.ToString() ?? ""));
+                }
+            }
+
+            sNext = objPage?["nextToken"]?.ToString();
+            iPaginas++;
+        }
+        while (!string.IsNullOrEmpty(sNext) && iPaginas < 20);
+
+        return objDevices;
     }
 
     /// <summary>

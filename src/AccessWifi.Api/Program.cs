@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
+using AccessWifi.Api.Features.Units;
 using AccessWifi.Api.Infrastructure.Persistence;
 using AccessWifi.Api.Infrastructure.Security;
 using AccessWifi.Api.Infrastructure.Unifi;
@@ -127,7 +128,8 @@ builder.Services.AddSingleton<IEncryptor>(
 // api.ui.com, então vale um HttpClient nomeado e reaproveitado.
 builder.Services.AddHttpClient(UnifiCloudClient.HttpClientName, objUnifiHttpClient =>
 {
-    objUnifiHttpClient.BaseAddress = new Uri("https://api.ui.com/");
+    // Configurável só para testar localmente contra uma nuvem falsa; em produção é sempre api.ui.com.
+    objUnifiHttpClient.BaseAddress = new Uri(objConfiguration["Unifi:CloudBaseUrl"] ?? "https://api.ui.com/");
     // D8: a Ubiquiti corta a chamada repassada em 25 s; 20 s deixa margem para respondermos antes.
     objUnifiHttpClient.Timeout = TimeSpan.FromSeconds(20);
 });
@@ -135,6 +137,12 @@ builder.Services.AddSingleton<UnifiLocalClient>();
 builder.Services.AddSingleton<UnifiCloudClient>();
 // O router escolhe o caminho pelo Mode da unidade — os controllers não precisam saber qual é.
 builder.Services.AddSingleton<IUnifiClient, UnifiClientRouter>();
+// Unidade pelo ponto de acesso (PROPOSTA_UNIDADE_PELO_AP.md): lista de APs lida da nuvem a cada 5 min,
+// e na hora quando o portal recebe um AP ainda desconhecido.
+builder.Services.AddMemoryCache();
+builder.Services.AddScoped<UnitDeviceSync>();
+builder.Services.AddScoped<UnitLocator>();
+builder.Services.AddHostedService<UnitDeviceSyncWorker>();
 // Conta de e-mail do sistema (Configurações do sistema): a API só usa para o e-mail de teste; quem manda o
 // relatório e as campanhas é o worker, com o mesmo código.
 builder.Services.AddScoped<ConfigurationReader>();

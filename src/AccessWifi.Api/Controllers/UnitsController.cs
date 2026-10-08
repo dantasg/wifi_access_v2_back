@@ -35,17 +35,20 @@ public partial class UnitsController : ControllerBase
     private readonly IEncryptor _objEncryptor;
     private readonly IUnifiClient _objUnifiClient;
     private readonly ILogger<UnitsController> _objLogger;
+    private readonly UnitDeviceSync? _objDeviceSync;
 
     public UnitsController(
         AppDbContext objDbContext,
         IEncryptor objEncryptor,
         IUnifiClient objUnifiClient,
-        ILogger<UnitsController> objLogger)
+        ILogger<UnitsController> objLogger,
+        UnitDeviceSync? objDeviceSync = null)
     {
         _objDbContext = objDbContext;
         _objEncryptor = objEncryptor;
         _objUnifiClient = objUnifiClient;
         _objLogger = objLogger;
+        _objDeviceSync = objDeviceSync;
     }
 
     /// <summary>
@@ -76,7 +79,53 @@ public partial class UnitsController : ControllerBase
             .OrderBy(unit => unit.Name)
             .ToListAsync(objCancellationToken);
 
-        return Ok(objUnits.Select(UnitDto.FromEntity).ToList());
+        Guid[] arrIds = objUnits.Select(unit => unit.Id).ToArray();
+        Dictionary<Guid, int> objDeviceCounts = await _objDbContext.UnitDevices.AsNoTracking()
+            .Where(device => arrIds.Contains(device.IDUnit))
+            .GroupBy(device => device.IDUnit)
+            .Select(grupo => new { grupo.Key, Count = grupo.Count() })
+            .ToDictionaryAsync(item => item.Key, item => item.Count, objCancellationToken);
+
+        return Ok(objUnits
+            .Select(unit => UnitDto.FromEntity(unit, objDeviceCounts.GetValueOrDefault(unit.Id)))
+            .ToList());
+    }
+
+    /// <summary>Pontos de acesso da unidade, como foram lidos na nuvem da UniFi.</summary>
+    [HttpGet("{id:guid}/devices")]
+    [Authorize(Roles = ClaimsExtensions.RoleSuperAdmin)]
+    public async Task<ActionResult<List<UnitDeviceDto>>> GetDevices(
+        Guid id, CancellationToken objCancellationToken)
+    {
+        bool bExiste = await _objDbContext.Units.AnyAsync(unit => unit.Id == id, objCancellationToken);
+        if (!bExiste)
+        {
+            return NotFound(new ErrorResponse("Unidade não encontrada."));
+        }
+
+        List<UnitDevice> objDevices = await _objDbContext.UnitDevices.AsNoTracking()
+            .Where(device => device.IDUnit == id)
+            .OrderBy(device => device.Name)
+            .ThenBy(device => device.Mac)
+            .ToListAsync(objCancellationToken);
+        return Ok(objDevices.Select(UnitDeviceDto.FromEntity).ToList());
+    }
+
+    /// <summary>
+    /// Lê agora, na nuvem da UniFi, os pontos de acesso de todas as unidades no modo nuvem (o serviço já
+    /// faz isso sozinho a cada 5 minutos; o botão é para não esperar depois de instalar uma loja).
+    /// </summary>
+    [HttpPost("devices/sync")]
+    [Authorize(Roles = ClaimsExtensions.RoleSuperAdmin)]
+    public async Task<ActionResult<UnitDeviceSyncResponse>> SyncDevices(CancellationToken objCancellationToken)
+    {
+        if (_objDeviceSync is null)
+        {
+            return Ok(new UnitDeviceSyncResponse(0, 0, 0));
+        }
+
+        UnitDeviceSync.Result objResult = await _objDeviceSync.SyncAsync(null, objCancellationToken);
+        return Ok(new UnitDeviceSyncResponse(objResult.Units, objResult.Devices, objResult.Failures));
     }
 
     /// <summary>Cria uma unidade. O slug identifica o portal (?unit=slug), é único e imutável.</summary>
@@ -136,7 +185,7 @@ public partial class UnitsController : ControllerBase
         _objDbContext.Units.Add(objUnit);
         await _objDbContext.SaveChangesAsync(objCancellationToken);
 
-        return Ok(UnitDto.FromEntity(objUnit));
+        return Ok(await WithDevicesAsync(objUnit, objCancellationToken));
     }
 
     /// <summary>
@@ -162,6 +211,7 @@ public partial class UnitsController : ControllerBase
 
         objUnit.Name = objRequest.Name.Trim();
         objUnit.Active = objRequest.Active;
+        string sConsoleAntes = objUnit.Unifi.Mode == UnifiMode.Cloud ? objUnit.Unifi.ConsoleId : "";
 
         string? sHostError = await ApplyPortalHostAsync(
             objUnit, objRequest.PortalHost, objCancellationToken);
@@ -179,9 +229,44 @@ public partial class UnitsController : ControllerBase
 
         ApplyUnifi(objUnit, objRequest.Unifi);
 
+        string sConsoleDepois = objUnit.Unifi.Mode == UnifiMode.Cloud ? objUnit.Unifi.ConsoleId : "";
+        if (sConsoleDepois != sConsoleAntes)
+        {
+            // Outro console (ou saiu da nuvem): os pontos de acesso gravados são de outro equipamento.
+            _objDbContext.UnitDevices.RemoveRange(
+                await _objDbContext.UnitDevices.Where(device => device.IDUnit == objUnit.Id).ToListAsync(objCancellationToken));
+            objUnit.DevicesSyncedAt = null;
+            objUnit.DevicesSyncError = "";
+        }
+
         await _objDbContext.SaveChangesAsync(objCancellationToken);
 
-        return Ok(UnitDto.FromEntity(objUnit));
+        return Ok(await WithDevicesAsync(objUnit, objCancellationToken));
+    }
+
+    /// <summary>
+    /// Depois de gravar uma unidade no modo nuvem, já lê os pontos de acesso dela — a loja nova é
+    /// reconhecida no portal sem esperar a próxima rodada. Falhar aqui não desfaz a gravação: o motivo
+    /// aparece na unidade e o serviço tenta de novo sozinho.
+    /// </summary>
+    private async Task<UnitDto> WithDevicesAsync(Unit objUnit, CancellationToken objCancellationToken)
+    {
+        if (_objDeviceSync is not null && objUnit.Active && objUnit.Unifi.Mode == UnifiMode.Cloud)
+        {
+            try
+            {
+                await _objDeviceSync.SyncAsync([objUnit.Id], objCancellationToken);
+            }
+            catch (Exception objException) when (objException is not OperationCanceledException)
+            {
+                _objLogger.LogWarning(
+                    objException, "Pontos de acesso da unidade {Slug} não lidos depois de salvar.", objUnit.Slug);
+            }
+        }
+
+        int iDevices = await _objDbContext.UnitDevices
+            .CountAsync(device => device.IDUnit == objUnit.Id, objCancellationToken);
+        return UnitDto.FromEntity(objUnit, iDevices);
     }
 
     /// <summary>

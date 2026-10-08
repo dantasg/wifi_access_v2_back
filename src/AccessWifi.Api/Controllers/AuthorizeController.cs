@@ -20,15 +20,18 @@ public class AuthorizeController : ControllerBase
     private readonly AppDbContext _objDbContext;
     private readonly IUnifiClient _objUnifiClient;
     private readonly ILogger<AuthorizeController> _objLogger;
+    private readonly UnitLocator _objUnitLocator;
 
     public AuthorizeController(
         AppDbContext objDbContext,
         IUnifiClient objUnifiClient,
-        ILogger<AuthorizeController> objLogger)
+        ILogger<AuthorizeController> objLogger,
+        UnitLocator? objUnitLocator = null)
     {
         _objDbContext = objDbContext;
         _objUnifiClient = objUnifiClient;
         _objLogger = objLogger;
+        _objUnitLocator = objUnitLocator ?? new UnitLocator(objDbContext);
     }
 
     /// <summary>Grava o lead e autoriza o dispositivo do visitante na controladora UniFi da unidade.</summary>
@@ -37,15 +40,15 @@ public class AuthorizeController : ControllerBase
     public async Task<ActionResult<AuthorizeResponse>> Post(
         AuthorizeRequest objRequest, CancellationToken objCancellationToken)
     {
-        // A unidade vem pelo slug ou, quando a UniFi não pôde mandar a query string, pelo host
-        // em que o portal foi aberto (ver UnitResolver).
+        // A unidade vem pelo slug ou, quando a UniFi não pôde mandar a query string, pelo ponto de
+        // acesso (Ap) e pelo host em que o portal foi aberto (ver UnitLocator).
         if (string.IsNullOrWhiteSpace(objRequest.Unit) && string.IsNullOrWhiteSpace(objRequest.Host))
         {
             return BadRequest(new AuthorizeResponse(false, Error: "Unidade não informada."));
         }
 
-        Unit? objUnit = await UnitResolver.FindAsync(
-            _objDbContext.Units, objRequest.Unit, objRequest.Host, objCancellationToken);
+        Unit? objUnit = await _objUnitLocator.FindAsync(
+            _objDbContext.Units, objRequest.Unit, objRequest.Host, objRequest.Ap, objCancellationToken);
         if (objUnit is null || !objUnit.Active)
         {
             return BadRequest(new AuthorizeResponse(false, Error: "Unidade não encontrada ou inativa."));

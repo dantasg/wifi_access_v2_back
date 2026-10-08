@@ -118,4 +118,53 @@ public class UnifiMonitorTests
 
         Assert.Empty(objNotifier.Sent);
     }
+
+    // ---------------------------------------------------------------- pontos de acesso
+
+    private const string UnknownAp = "      Portal aberto por um ponto de acesso desconhecido d0:21:f9:aa:bb:01 no endereço "
+        + "vps11702.panel.icontainer.online: a loja não foi identificada.";
+    private const string RepeatedAp = "      Ponto de acesso 8c:30:66:4e:9b:58 em mais de uma unidade: o portal não escolhe a loja por ele.";
+    private const string DevicesNotRead = "      Aparelhos da unidade itaituba não lidos na nuvem da UniFi: "
+        + "Chave de API da nuvem UniFi inválida ou revogada.";
+
+    [Fact]
+    public async Task ApDesconhecido_AvisaUmaVezACada6h()
+    {
+        ListNotifier objNotifier = new ListNotifier();
+        UnifiMonitor objMonitor = new UnifiMonitor(objNotifier);
+
+        await objMonitor.LineAsync(UnknownAp, Belem.At("10:00:00"));
+        await objMonitor.LineAsync(UnknownAp, Belem.At("10:00:01"));
+        await objMonitor.LineAsync(UnknownAp, Belem.At("15:59:59"));
+
+        (string sTitle, string sText) = Assert.Single(objNotifier.Sent);
+        Assert.Contains("nenhuma loja tem", sTitle);
+        Assert.Contains("AP: d0:21:f9:aa:bb:01", sText);
+        Assert.Contains("Endereço: vps11702.panel.icontainer.online", sText);
+        Assert.Null(objMonitor.CurrentIncident);
+
+        await objMonitor.LineAsync(UnknownAp, Belem.At("16:00:00"));
+        Assert.Equal(2, objNotifier.Sent.Count);
+    }
+
+    [Fact]
+    public async Task ApRepetidoELeituraQueFalhou_AvisamCadaUmUmaVez()
+    {
+        ListNotifier objNotifier = new ListNotifier();
+        UnifiMonitor objMonitor = new UnifiMonitor(objNotifier);
+
+        // O serviço tenta de novo a cada 5 min: o aviso não pode repetir a cada rodada.
+        foreach (string sTime in new[] { "10:00:00", "10:05:00", "10:10:00" })
+        {
+            await objMonitor.LineAsync(RepeatedAp, Belem.At(sTime));
+            await objMonitor.LineAsync(DevicesNotRead, Belem.At(sTime));
+        }
+
+        Assert.Equal(2, objNotifier.Sent.Count);
+        Assert.Contains("mais de uma unidade", objNotifier.Sent[0].Title);
+        Assert.Contains("AP: 8c:30:66:4e:9b:58", objNotifier.Sent[0].Text);
+        Assert.Contains("não foram lidos", objNotifier.Sent[1].Title);
+        Assert.Contains("Unidade: itaituba", objNotifier.Sent[1].Text);
+        Assert.Contains("inválida ou revogada", objNotifier.Sent[1].Text);
+    }
 }

@@ -38,6 +38,15 @@ namespace Models.DataBase
         /// </summary>
         public DateTime? LastReportSentAt { get; set; }
 
+        /// <summary>
+        /// Última leitura dos aparelhos desta unidade na nuvem da UniFi (UTC). Nulo = ainda não leu: enquanto
+        /// isso, a unidade continua sendo achada pelo endereço do portal, como antes.
+        /// </summary>
+        public DateTime? DevicesSyncedAt { get; set; }
+
+        /// <summary>Motivo da última leitura que falhou ("" = deu certo). Os aparelhos já lidos continuam valendo.</summary>
+        public string DevicesSyncError { get; set; } = "";
+
         public bool Active { get; set; } = true;
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

@@ -274,6 +274,7 @@ log da API (`accesswifi-unifi`); o resto, a cada 5 minutos:
 | Certificado HTTPS | faltam menos de 15 dias para vencer | a cada 24 h |
 | UniFi | **na 1ª recusa, em segundos** (cliente ficou sem internet) — com unidade e motivo | resumo a cada 10 min; "✅ voltou" na próxima liberação boa |
 | Vigia da UniFi | o serviço `accesswifi-unifi` parou (as recusas deixariam de ser avisadas) | a cada 6 h |
+| Pontos de acesso | portal aberto por AP que nenhuma loja tem; AP em duas unidades; APs de uma unidade não lidos | a cada 6 h (por AP/unidade) |
 | Disco | acima de 85% | a cada 24 h |
 | Backup | nenhum guardado fora há mais de 26 h | a cada 24 h |
 
@@ -317,6 +318,25 @@ journalctl -u accesswifi-api --since today -o cat | grep "Autorização UniFi"
 Se aparecer o caminho **oficial** com frequência, a linha anterior (`API clássica da UniFi não
 autorizou (...)`) diz o motivo. Pode ser que a Ubiquiti tenha mudado ou desligado a API clássica.
 
+**Unidade pelo ponto de acesso** (`PROPOSTA_UNIDADE_PELO_AP.md`). Todas as lojas usam o mesmo endereço; a
+loja sai do MAC do AP. A API lê os APs das unidades no modo nuvem a cada 5 min (painel → Unidades → coluna
+"Pontos de acesso"; o botão "Ler pontos de acesso" lê na hora).
+
+```bash
+journalctl -u accesswifi-api --since today -o cat | grep -E "ponto de acesso|Aparelhos da unidade|Pontos de acesso"
+```
+
+| No log | O que fazer |
+| --- | --- |
+| `Portal aberto por um ponto de acesso desconhecido {MAC} no endereço ...` | Loja ainda não cadastrada (unidade no modo nuvem, com console e chave) ou console fora do alcance da chave |
+| `Ponto de acesso {MAC} em mais de uma unidade` | Duas unidades com o mesmo console: corrigir o console de uma delas |
+| `Aparelhos da unidade {slug} não lidos na nuvem da UniFi: ...` | Motivo no fim da linha (chave, console errado). Os APs já lidos continuam valendo |
+
+**Loja nova da rede:** painel → Unidades → Nova unidade, modo **Nuvem**, com o Console ID (o `hostId`, trecho
+da URL do unifi.ui.com) e a chave. Não precisa endereço do portal. Na UniFi da loja: o mesmo endereço
+(`vps11702.panel.icontainer.online`, "Domain") e a mesma allowlist do §8. Ao salvar, a coluna "Pontos de
+acesso" já mostra os aparelhos; se ficar em 0, o console está errado.
+
 ---
 
 ## 8. Armadilhas conhecidas
@@ -344,8 +364,8 @@ e `216.22.13.216`.
 
 ## 9. Pendências
 
-- **Domínio próprio.** O atual é do provedor: não dá para criar `itaituba.…` embaixo dele e ele não
-  acompanha uma troca de provedor. Com domínio próprio, cada unidade ganha o seu endereço.
+- **Domínio próprio.** O atual é do provedor e não acompanha uma troca de provedor. Desde 08/10/2026 não
+  é mais preciso um endereço por loja (a loja sai do ponto de acesso, §7).
 - **Dôce Cafeteria foi apagada em 01/10/2026** (empresa, unidade e tema; não tinha cadastros) para ser
   cadastrada de novo. Backup de antes: `/var/backups/accesswifi/doce-antes-de-apagar-20261001-134811.dump`.
 - **Relatório mensal e campanhas por e-mail não saem ainda.** Falta a conta de envio (painel → Configurações

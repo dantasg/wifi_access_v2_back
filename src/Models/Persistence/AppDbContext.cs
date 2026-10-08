@@ -15,6 +15,7 @@ namespace Models.Persistence
         public DbSet<Unit> Units => Set<Unit>();
         public DbSet<AdminUser> Users => Set<AdminUser>();
         public DbSet<AdminUserUnit> UserUnits => Set<AdminUserUnit>();
+        public DbSet<UnitDevice> UnitDevices => Set<UnitDevice>();
         public DbSet<Lead> Leads => Set<Lead>();
         public DbSet<PortalSettings> PortalSettings => Set<PortalSettings>();
         public DbSet<Configuration> Configurations => Set<Configuration>();
@@ -62,6 +63,7 @@ namespace Models.Persistence
                 // Mesmo limite da URL "Geral" da empresa (PortalSettings.RedirectUrl).
                 objUnit.Property(unit => unit.RedirectUrl).HasMaxLength(2048);
                 objUnit.Property(unit => unit.Email).HasMaxLength(200);
+                objUnit.Property(unit => unit.DevicesSyncError).HasMaxLength(300);
                 objUnit.HasOne<Company>()
                     .WithMany()
                     .HasForeignKey(unit => unit.IDCompany)
@@ -89,6 +91,20 @@ namespace Models.Persistence
                     .WithMany()
                     .HasForeignKey(user => user.IDCompany)
                     .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            objModelBuilder.Entity<UnitDevice>(objDevice =>
+            {
+                objDevice.HasKey(device => new { device.IDUnit, device.Mac });
+                objDevice.Property(device => device.Mac).HasMaxLength(17);
+                objDevice.Property(device => device.Name).HasMaxLength(120);
+                objDevice.Property(device => device.Model).HasMaxLength(60);
+                // A busca do portal é pelo MAC do ponto de acesso.
+                objDevice.HasIndex(device => device.Mac);
+                objDevice.HasOne<Unit>()
+                    .WithMany()
+                    .HasForeignKey(device => device.IDUnit)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
             objModelBuilder.Entity<AdminUserUnit>(objUserUnit =>

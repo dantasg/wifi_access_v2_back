@@ -1,6 +1,7 @@
 # Proposta — Mesmo endereço para todas as lojas, unidade pelo ponto de acesso
 
-> **Status (06/10/2026): proposta, testada só com leitura na produção. Nada mudou.**
+> **Status (08/10/2026): implementada** — ver §8 (como ficou e o que mudou em relação à proposta).
+> Proposta escrita em 06/10/2026, testada só com leitura na produção.
 > Alternativa à [PROPOSTA_SUBDOMINIO_POR_UNIDADE.md](PROPOSTA_SUBDOMINIO_POR_UNIDADE.md). Atende ao
 > requisito de ser tudo automático, sem certificado novo por loja e sem espera para loja nova.
 
@@ -118,3 +119,24 @@ https://vps11702.panel.icontainer.online/guest/s/default/?ap=8c:30:66:4e:9b:58&i
 
 Com o ok, implemento e testo tudo local (com APs simulados). Depois publico. Nada muda para a
 Itaituba: ela continua sendo achada também pelo endereço.
+
+---
+
+## 8. Como ficou (implementado em 08/10/2026)
+
+- **Ordem para achar a unidade:** `?unit=` → AP (`ap`, o MAC que a UniFi manda) → endereço do portal.
+  O endereço só vale para um AP desconhecido enquanto a unidade dele ainda não tem a lista de APs (é o que
+  mantém a Itaituba funcionando logo depois da publicação). Com a lista, AP que nenhuma loja tem =
+  "Unidade não encontrada" + aviso no Telegram/e-mail.
+- **Lista de APs (`UnitDevices`):** lida de `GET api.ui.com/v1/devices` (uma chamada por chave) logo depois
+  de a API subir, a cada 5 min (`UnitDevices:SyncMinutes`) e ao salvar uma unidade no modo nuvem. Leitura que
+  falha mantém os APs já lidos; o motivo aparece no painel. Só unidades **no modo nuvem** têm APs.
+- **AP desconhecido (D4):** lê a nuvem na hora, com no máximo 4 s de espera, no máximo uma vez a cada 30 s
+  e o mesmo AP só de novo depois de 10 min. **Diferença da proposta:** não procura o celular nas
+  controladoras (1 a 10 s). Recusar é mais seguro que gravar na loja errada ou prender o visitante.
+- **Painel (D5):** coluna "Pontos de acesso" na lista de unidades e botão "Ler pontos de acesso".
+- **Avisos (D6):** AP que nenhuma loja tem, AP em duas unidades, APs de uma unidade não lidos — cada um no
+  máximo a cada 6 h.
+- **Testes:** 35 automáticos novos; teste completo local com nuvem simulada (AP novo achado em 0,03 s; nuvem
+  lenta desiste em 4 s sem atrasar quem já é conhecido; chave recusada mantém os APs). Conferido com dados
+  reais: os 110 cadastros da Itaituba em 90 dias vieram do AP `8c:30:66:4e:9b:58`, que está no console dela.
