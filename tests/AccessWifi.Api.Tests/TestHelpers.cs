@@ -29,6 +29,32 @@ public static class TestHelpers
     }
 
     /// <summary>
+    /// Usuário de empresa de verdade no banco (o acesso por unidade é conferido no banco) + o JWT
+    /// simulado. Sem unidades = admin da empresa inteira; com unidades = usuário de unidade.
+    /// </summary>
+    public static AdminUser SetCompanyUser(
+        ControllerBase objController, AppDbContext objDbContext, Guid objCompanyId,
+        string sUsername = "gerente", params Guid[] arrUnitIds)
+    {
+        AdminUser? objUser = objDbContext.Users.FirstOrDefault(user => user.Username == sUsername);
+        if (objUser is null)
+        {
+            objUser = new AdminUser
+            {
+                Username = sUsername,
+                PasswordHash = "hash",
+                IDCompany = objCompanyId,
+                RestrictToUnits = arrUnitIds.Length > 0,
+                Units = arrUnitIds.Select(objUnitId => new AdminUserUnit { IDUnit = objUnitId }).ToList(),
+            };
+            objDbContext.Users.Add(objUser);
+            objDbContext.SaveChanges();
+        }
+        SetUser(objController, objCompanyId, sUsername);
+        return objUser;
+    }
+
+    /// <summary>
     /// Simula o JWT no controller: admin de empresa (com IDCompany) ou super admin (sem).
     /// sUsername vira a claim "sub" (quem está logado).
     /// </summary>

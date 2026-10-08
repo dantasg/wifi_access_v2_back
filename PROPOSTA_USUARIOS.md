@@ -2,7 +2,10 @@
 
 > **Status (2026-09-16):** implementada **só a desativação** — D1, D4, D5, D6 e D7.
 > Redefinir senha e trocar a própria senha (D2, D3, D8) ficaram **para depois**: haverá outra
-> solução, a ser explicada. Por isso o `PUT /admin/users/{id}` hoje recebe só `{ "active": bool }`.
+> solução, a ser explicada.
+>
+> **2026-10-08: usuário de unidade** (pedido direto do usuário, decisões D9–D14 na §7). O `PUT` passou
+> a receber `{ active?, restrictToUnits?, unitIds? }`.
 
 ## 1. Entendimento do pedido
 
@@ -91,3 +94,18 @@ Nova coluna `Active` (bool) em `Users`, via migration **não destrutiva**.
 ## 6. Próximo passo
 
 Me responda **"ok"** para seguir com as recomendações, ou diga qual decisão (D1–D8) quer mudar.
+
+---
+
+## 7. Usuário de unidade (implementado em 2026-10-08)
+
+Pedido: "preciso de usuários para cada unidade". O usuário respondeu as dúvidas e mandou implementar.
+
+| # | Decisão |
+| --- | --- |
+| **D9** | O usuário fica em **uma empresa** e pode ter **uma ou várias unidades** dela (`Users.RestrictToUnits` + tabela `UserUnits`). |
+| **D10** | Por enquanto ele faz tudo o que o admin da empresa faz, mas **vê só as unidades dele**: cadastros e exportação, lista de unidades, e nas campanhas os números das execuções, destinatários, CSV, e-mails, PDFs e a prévia de alcance. Campanhas e identidade visual continuam da empresa. Perfis de permissão por usuário vêm depois. |
+| **D11** | Criam, editam o acesso e desativam: o **super admin** (todos) e o **admin da empresa** (só os da própria empresa, nunca super admin). O usuário de unidade não acessa Usuários (403). |
+| **D12** | O acesso é conferido **no banco a cada requisição** (`AccessScope`): trocar as unidades vale na hora. Desativar continua como no D5. |
+| **D13** | A marca `RestrictToUnits` é explícita: usuário de unidade sem nenhuma unidade **não vê nada** (nunca vira admin da empresa por engano). |
+| **D14** | Ninguém muda o próprio acesso (evita o admin se trancar fora de Usuários). |

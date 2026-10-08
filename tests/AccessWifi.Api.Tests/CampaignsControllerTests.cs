@@ -26,7 +26,14 @@ public class CampaignsControllerTests
     private static CampaignsController CreateController(AppDbContext objDbContext, Guid? objCompanyId, string sUser = "gerente")
     {
         CampaignsController objController = new CampaignsController(objDbContext);
-        TestHelpers.SetUser(objController, objCompanyId, sUser);
+        if (objCompanyId is Guid objId)
+        {
+            TestHelpers.SetCompanyUser(objController, objDbContext, objId, sUser);
+        }
+        else
+        {
+            TestHelpers.SetUser(objController, null, sUser);
+        }
         return objController;
     }
 

@@ -50,8 +50,8 @@ public partial class UnitsController : ControllerBase
 
     /// <summary>
     /// Lista unidades (sem expor a senha da UniFi). O admin de empresa recebe só as unidades
-    /// da própria empresa (o filtro ?company é ignorado). O super admin lista todas, com filtro
-    /// opcional ?company={id da empresa}.
+    /// da própria empresa (o filtro ?company é ignorado) e o usuário de unidade, só as dele. O super
+    /// admin lista todas, com filtro opcional ?company={id da empresa}.
     /// </summary>
     [HttpGet]
     public async Task<ActionResult<List<UnitDto>>> GetAll(
@@ -62,8 +62,9 @@ public partial class UnitsController : ControllerBase
         Guid? objTokenCompanyId = User.GetCompanyId();
         if (objTokenCompanyId is not null)
         {
-            // Admin de empresa: sempre restrito à própria empresa.
-            objQuery = objQuery.Where(unit => unit.IDCompany == objTokenCompanyId);
+            // Admin de empresa: sempre restrito à própria empresa; usuário de unidade, às dele.
+            AccessScope objScope = await AccessScope.LoadAsync(_objDbContext, User, objCancellationToken);
+            objQuery = objScope.Apply(objQuery.Where(unit => unit.IDCompany == objTokenCompanyId));
         }
         else if (objCompanyId is not null)
         {

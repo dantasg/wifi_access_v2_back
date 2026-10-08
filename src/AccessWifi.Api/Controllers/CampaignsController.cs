@@ -14,6 +14,8 @@ namespace AccessWifi.Api.Controllers;
 /// <summary>
 /// Campanhas da empresa (D7): o admin da empresa gerencia as da própria empresa; o super admin indica
 /// a empresa por ?company=slug. Só os tipos liberados para a empresa podem ser criados (D6).
+/// O usuário de unidade usa as mesmas telas, mas os números, os clientes, os e-mails e os PDFs das
+/// execuções ficam restritos às unidades dele.
 /// </summary>
 [ApiController]
 [Route("admin/campaigns")]
@@ -90,6 +92,11 @@ public class CampaignsController : ControllerBase
             })
             .ToListAsync(objCancellationToken);
 
+        AccessScope objScope = await AccessScope.LoadAsync(_objDbContext, User, objCancellationToken);
+        Dictionary<Guid, CampaignRunDto> objUltimas = (await RunDtosAsync(
+                objCampaigns.Select(item => item.LastRun).OfType<CampaignRun>().ToList(), objScope, objCancellationToken))
+            .ToDictionary(run => run.Id);
+
         return Ok(objCampaigns
             .OrderBy(item => CampaignKind.Priority(item.Campaign.Kind))
             .ThenBy(item => item.Campaign.Name)
@@ -101,7 +108,7 @@ public class CampaignsController : ControllerBase
                     objCampaign.Id, objCampaign.Kind, CampaignKind.Label(objCampaign.Kind), objCampaign.Name,
                     objCampaign.Status, objLigados.Contains(objCampaign.Kind), objConfig.Channel, objConfig.SendTime,
                     objCampaign.CurrentVersion, objCampaign.NextRunAt,
-                    item.LastRun is null ? null : CampaignRunDto.FromEntity(item.LastRun),
+                    item.LastRun is null ? null : objUltimas[item.LastRun.Id],
                     objCampaign.UpdatedAt);
             })
             .ToList());
@@ -307,6 +314,15 @@ public class CampaignsController : ControllerBase
 
         IQueryable<Customer> objAudience = CampaignAudience.Query(
             _objDbContext, objCompany.Id, objCampaignId, objRequest.Kind, objRequest.Config, dtHoje, dtNowUtc);
+        // Usuário de unidade: conta e mostra de exemplo só clientes das unidades dele (o cliente vai
+        // para a unidade da última visita).
+        AccessScope objScope = await AccessScope.LoadAsync(_objDbContext, User, objCancellationToken);
+        if (objScope.IsUnitRestricted)
+        {
+            Guid[] arrUnits = objScope.UnitIds;
+            objAudience = objAudience.Where(customer =>
+                customer.IDLastUnit != null && arrUnits.Contains(customer.IDLastUnit.Value));
+        }
         int iCount = await objAudience.CountAsync(objCancellationToken);
         Customer? objExemplo = await objAudience.AsNoTracking()
             .OrderByDescending(customer => customer.LastVisitAt)
@@ -393,7 +409,8 @@ public class CampaignsController : ControllerBase
             .OrderByDescending(run => run.ScheduledFor)
             .Take(200)
             .ToListAsync(objCancellationToken);
-        return Ok(objRuns.Select(CampaignRunDto.FromEntity).ToList());
+        AccessScope objScope = await AccessScope.LoadAsync(_objDbContext, User, objCancellationToken);
+        return Ok(await RunDtosAsync(objRuns, objScope, objCancellationToken));
     }
 
     /// <summary>Uma execução — a tela consulta de poucos em poucos segundos para a barra de progresso.</summary>
@@ -402,7 +419,12 @@ public class CampaignsController : ControllerBase
         Guid runId, [FromQuery(Name = "company")] string? sCompanySlug, CancellationToken objCancellationToken)
     {
         (CampaignRun? objRun, ActionResult? objError) = await FindRunAsync(runId, sCompanySlug, objCancellationToken);
-        return objRun is null ? objError! : Ok(CampaignRunDto.FromEntity(objRun));
+        if (objRun is null)
+        {
+            return objError!;
+        }
+        AccessScope objScope = await AccessScope.LoadAsync(_objDbContext, User, objCancellationToken);
+        return Ok((await RunDtosAsync([objRun], objScope, objCancellationToken))[0]);
     }
 
     [HttpGet("runs/{runId:guid}/recipients")]
@@ -422,8 +444,9 @@ public class CampaignsController : ControllerBase
 
         iPage = Math.Max(1, iPage);
         iPageSize = iPageSize <= 0 ? 50 : Math.Min(iPageSize, MaxPageSize);
-        IQueryable<CampaignRecipient> objQuery = _objDbContext.CampaignRecipients.AsNoTracking()
-            .Where(recipient => recipient.IDRun == runId);
+        AccessScope objScope = await AccessScope.LoadAsync(_objDbContext, User, objCancellationToken);
+        IQueryable<CampaignRecipient> objQuery = ApplyScope(_objDbContext.CampaignRecipients.AsNoTracking()
+            .Where(recipient => recipient.IDRun == runId), objScope);
         if (!string.IsNullOrWhiteSpace(sStatus))
         {
             objQuery = objQuery.Where(recipient => recipient.Status == sStatus);
@@ -457,8 +480,15 @@ public class CampaignsController : ControllerBase
             return objError!;
         }
 
-        List<CampaignDelivery> objDeliveries = await _objDbContext.CampaignDeliveries.AsNoTracking()
-            .Where(delivery => delivery.IDRun == runId)
+        AccessScope objScope = await AccessScope.LoadAsync(_objDbContext, User, objCancellationToken);
+        IQueryable<CampaignDelivery> objQuery = _objDbContext.CampaignDeliveries.AsNoTracking()
+            .Where(delivery => delivery.IDRun == runId);
+        if (objScope.IsUnitRestricted)
+        {
+            Guid[] arrUnits = objScope.UnitIds;
+            objQuery = objQuery.Where(delivery => delivery.IDUnit != null && arrUnits.Contains(delivery.IDUnit.Value));
+        }
+        List<CampaignDelivery> objDeliveries = await objQuery
             .OrderBy(delivery => delivery.UnitName)
             .ToListAsync(objCancellationToken);
         return Ok(objDeliveries.Select(CampaignDeliveryDto.FromEntity).ToList());
@@ -480,7 +510,8 @@ public class CampaignsController : ControllerBase
         }
         CampaignDelivery? objDelivery = await _objDbContext.CampaignDeliveries.AsNoTracking()
             .FirstOrDefaultAsync(delivery => delivery.Id == deliveryId && delivery.IDRun == runId, objCancellationToken);
-        if (objDelivery is null)
+        AccessScope objScope = await AccessScope.LoadAsync(_objDbContext, User, objCancellationToken);
+        if (objDelivery is null || !objScope.Allows(objDelivery.IDUnit))
         {
             return NotFound(new ErrorResponse("Envio não encontrado."));
         }
@@ -507,8 +538,9 @@ public class CampaignsController : ControllerBase
             return objError!;
         }
 
-        List<CampaignRecipient> objRecipients = await _objDbContext.CampaignRecipients.AsNoTracking()
-            .Where(recipient => recipient.IDRun == runId)
+        AccessScope objScope = await AccessScope.LoadAsync(_objDbContext, User, objCancellationToken);
+        List<CampaignRecipient> objRecipients = await ApplyScope(_objDbContext.CampaignRecipients.AsNoTracking()
+                .Where(recipient => recipient.IDRun == runId), objScope)
             .OrderBy(recipient => recipient.Id)
             .ToListAsync(objCancellationToken);
 
@@ -742,6 +774,45 @@ public class CampaignsController : ControllerBase
             IDUser = objUserId,
             Username = sUsername,
         });
+    }
+
+    private record RunStatusCount(Guid IDRun, string Status, int Total);
+
+    /// <summary>
+    /// As execuções como a tela vê. Usuário de unidade: os números contam só os clientes das unidades
+    /// dele (os totais gravados na execução são da empresa toda).
+    /// </summary>
+    private async Task<List<CampaignRunDto>> RunDtosAsync(
+        List<CampaignRun> objRuns, AccessScope objScope, CancellationToken objCancellationToken)
+    {
+        if (!objScope.IsUnitRestricted || objRuns.Count == 0)
+        {
+            return objRuns.Select(CampaignRunDto.FromEntity).ToList();
+        }
+
+        Guid[] arrRuns = objRuns.Select(run => run.Id).ToArray();
+        List<RunStatusCount> objContagem = await ApplyScope(_objDbContext.CampaignRecipients.AsNoTracking()
+                .Where(recipient => arrRuns.Contains(recipient.IDRun)), objScope)
+            .GroupBy(recipient => new { recipient.IDRun, recipient.Status })
+            .Select(grupo => new RunStatusCount(grupo.Key.IDRun, grupo.Key.Status, grupo.Count()))
+            .ToListAsync(objCancellationToken);
+
+        return objRuns
+            .Select(run => CampaignRunDto.ForUnits(run, objContagem
+                .Where(item => item.IDRun == run.Id)
+                .ToDictionary(item => item.Status, item => item.Total)))
+            .ToList();
+    }
+
+    /// <summary>Usuário de unidade: só os destinatários das unidades dele.</summary>
+    private static IQueryable<CampaignRecipient> ApplyScope(IQueryable<CampaignRecipient> objQuery, AccessScope objScope)
+    {
+        if (!objScope.IsUnitRestricted)
+        {
+            return objQuery;
+        }
+        Guid[] arrUnits = objScope.UnitIds;
+        return objQuery.Where(recipient => recipient.IDUnit != null && arrUnits.Contains(recipient.IDUnit.Value));
     }
 
     private static string Csv(string sValue) => "\"" + sValue.Replace("\"", "\"\"") + "\"";

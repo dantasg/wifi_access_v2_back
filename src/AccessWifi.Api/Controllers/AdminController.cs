@@ -128,7 +128,20 @@ public class AdminController : ControllerBase
             ? null
             : CompanySummaryDto.FromEntity(objUser.Company);
 
-        return new LoginResponse(sAccessToken, sRefreshToken, sRole, objCompany);
+        // Usuário de unidade: o painel precisa saber quais lojas ele vê (e esconder o resto).
+        List<UserUnitDto>? objUnits = null;
+        if (objUser.IDCompany is not null && objUser.RestrictToUnits)
+        {
+            objUnits = await (
+                from link in _objDbContext.UserUnits.AsNoTracking()
+                join unit in _objDbContext.Units.AsNoTracking() on link.IDUnit equals unit.Id
+                where link.IDUser == objUser.Id && unit.IDCompany == objUser.IDCompany
+                orderby unit.Name
+                select new UserUnitDto(unit.Id, unit.Slug, unit.Name))
+                .ToListAsync(objCancellationToken);
+        }
+
+        return new LoginResponse(sAccessToken, sRefreshToken, sRole, objCompany, objUnits);
     }
 
     /// <summary>
@@ -160,10 +173,12 @@ public class AdminController : ControllerBase
             objCompanyId = objCompany.Id;
         }
 
-        // Unidades da empresa; filtro opcional por slug de unidade.
-        IQueryable<Unit> objUnitsQuery = _objDbContext.Units
+        // Unidades da empresa que o usuário pode ver (usuário de unidade: só as dele); filtro
+        // opcional por slug de unidade.
+        AccessScope objScope = await AccessScope.LoadAsync(_objDbContext, User, objCancellationToken);
+        IQueryable<Unit> objUnitsQuery = objScope.Apply(_objDbContext.Units
             .AsNoTracking()
-            .Where(unit => unit.IDCompany == objCompanyId);
+            .Where(unit => unit.IDCompany == objCompanyId));
         if (!string.IsNullOrWhiteSpace(sUnitSlug))
         {
             objUnitsQuery = objUnitsQuery.Where(unit => unit.Slug == sUnitSlug);

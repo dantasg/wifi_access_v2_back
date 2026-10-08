@@ -14,6 +14,7 @@ namespace Models.Persistence
         public DbSet<Company> Companies => Set<Company>();
         public DbSet<Unit> Units => Set<Unit>();
         public DbSet<AdminUser> Users => Set<AdminUser>();
+        public DbSet<AdminUserUnit> UserUnits => Set<AdminUserUnit>();
         public DbSet<Lead> Leads => Set<Lead>();
         public DbSet<PortalSettings> PortalSettings => Set<PortalSettings>();
         public DbSet<Configuration> Configurations => Set<Configuration>();
@@ -88,6 +89,21 @@ namespace Models.Persistence
                     .WithMany()
                     .HasForeignKey(user => user.IDCompany)
                     .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            objModelBuilder.Entity<AdminUserUnit>(objUserUnit =>
+            {
+                objUserUnit.ToTable("UserUnits");
+                objUserUnit.HasKey(link => new { link.IDUser, link.IDUnit });
+                objUserUnit.HasIndex(link => link.IDUnit);
+                objUserUnit.HasOne<AdminUser>()
+                    .WithMany(user => user.Units)
+                    .HasForeignKey(link => link.IDUser)
+                    .OnDelete(DeleteBehavior.Cascade);
+                objUserUnit.HasOne<Unit>()
+                    .WithMany()
+                    .HasForeignKey(link => link.IDUnit)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
             objModelBuilder.Entity<RefreshToken>(objRefreshToken =>

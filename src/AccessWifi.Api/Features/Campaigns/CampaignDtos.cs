@@ -41,6 +41,22 @@ namespace AccessWifi.Api.Features.Campaigns
                 Math.Max(0, objRun.TotalCount - iProcessados),
                 objRun.CreatedAt, objRun.StartedAt, objRun.FinishedAt, objRun.Error);
         }
+
+        /// <summary>
+        /// A execução vista por um usuário de unidade: os números contam só os destinatários das
+        /// unidades dele (objPorSituacao = quantos destinatários em cada situação).
+        /// </summary>
+        public static CampaignRunDto ForUnits(CampaignRun objRun, IReadOnlyDictionary<string, int> objPorSituacao)
+        {
+            int Qtd(string sStatus) => objPorSituacao.GetValueOrDefault(sStatus);
+            return new CampaignRunDto(
+                objRun.Id, objRun.IDCampaign, objRun.VersionNumber, objRun.ScheduledFor, objRun.LocalDate,
+                objRun.Status, objRun.Simulation, objPorSituacao.Values.Sum(),
+                Qtd(CampaignRecipientStatus.Sent), Qtd(CampaignRecipientStatus.Simulated),
+                Qtd(CampaignRecipientStatus.Failed), Qtd(CampaignRecipientStatus.Ignored),
+                Qtd(CampaignRecipientStatus.Cancelled), Qtd(CampaignRecipientStatus.Pending),
+                objRun.CreatedAt, objRun.StartedAt, objRun.FinishedAt, objRun.Error);
+        }
     }
 
     public record CampaignSummaryDto(

@@ -323,7 +323,7 @@ public class UnitsControllerTests
         UnitsController objController = CreateController(objDbContext);
         await objController.Create(CreateRequest(objCompanyA.Id, "doce-um"), CancellationToken.None);
         await objController.Create(CreateRequest(objCompanyB.Id, "outra-um"), CancellationToken.None);
-        TestHelpers.SetUser(objController, objCompanyA.Id); // admin da empresa A
+        TestHelpers.SetCompanyUser(objController, objDbContext, objCompanyA.Id); // admin da empresa A
 
         // Mesmo passando o id da empresa B no filtro, só enxerga a própria empresa.
         ActionResult<List<UnitDto>> objResult =

@@ -254,7 +254,7 @@ public class AdminControllerTests
         objDbContext.Leads.Add(new Lead { IDUnit = objUnitB.Id, Nome = "Da Outra" });
         objDbContext.SaveChanges();
         AdminController objController = CreateController(objDbContext);
-        TestHelpers.SetUser(objController, objCompanyA.Id);
+        TestHelpers.SetCompanyUser(objController, objDbContext, objCompanyA.Id);
 
         ActionResult<List<LeadDto>> objResult =
             await objController.GetLeads(null, null, CancellationToken.None);
@@ -276,7 +276,7 @@ public class AdminControllerTests
         objDbContext.Leads.Add(new Lead { IDUnit = objUnit2.Id, Nome = "Da Unidade Dois" });
         objDbContext.SaveChanges();
         AdminController objController = CreateController(objDbContext);
-        TestHelpers.SetUser(objController, objCompany.Id);
+        TestHelpers.SetCompanyUser(objController, objDbContext, objCompany.Id);
 
         ActionResult<List<LeadDto>> objResult =
             await objController.GetLeads(null, "doce-dois", CancellationToken.None);
@@ -299,7 +299,7 @@ public class AdminControllerTests
         objDbContext.Leads.Add(new Lead { IDUnit = objUnit.Id, Nome = "Voltou", CreatedAt = dtPrimeiro, Timestamp = dtUltimo });
         objDbContext.SaveChanges();
         AdminController objController = CreateController(objDbContext);
-        TestHelpers.SetUser(objController, objCompany.Id);
+        TestHelpers.SetCompanyUser(objController, objDbContext, objCompany.Id);
 
         ActionResult<List<LeadDto>> objResult = await objController.GetLeads(null, null, CancellationToken.None);
 
