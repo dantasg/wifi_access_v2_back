@@ -1,10 +1,11 @@
 # Proposta — Dashboard por empresa e por unidade
 
-> **Status (08/10/2026): aprovada; em implementação.** As decisões D1, D3 e D6 foram aprovadas como
-> recomendadas, e as demais seguem a recomendação. Primeiro foi publicada **só a gravação das conexões**
-> (tabela `Visits`, migration `ConexoesDoPortal`), para o histórico já começar a contar. A tela vem
-> depois. Os números de exemplo são contagens reais da Itaituba, tiradas da produção só com leitura e sem
-> nenhum dado pessoal.
+> **Status (08/10/2026): implementada; falta publicar a tela.** As decisões D1, D3 e D6 foram aprovadas
+> como recomendadas, e as demais seguem a recomendação. A **gravação das conexões** (tabela `Visits`,
+> migration `ConexoesDoPortal`) está em produção desde 08/10/2026, às 14:59. A rota
+> `GET /admin/dashboard` e a tela estão prontas e testadas local, mas ainda não foram publicadas. Como
+> ficou: §7. Os números de exemplo são contagens reais da Itaituba, tiradas da produção só com leitura e
+> sem nenhum dado pessoal.
 
 ## 1. Entendimento do pedido
 
@@ -135,3 +136,34 @@ para a equipe ver. Depois implemento, testo local e publico.
 
 Se a D3 for aprovada, vale publicar **só o registro das conexões** antes do resto, porque o histórico
 começa a contar no dia em que ele entra no ar.
+
+---
+
+## 7. Como ficou (08/10/2026)
+
+- **Rota:** `GET /admin/dashboard?company=&unit=&from=&to=` (`DashboardController` + `DashboardBuilder`).
+  Período padrão: últimos 30 dias até hoje, no fuso da empresa; máximo de 2 anos. Acesso pelo
+  `AccessScope`, como Leads e Campanhas.
+- **Definições usadas:**
+  - **Clientes novos:** 1ª visita a alguma unidade da visão (ou à unidade, na visão unidade) dentro do
+    período. Vem de `CustomerUnits`, com histórico desde o início.
+  - **Voltaram:** clientes com visita no período **num dia depois** do dia da 1ª visita às unidades da
+    visão. Voltar no mesmo dia não conta; quem chegou no período e voltou dias depois conta. Um cliente
+    antigo que vai pela 1ª vez a outra loja é novo naquela loja e "voltou" na visão empresa.
+  - **Taxa de retorno:** voltaram ÷ visitantes (clientes com visita no período, com telefone que
+    identifica alguém).
+  - **Base:** clientes com 1ª visita até o fim do período. **Ativos:** visita nos últimos 30 dias,
+    contados até hoje.
+  - **Visitas por cliente:** dias com visita na empresa inteira (é o que o cadastro do cliente guarda),
+    também na visão unidade.
+  - **Campanhas:** mensagens `Sent`/`Failed` dos clientes das unidades da visão, em execuções do período
+    (simulações antigas não contam).
+- **Tela:** item Dashboard e primeira tela (D1). Gráficos em SVG próprio (D6), na cor `--color-chart`.
+  Acima de 3 meses o gráfico por dia agrupa por semana. "Ver tabela" mostra os mesmos números em tabela.
+- **Testes:**
+  - 17 automáticos na API (cenário montado à mão: cada número, comparação, por dia/hora/semana,
+    por unidade, pontos de acesso, acesso por perfil, período inválido, sem dados);
+  - o mesmo cenário conferido contra Postgres de verdade (16 a 110 ms por chamada);
+  - teste no navegador com ~600 clientes simulados em 3 lojas: visão empresa e unidade, troca de métrica,
+    tabela, períodos (inclusive 6 meses por semana), celular (375 px, sem rolagem lateral), tema escuro,
+    usuário de unidade e modo demonstração.
