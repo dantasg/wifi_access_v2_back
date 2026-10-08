@@ -34,9 +34,14 @@ public class AdminController : ControllerBase
     [EnableRateLimiting("admin-login")]
     public async Task<ActionResult<LoginResponse>> Login(LoginRequest objRequest, CancellationToken objCancellationToken)
     {
+        // Usuário digitado com maiúscula ou espaço sobrando ainda entra (é guardado em minúsculas, sem
+        // espaços). O texto original também vale, para o admin da configuração, que pode ter maiúsculas.
+        string sDigitado = objRequest.Username ?? "";
+        string sNormalizado = UserRules.NormalizeUsername(sDigitado);
         AdminUser? objUser = await _objDbContext.Users
             .Include(user => user.Company)
-            .FirstOrDefaultAsync(user => user.Username == objRequest.Username, objCancellationToken);
+            .FirstOrDefaultAsync(
+                user => user.Username == sNormalizado || user.Username == sDigitado, objCancellationToken);
 
         // Verifica sempre um hash (o do usuário ou o isca) para gastar o mesmo tempo, exista o
         // usuário ou não. Só autentica se o usuário existe E a senha confere.

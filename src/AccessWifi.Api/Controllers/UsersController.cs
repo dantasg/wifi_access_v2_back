@@ -67,16 +67,11 @@ public class UsersController : ControllerBase
             return Forbid();
         }
 
-        string sUsername = objRequest.Username?.Trim().ToLowerInvariant() ?? "";
-        if (sUsername.Length < 3 || sUsername.Length > 60 || sUsername.Contains(' '))
+        string sUsername = UserRules.NormalizeUsername(objRequest.Username);
+        string? sErroCampos = UserRules.ValidateUsername(sUsername) ?? UserRules.ValidatePassword(objRequest.Password);
+        if (sErroCampos is not null)
         {
-            return BadRequest(new ErrorResponse(
-                "Usuário inválido: entre 3 e 60 caracteres, sem espaços."));
-        }
-
-        if (string.IsNullOrEmpty(objRequest.Password) || objRequest.Password.Length < 8)
-        {
-            return BadRequest(new ErrorResponse("Senha deve ter no mínimo 8 caracteres."));
+            return BadRequest(new ErrorResponse(sErroCampos));
         }
 
         bool usernameEmUso = await _objDbContext.Users
