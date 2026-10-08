@@ -16,6 +16,7 @@ namespace Models.Persistence
         public DbSet<AdminUser> Users => Set<AdminUser>();
         public DbSet<AdminUserUnit> UserUnits => Set<AdminUserUnit>();
         public DbSet<UnitDevice> UnitDevices => Set<UnitDevice>();
+        public DbSet<Visit> Visits => Set<Visit>();
         public DbSet<Lead> Leads => Set<Lead>();
         public DbSet<PortalSettings> PortalSettings => Set<PortalSettings>();
         public DbSet<Configuration> Configurations => Set<Configuration>();
@@ -105,6 +106,23 @@ namespace Models.Persistence
                     .WithMany()
                     .HasForeignKey(device => device.IDUnit)
                     .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            objModelBuilder.Entity<Visit>(objVisit =>
+            {
+                objVisit.Property(visit => visit.Ap).HasMaxLength(17);
+                // O dashboard filtra por unidade e período (dia no fuso da empresa).
+                objVisit.HasIndex(visit => new { visit.IDUnit, visit.LocalDate });
+                objVisit.HasIndex(visit => visit.IDCustomer);
+                objVisit.HasOne<Unit>()
+                    .WithMany()
+                    .HasForeignKey(visit => visit.IDUnit)
+                    .OnDelete(DeleteBehavior.Cascade);
+                // D8: a retenção apaga o cliente, a conexão fica (sem o vínculo) e os totais não mudam.
+                objVisit.HasOne<Customer>()
+                    .WithMany()
+                    .HasForeignKey(visit => visit.IDCustomer)
+                    .OnDelete(DeleteBehavior.SetNull);
             });
 
             objModelBuilder.Entity<AdminUserUnit>(objUserUnit =>

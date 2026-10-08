@@ -70,6 +70,7 @@ public class AuthorizeController : ControllerBase
         Lead? objLead = await _objDbContext.Leads
             .FirstOrDefaultAsync(
                 lead => lead.IDUnit == objUnit.Id && lead.Mac == objRequest.Mac, objCancellationToken);
+        bool bAparelhoNovo = objLead is null;
         if (objLead is null)
         {
             objLead = new Lead { IDUnit = objUnit.Id, Mac = objRequest.Mac };
@@ -115,7 +116,14 @@ public class AuthorizeController : ControllerBase
         await _objDbContext.SaveChangesAsync(objCancellationToken);
 
         // Base de clientes das campanhas (D2). Fica depois da UniFi para não atrasar a liberação.
-        await RegistrarClienteAsync(objUnit, objRequest, objCancellationToken);
+        ClienteRegistrado objCliente = await RegistrarClienteAsync(
+            objUnit, objRequest, bAparelhoNovo, objCancellationToken);
+
+        // Conexão do dashboard (PROPOSTA_DASHBOARD.md, D3): só a que a UniFi liberou.
+        if (!bUnifiFalhou)
+        {
+            await RegistrarConexaoAsync(objUnit, objRequest.Ap, objCliente, objCancellationToken);
+        }
 
         if (bUnifiFalhou)
         {
@@ -129,30 +137,85 @@ public class AuthorizeController : ControllerBase
         return Ok(new AuthorizeResponse(true, Redirect: sRedirect));
     }
 
+    /// <summary>O que a conexão do dashboard precisa saber do cliente desta visita.</summary>
+    private record ClienteRegistrado(
+        Guid? IDCustomer, bool NovoNaEmpresa, bool NovoNaUnidade, TimeZoneInfo Fuso, DateTime AtUtc);
+
     /// <summary>
     /// Atualiza o cliente da empresa (um por telefone) com esta conexão. É invisível para o visitante e
     /// nunca pode derrubar a liberação do Wi-Fi: qualquer falha aqui só fica no log.
+    /// Sem cliente (telefone que não identifica ninguém, ou gravação que falhou), "novo" vale pelo aparelho.
     /// </summary>
-    private async Task RegistrarClienteAsync(
-        Unit objUnit, AuthorizeRequest objRequest, CancellationToken objCancellationToken)
+    private async Task<ClienteRegistrado> RegistrarClienteAsync(
+        Unit objUnit, AuthorizeRequest objRequest, bool bAparelhoNovo, CancellationToken objCancellationToken)
     {
+        DateTime dtNowUtc = DateTime.UtcNow;
+        TimeZoneInfo objFuso = CompanyTimeZone.Resolve(null);
         try
         {
             string? sTimeZone = await _objDbContext.Companies.AsNoTracking()
                 .Where(company => company.Id == objUnit.IDCompany)
                 .Select(company => company.TimeZone)
                 .FirstOrDefaultAsync(objCancellationToken);
-            await CustomerDirectory.RegisterVisitAsync(
-                _objDbContext, objUnit.IDCompany, CompanyTimeZone.Resolve(sTimeZone), objUnit.Id,
+            objFuso = CompanyTimeZone.Resolve(sTimeZone);
+            Customer? objCustomer = await CustomerDirectory.RegisterVisitAsync(
+                _objDbContext, objUnit.IDCompany, objFuso, objUnit.Id,
                 objRequest.Nome, InstagramHandle.ProfileUrl(objRequest.Instagram), objRequest.Telefone, objRequest.Nascimento,
-                DateTime.UtcNow, objCancellationToken);
+                dtNowUtc, objCancellationToken);
+
+            // "Novo" sai do que esta visita acabou de criar — depois do SaveChanges já não dá para saber.
+            bool bNovoNaEmpresa = objCustomer is null
+                ? bAparelhoNovo
+                : _objDbContext.Entry(objCustomer).State == EntityState.Added;
+            bool bNovoNaUnidade = objCustomer is null
+                ? bAparelhoNovo
+                : _objDbContext.ChangeTracker.Entries<CustomerUnit>().Any(entry =>
+                    entry.State == EntityState.Added
+                    && entry.Entity.IDCustomer == objCustomer.Id
+                    && entry.Entity.IDUnit == objUnit.Id);
+
             await _objDbContext.SaveChangesAsync(objCancellationToken);
+            return new ClienteRegistrado(objCustomer?.Id, bNovoNaEmpresa, bNovoNaUnidade, objFuso, dtNowUtc);
         }
         catch (Exception objException) when (objException is not OperationCanceledException)
         {
             // Ex.: o mesmo telefone conectando em dois aparelhos no mesmo instante (a segunda gravação
-            // esbarra na chave única). O cliente se acerta na próxima conexão.
+            // esbarra na chave única). O cliente se acerta na próxima conexão. O que não foi gravado sai do
+            // contexto, para não voltar junto com a conexão.
             _objLogger.LogWarning(objException, "Cliente não atualizado na unidade {Slug}.", objUnit.Slug);
+            _objDbContext.ChangeTracker.Clear();
+            return new ClienteRegistrado(null, bAparelhoNovo, bAparelhoNovo, objFuso, dtNowUtc);
+        }
+    }
+
+    /// <summary>
+    /// Registra a conexão liberada para o dashboard (PROPOSTA_DASHBOARD.md, D3). Gravação própria, depois do
+    /// cliente: se falhar, o cliente já está salvo e o visitante segue para o redirecionamento — só fica no log.
+    /// </summary>
+    private async Task RegistrarConexaoAsync(
+        Unit objUnit, string? sAp, ClienteRegistrado objCliente, CancellationToken objCancellationToken)
+    {
+        try
+        {
+            DateTime dtLocal = TimeZoneInfo.ConvertTimeFromUtc(
+                DateTime.SpecifyKind(objCliente.AtUtc, DateTimeKind.Utc), objCliente.Fuso);
+            _objDbContext.Visits.Add(new Visit
+            {
+                IDUnit = objUnit.Id,
+                IDCustomer = objCliente.IDCustomer,
+                At = objCliente.AtUtc,
+                LocalDate = DateOnly.FromDateTime(dtLocal),
+                LocalHour = dtLocal.Hour,
+                NewInCompany = objCliente.NovoNaEmpresa,
+                NewInUnit = objCliente.NovoNaUnidade,
+                Ap = MacAddress.Normalize(sAp),
+            });
+            await _objDbContext.SaveChangesAsync(objCancellationToken);
+        }
+        catch (Exception objException) when (objException is not OperationCanceledException)
+        {
+            _objLogger.LogWarning(objException, "Conexão não registrada para o dashboard na unidade {Slug}.", objUnit.Slug);
+            _objDbContext.ChangeTracker.Clear();
         }
     }
 
