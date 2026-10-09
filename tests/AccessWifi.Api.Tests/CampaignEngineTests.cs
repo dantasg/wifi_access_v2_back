@@ -1,4 +1,5 @@
 using AccessWifiService.Campaigns;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -543,6 +544,63 @@ public class CampaignEngineTests
         CampaignRecipient objAna = objDbContext.CampaignRecipients.Single(recipient => recipient.Name == "Ana");
         Assert.Equal("ana.souza", objAna.Instagram);
         Assert.Equal(objCenario.Unit.Id, objAna.IDUnit);
+    }
+
+    // ------------------------------------------------- Correio eletrônico
+
+    [Fact]
+    public async Task Correio_EnvioDaCampanha_FicaRegistradoEOPdfERemontadoPelaTela()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Cenario objCenario = CreateScenario(objDbContext);
+        AddCustomer(objCenario, "93991230001", "Ana", dtBirth: new DateOnly(1998, 9, 29));
+        AddCampaign(objCenario, CampaignKind.Birthday, Mensagem());
+
+        await CreateEngine(objCenario).TickAsync(s_dtNove.AddSeconds(3));
+
+        FakeEmailSender.Email objEnviado = Assert.Single(objCenario.Email.Enviados);
+        SentEmail objRegistro = Assert.Single(objDbContext.SentEmails.AsNoTracking());
+        Assert.Equal(SentEmailKind.Campaign, objRegistro.Kind);
+        Assert.Equal(objCenario.Company.Id, objRegistro.IDCompany);
+        Assert.Equal(objCenario.Unit.Id, objRegistro.IDUnit);
+        Assert.Equal(EmailDaUnidade, objRegistro.ToEmail);
+        Assert.Equal(objEnviado.Subject, objRegistro.Subject);
+        Assert.Equal(objEnviado.Body, objRegistro.Body);
+        Assert.Equal(objEnviado.AttachmentName, objRegistro.AttachmentName);
+        Assert.Equal(objDbContext.CampaignRuns.Single().Id, objRegistro.IDCampaignRun);
+
+        // A tela remonta o PDF da execução (o mesmo arquivo, com o logo e as cores de hoje).
+        AccessWifi.Api.Controllers.EmailsController objController = new(objDbContext);
+        TestHelpers.SetUser(objController, null, "root");
+        IActionResult objAnexo = await objController.Attachment(objRegistro.Id, "regional", CancellationToken.None);
+        FileContentResult objPdf = Assert.IsType<FileContentResult>(objAnexo);
+        Assert.Equal("application/pdf", objPdf.ContentType);
+        Assert.Equal(objEnviado.AttachmentName, objPdf.FileDownloadName);
+        Assert.Equal("%PDF", System.Text.Encoding.ASCII.GetString(objPdf.FileContents, 0, 4));
+
+        // Depois que a LGPD apaga a lista da execução, o PDF não tem mais como ser remontado.
+        objDbContext.CampaignRecipients.RemoveRange(objDbContext.CampaignRecipients);
+        objDbContext.SaveChanges();
+        NotFoundObjectResult objSemLista = Assert.IsType<NotFoundObjectResult>(
+            await objController.Attachment(objRegistro.Id, "regional", CancellationToken.None));
+        Assert.Contains("retenção", Assert.IsType<AccessWifi.Api.Features.ErrorResponse>(objSemLista.Value).Error);
+    }
+
+    [Fact]
+    public async Task Correio_EnvioQueFalhou_SoEntraQuandoSair()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Cenario objCenario = CreateScenario(objDbContext);
+        objCenario.Email.FalharVezes = 1;
+        AddCustomer(objCenario, "91900000001", "Ana", dtBirth: new DateOnly(1998, 9, 29));
+        AddCampaign(objCenario, CampaignKind.Birthday, Mensagem());
+        CampaignEngine objEngine = CreateEngine(objCenario);
+
+        await objEngine.TickAsync(s_dtNove.AddSeconds(3));
+        Assert.Empty(objDbContext.SentEmails.AsNoTracking());
+
+        await objEngine.TickAsync(s_dtNove.AddMinutes(6));
+        Assert.Single(objDbContext.SentEmails.AsNoTracking());
     }
 
     [Fact]

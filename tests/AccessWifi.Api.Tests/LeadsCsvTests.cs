@@ -1,5 +1,5 @@
 using System.Text;
-using AccessWifiService;
+using Models.Reports;
 using Models.DataBase;
 
 namespace AccessWifi.Api.Tests;

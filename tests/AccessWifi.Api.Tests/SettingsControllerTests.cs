@@ -478,6 +478,52 @@ public class SettingsControllerTests
         Assert.Empty(objDbContext.PortalSettings);
     }
 
+    // ---- PDF de campanha de exemplo ----
+
+    [Fact]
+    public async Task CampaignPdfPreview_ComAsCoresDaTela_DevolveUmPdfSemGravarNada()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext);
+        CreateUnit(objDbContext, objCompany.Id, "exemplo-matriz");
+        SettingsController objController = new SettingsController(objDbContext);
+        TestHelpers.SetUser(objController, objCompany.Id);
+
+        IActionResult objResult = await objController.CampaignPdfPreview(
+            new CampaignPdfPreviewRequest(CreateDto(sBrand: "#A41F24").Colors, "data:image/png;base64,naoeumaimagem"), null, CancellationToken.None);
+
+        FileContentResult objPdf = Assert.IsType<FileContentResult>(objResult);
+        Assert.Equal("application/pdf", objPdf.ContentType);
+        Assert.Equal("%PDF", System.Text.Encoding.ASCII.GetString(objPdf.FileContents, 0, 4));
+        Assert.Empty(objDbContext.PortalSettings);
+    }
+
+    [Fact]
+    public async Task CampaignPdfPreview_CorInvalida_Retorna400()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext);
+        SettingsController objController = new SettingsController(objDbContext);
+        TestHelpers.SetUser(objController, objCompany.Id);
+
+        IActionResult objResult = await objController.CampaignPdfPreview(
+            new CampaignPdfPreviewRequest(CreateDto(sBrand: "vermelho").Colors, null), null, CancellationToken.None);
+
+        Assert.IsType<BadRequestObjectResult>(objResult);
+    }
+
+    [Fact]
+    public void CampaignPdfSample_UsaODddDaEmpresaEDestacaOsDeHoje()
+    {
+        Models.Campaigns.CampaignPdfData objDados = CampaignPdfSample.Build(
+            "Lojas Nacional", "NACIONAL ADM", "91", null, new ThemeColors(), new DateOnly(2026, 10, 9));
+
+        Assert.Equal(6, objDados.Rows.Count);
+        Assert.All(objDados.Rows, row => Assert.StartsWith("91", row.Phone));
+        Assert.Equal(2, objDados.Rows.Count(row => row.IsToday));
+        Assert.Contains("Lojas Nacional", objDados.Rows[0].Message);
+    }
+
     [Fact]
     public async Task GetAdmin_SuperAdminSemEmpresa_Retorna400EEmpresaInexistente404()
     {

@@ -25,13 +25,6 @@ public class CampaignsController : ControllerBase
     private const int MaxNameChars = 120;
     private const int MaxPageSize = 200;
 
-    /// <summary>Quem entra no PDF de novo pelo histórico: todos que foram para a unidade (os ignorados nunca foram).</summary>
-    private static readonly string[] s_arrNoPdf =
-    [
-        CampaignRecipientStatus.Pending, CampaignRecipientStatus.Sent, CampaignRecipientStatus.Failed,
-        CampaignRecipientStatus.Cancelled,
-    ];
-
     private readonly AppDbContext _objDbContext;
 
     public CampaignsController(AppDbContext objDbContext)
@@ -517,7 +510,7 @@ public class CampaignsController : ControllerBase
         }
 
         CampaignPdfData objDados = await CampaignDeliveryDocument.LoadAsync(
-            _objDbContext, objRun, objDelivery.IDUnit, s_arrNoPdf, objCancellationToken);
+            _objDbContext, objRun, objDelivery.IDUnit, CampaignDeliveryDocument.HistoryStatuses, objCancellationToken);
         if (objDados.Rows.Count == 0)
         {
             return NotFound(new ErrorResponse("Este envio não tem clientes."));

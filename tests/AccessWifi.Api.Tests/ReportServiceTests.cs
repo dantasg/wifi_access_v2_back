@@ -186,5 +186,37 @@ public class ReportServiceTests
         Assert.Equal("b@regional.com.br", Assert.Single(objSender.Enviados).To);
         Assert.Null(objDbContext.Units.Single(unit => unit.Id == objPrimeira.Id).LastReportSentAt);
         Assert.NotNull(objDbContext.Units.Single(unit => unit.Id == objSegunda.Id).LastReportSentAt);
+        // Correio eletrônico: só o que saiu.
+        Assert.Equal("b@regional.com.br", Assert.Single(objDbContext.SentEmails).ToEmail);
+    }
+
+    [Fact]
+    public async Task Correio_RelatorioEnviado_FicaRegistradoEOCsvERemontadoDoMes()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = AddCompany(objDbContext, "regional", iSendDay: 1);
+        Unit objUnit = AddUnit(objDbContext, objCompany.Id, "itaituba", "gerente.itb@regional.com.br");
+        AddLead(objDbContext, objUnit.Id, new DateTime(2026, 7, 10, 15, 0, 0, DateTimeKind.Utc));
+        AddLead(objDbContext, objUnit.Id, new DateTime(2026, 7, 20, 15, 0, 0, DateTimeKind.Utc));
+        AddLead(objDbContext, objUnit.Id, new DateTime(2026, 8, 2, 15, 0, 0, DateTimeKind.Utc)); // fora do mês
+        FakeEmailSender objSender = new FakeEmailSender();
+
+        await CreateService(objDbContext, objSender).SendDueReportsAsync(new DateTime(2026, 8, 1), CancellationToken.None);
+
+        FakeEmailSender.Email objEnviado = Assert.Single(objSender.Enviados);
+        SentEmail objRegistro = Assert.Single(objDbContext.SentEmails);
+        Assert.Equal(SentEmailKind.Report, objRegistro.Kind);
+        Assert.Equal(objUnit.Id, objRegistro.IDUnit);
+        Assert.Equal(objEnviado.Subject, objRegistro.Subject);
+        Assert.Equal(objEnviado.Body, objRegistro.Body);
+        Assert.Equal(new DateTime(2026, 7, 1, 0, 0, 0, DateTimeKind.Utc), objRegistro.PeriodStart);
+        Assert.Equal(new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc), objRegistro.PeriodEnd);
+
+        AccessWifi.Api.Controllers.EmailsController objController = new(objDbContext);
+        TestHelpers.SetUser(objController, null, "root");
+        Microsoft.AspNetCore.Mvc.FileContentResult objCsv = Assert.IsType<Microsoft.AspNetCore.Mvc.FileContentResult>(
+            await objController.Attachment(objRegistro.Id, "regional", CancellationToken.None));
+        Assert.Equal(objEnviado.AttachmentName, objCsv.FileDownloadName);
+        Assert.Equal(LinhasDoCsv(objEnviado.Attachment), LinhasDoCsv(objCsv.FileContents)); // cabeçalho + 2 cadastros
     }
 }

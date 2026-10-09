@@ -10,6 +10,16 @@ namespace Models.Campaigns
     /// </summary>
     public static class CampaignDeliveryDocument
     {
+        /// <summary>
+        /// Quem entra no PDF de novo pelo histórico (Campanhas e Correio eletrônico): todos que foram para a
+        /// unidade (os ignorados nunca foram).
+        /// </summary>
+        public static readonly string[] HistoryStatuses =
+        [
+            CampaignRecipientStatus.Pending, CampaignRecipientStatus.Sent, CampaignRecipientStatus.Failed,
+            CampaignRecipientStatus.Cancelled,
+        ];
+
         /// <param name="arrStatuses">Quais destinatários entram (o serviço manda os pendentes; o histórico, os enviados).</param>
         public static async Task<CampaignPdfData> LoadAsync(
             AppDbContext objDbContext,

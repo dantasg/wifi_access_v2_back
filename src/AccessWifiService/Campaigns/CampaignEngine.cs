@@ -545,12 +545,13 @@ namespace AccessWifiService.Campaigns
             }
 
             string? sErro = null;
+            string sAssunto = Assunto(objDados);
+            string sCorpo = Corpo(objDados);
             try
             {
                 byte[] arrPdf = CampaignPdf.Build(objDados);
                 await _objEmailSender.SendAsync(
-                    objDelivery.Email, Assunto(objDados), Corpo(objDados), arrPdf, objDelivery.FileName,
-                    objCancellationToken);
+                    objDelivery.Email, sAssunto, sCorpo, arrPdf, objDelivery.FileName, objCancellationToken);
             }
             catch (Exception objException) when (objException is not OperationCanceledException)
             {
@@ -567,6 +568,20 @@ namespace AccessWifiService.Campaigns
                 objDelivery.NextAttemptAt = null;
                 objRun.SentCount += await MarcarClientesAsync(
                     objRun.Id, objDelivery.IDUnit, CampaignRecipientStatus.Sent, null, dtNowUtc, objCancellationToken);
+                // Correio eletrônico: o e-mail como saiu (o PDF é remontado da execução, se pedirem).
+                _objDbContext.SentEmails.Add(new SentEmail
+                {
+                    IDCompany = objRun.IDCompany,
+                    IDUnit = objDelivery.IDUnit,
+                    UnitName = objDelivery.UnitName,
+                    Kind = SentEmailKind.Campaign,
+                    ToEmail = objDelivery.Email,
+                    Subject = sAssunto,
+                    Body = sCorpo,
+                    AttachmentName = objDelivery.FileName,
+                    SentAt = dtNowUtc,
+                    IDCampaignRun = objRun.Id,
+                });
                 await _objDbContext.SaveChangesAsync(objCancellationToken);
                 _objLogger.LogInformation(
                     "Campanha {Campanha}: PDF com {Total} cliente(s) enviado para {Email} (unidade {Unidade}).",

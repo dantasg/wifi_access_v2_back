@@ -8,6 +8,7 @@ using AccessWifi.Api.Infrastructure.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Models.Campaigns;
 using Models.DataBase;
 
 namespace AccessWifi.Api.Controllers;
@@ -139,6 +140,49 @@ public partial class SettingsController : ControllerBase
     }
 
     /// <summary>
+    /// PDF de campanha de exemplo com clientes fictícios e as cores e o logo enviados (os da tela, mesmo sem
+    /// salvar): para ver como fica o PDF que vai no e-mail das unidades. Nada é gravado nem enviado.
+    /// </summary>
+    [HttpPost("/admin/settings/campaign-pdf-preview")]
+    [Authorize]
+    [RequestSizeLimit(6 * 1024 * 1024)]
+    public async Task<IActionResult> CampaignPdfPreview(
+        CampaignPdfPreviewRequest objRequest,
+        [FromQuery(Name = "company")] string? sCompanySlug,
+        CancellationToken objCancellationToken)
+    {
+        (Guid? objCompanyId, ActionResult? objError) = await ResolveCompanyAsync(sCompanySlug, objCancellationToken);
+        if (objCompanyId is null)
+        {
+            return objError!;
+        }
+
+        string? sErro = ValidateColors(objRequest.Colors) ?? ValidateImage("logo", objRequest.Logo);
+        if (sErro is not null)
+        {
+            return BadRequest(new ErrorResponse(sErro));
+        }
+
+        Company objCompany = await _objDbContext.Companies.AsNoTracking()
+            .FirstAsync(company => company.Id == objCompanyId, objCancellationToken);
+        // O nome de uma unidade de verdade deixa o exemplo mais parecido com o que a loja recebe.
+        string sUnitName = await _objDbContext.Units.AsNoTracking()
+            .Where(unit => unit.IDCompany == objCompanyId && unit.Active)
+            .OrderBy(unit => unit.Name)
+            .Select(unit => unit.Name)
+            .FirstOrDefaultAsync(objCancellationToken) ?? "Unidade exemplo";
+        string sDdd = await _objDbContext.PortalSettings.AsNoTracking()
+            .Where(settings => settings.IDCompany == objCompanyId)
+            .Select(settings => settings.Ddd)
+            .FirstOrDefaultAsync(objCancellationToken) ?? "";
+        DateOnly dtHoje = CompanyTimeZone.Today(CompanyTimeZone.Resolve(objCompany.TimeZone), DateTime.UtcNow);
+
+        CampaignPdfData objDados = CampaignPdfSample.Build(
+            objCompany.Name, sUnitName, sDdd, objRequest.Logo, objRequest.Colors.ToEntity(), dtHoje);
+        return File(CampaignPdf.Build(objDados), "application/pdf", $"campanha-exemplo-{objCompany.Slug}.pdf");
+    }
+
+    /// <summary>
     /// Salva tema + parâmetros da empresa do token (upsert). Super admin indica a
     /// empresa via ?company=slug.
     /// </summary>
@@ -234,47 +278,61 @@ public partial class SettingsController : ControllerBase
         return (objCompany.Id, null);
     }
 
-    private static string? Validate(SettingsDto objRequest)
+    private static string? ValidateColors(ThemeColorsDto? objColors)
     {
-        (string sName, string sValue)[] objColors =
+        if (objColors is null)
+        {
+            return "Informe as cores.";
+        }
+
+        (string sName, string sValue)[] arrColors =
         [
-            ("brand", objRequest.Colors.Brand),
-            ("brandDark", objRequest.Colors.BrandDark),
-            ("surface", objRequest.Colors.Surface),
-            ("card", objRequest.Colors.Card),
-            ("field", objRequest.Colors.Field),
-            ("ink", objRequest.Colors.Ink),
-            ("muted", objRequest.Colors.Muted),
-            ("line", objRequest.Colors.Line),
+            ("brand", objColors.Brand),
+            ("brandDark", objColors.BrandDark),
+            ("surface", objColors.Surface),
+            ("card", objColors.Card),
+            ("field", objColors.Field),
+            ("ink", objColors.Ink),
+            ("muted", objColors.Muted),
+            ("line", objColors.Line),
         ];
-        foreach ((string sName, string sValue) in objColors)
+        foreach ((string sName, string sValue) in arrColors)
         {
             if (sValue is null || !HexColorRegex().IsMatch(sValue))
             {
                 return $"Cor inválida em '{sName}' (esperado #rrggbb).";
             }
         }
+        return null;
+    }
 
-        (string sName, string? sValue)[] objImages =
-        [
-            ("logo", objRequest.Logo),
-            ("favicon", objRequest.Favicon),
-            ("banner", objRequest.Banner),
-        ];
-        foreach ((string sName, string? sValue) in objImages)
+    /// <summary>Imagem nula vale (sem imagem); senão, um data URL de imagem dentro do limite.</summary>
+    private static string? ValidateImage(string sName, string? sValue)
+    {
+        if (sValue is null)
         {
-            if (sValue is null)
-            {
-                continue;
-            }
-            if (!sValue.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase))
-            {
-                return $"Imagem inválida em '{sName}' (esperado data URL de imagem).";
-            }
-            if (sValue.Length > MaxImageChars)
-            {
-                return $"Imagem muito grande em '{sName}' (máximo de 2 MB).";
-            }
+            return null;
+        }
+        if (!sValue.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"Imagem inválida em '{sName}' (esperado data URL de imagem).";
+        }
+        if (sValue.Length > MaxImageChars)
+        {
+            return $"Imagem muito grande em '{sName}' (máximo de 2 MB).";
+        }
+        return null;
+    }
+
+    private static string? Validate(SettingsDto objRequest)
+    {
+        string? sErro = ValidateColors(objRequest.Colors)
+            ?? ValidateImage("logo", objRequest.Logo)
+            ?? ValidateImage("favicon", objRequest.Favicon)
+            ?? ValidateImage("banner", objRequest.Banner);
+        if (sErro is not null)
+        {
+            return sErro;
         }
 
         if (string.IsNullOrWhiteSpace(objRequest.Ssid) || objRequest.Ssid.Trim().Length > 32)

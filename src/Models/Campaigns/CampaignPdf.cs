@@ -72,9 +72,9 @@ namespace Models.Campaigns
         public static byte[] Build(CampaignPdfData objData)
         {
             Paleta objCores = Paleta.From(objData.Colors);
-            byte[]? arrLogo = null;
-            string? sLogoSvg = null;
-            ReadLogo(objData.LogoDataUrl, ref arrLogo, ref sLogoSvg);
+            Image? objLogoImagem = null;
+            SvgImage? objLogoSvg = null;
+            ReadLogo(objData.LogoDataUrl, ref objLogoImagem, ref objLogoSvg);
             string sMensagem = CampaignContact.WithoutEmoji(
                 CampaignMessage.RenderShared(objData.MessageTemplate, objData.CompanyName, objData.UnitName),
                 out bool bTinhaEmoji);
@@ -93,13 +93,13 @@ namespace Models.Campaigns
                 objPage.Header().PaddingBottom(14).BorderBottom(2).BorderColor(objCores.Brand).PaddingBottom(10).Row(objRow =>
                 {
                     IContainer objLogo = objRow.RelativeItem().AlignLeft().AlignMiddle().Height(44);
-                    if (arrLogo is not null)
+                    if (objLogoImagem is not null)
                     {
-                        objLogo.Image(arrLogo).FitHeight();
+                        objLogo.Image(objLogoImagem).FitHeight();
                     }
-                    else if (sLogoSvg is not null)
+                    else if (objLogoSvg is not null)
                     {
-                        objLogo.Svg(sLogoSvg).FitHeight();
+                        objLogo.Svg(objLogoSvg).FitHeight();
                     }
                     else
                     {
@@ -278,7 +278,11 @@ namespace Models.Campaigns
             objContainer.BorderBottom(1).BorderColor(objCores.Line).PaddingVertical(7).PaddingHorizontal(6);
 
         /// <summary>A logo do portal vem como data URL; PNG/JPEG/WebP viram imagem, SVG é desenhado. Inválida = sem logo.</summary>
-        private static void ReadLogo(string? sDataUrl, ref byte[]? arrImagem, ref string? sSvg)
+        /// <summary>
+        /// Abre a logo do tema. Se não abrir (base64 quebrado, arquivo que não é imagem de verdade), o PDF sai
+        /// com o nome da empresa no lugar — uma logo ruim não pode impedir o e-mail da campanha de sair.
+        /// </summary>
+        private static void ReadLogo(string? sDataUrl, ref Image? objImagem, ref SvgImage? objSvg)
         {
             Match objMatch = DataUrlRegex().Match(sDataUrl ?? "");
             if (!objMatch.Success)
@@ -290,16 +294,18 @@ namespace Models.Campaigns
                 byte[] arrDados = Convert.FromBase64String(objMatch.Groups["dados"].Value);
                 if (objMatch.Groups["tipo"].Value.StartsWith("svg", StringComparison.Ordinal))
                 {
-                    sSvg = System.Text.Encoding.UTF8.GetString(arrDados);
+                    objSvg = SvgImage.FromText(System.Text.Encoding.UTF8.GetString(arrDados));
                 }
                 else
                 {
-                    arrImagem = arrDados;
+                    objImagem = Image.FromBinaryData(arrDados);
                 }
             }
-            catch (FormatException)
+            catch (Exception)
             {
-                // Base64 quebrado: o PDF sai com o nome da empresa no lugar da logo.
+                // Logo que não abre: o PDF sai com o nome da empresa no lugar dela.
+                objImagem = null;
+                objSvg = null;
             }
         }
 

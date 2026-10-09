@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Models.DataBase;
 using Models.Email;
 using Models.Persistence;
+using Models.Reports;
 
 namespace AccessWifiService
 {
@@ -80,6 +81,23 @@ namespace AccessWifiService
                 "Mensagem automática do AccessWifi.";
 
             await _objEmailSender.SendAsync(objUnit.Email.Trim(), sSubject, sBody, objCsv, sFileName, objCancellationToken);
+
+            // Correio eletrônico: o e-mail como saiu (o CSV é remontado dos cadastros do mês, se pedirem).
+            // Grava junto com o LastReportSentAt, no SaveChanges de quem chamou.
+            _objDbContext.SentEmails.Add(new SentEmail
+            {
+                IDCompany = objCompany.Id,
+                IDUnit = objUnit.Id,
+                UnitName = objUnit.Name,
+                Kind = SentEmailKind.Report,
+                ToEmail = objUnit.Email.Trim(),
+                Subject = sSubject,
+                Body = sBody,
+                AttachmentName = sFileName,
+                SentAt = DateTime.UtcNow,
+                PeriodStart = dtStartUtc,
+                PeriodEnd = dtEndUtc,
+            });
 
             _objLogger.LogInformation(
                 "Relatório de {Count} cadastros ({Periodo}) enviado para {Email} (unidade {Unidade}, empresa {Slug}).",

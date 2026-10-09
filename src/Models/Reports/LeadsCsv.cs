@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text;
 using Models.DataBase;
 
-namespace AccessWifiService
+namespace Models.Reports
 {
     /// <summary>Uma linha do CSV: o lead e o nome da unidade a que ele pertence.</summary>
     public readonly record struct LeadReportRow(Lead Lead, string UnitName);

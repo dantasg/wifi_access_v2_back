@@ -17,6 +17,7 @@ namespace Models.Persistence
         public DbSet<AdminUserUnit> UserUnits => Set<AdminUserUnit>();
         public DbSet<UnitDevice> UnitDevices => Set<UnitDevice>();
         public DbSet<Visit> Visits => Set<Visit>();
+        public DbSet<SentEmail> SentEmails => Set<SentEmail>();
         public DbSet<Lead> Leads => Set<Lead>();
         public DbSet<PortalSettings> PortalSettings => Set<PortalSettings>();
         public DbSet<Configuration> Configurations => Set<Configuration>();
@@ -123,6 +124,26 @@ namespace Models.Persistence
                 objVisit.HasOne<Customer>()
                     .WithMany()
                     .HasForeignKey(visit => visit.IDCustomer)
+                    .OnDelete(DeleteBehavior.SetNull);
+            });
+
+            objModelBuilder.Entity<SentEmail>(objEmail =>
+            {
+                objEmail.Property(email => email.UnitName).HasMaxLength(120);
+                objEmail.Property(email => email.Kind).HasMaxLength(20);
+                objEmail.Property(email => email.ToEmail).HasMaxLength(200);
+                objEmail.Property(email => email.Subject).HasMaxLength(400);
+                objEmail.Property(email => email.AttachmentName).HasMaxLength(200);
+                // A tela lista os mais novos primeiro, por empresa (e filtra por unidade).
+                objEmail.HasIndex(email => new { email.IDCompany, email.SentAt });
+                objEmail.HasIndex(email => email.IDUnit);
+                objEmail.HasOne<Company>()
+                    .WithMany()
+                    .HasForeignKey(email => email.IDCompany)
+                    .OnDelete(DeleteBehavior.Cascade);
+                objEmail.HasOne<Unit>()
+                    .WithMany()
+                    .HasForeignKey(email => email.IDUnit)
                     .OnDelete(DeleteBehavior.SetNull);
             });
 
