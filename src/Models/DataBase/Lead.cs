@@ -16,10 +16,10 @@ namespace Models.DataBase
 
         /// <summary>Última vez que o aparelho reconectou (atualizado a cada acesso pelo upsert).</summary>
         public DateTime Timestamp { get; set; } = DateTime.UtcNow;
-        public string Nome { get; set; } = "";
+        public string Name { get; set; } = "";
         public string Instagram { get; set; } = "";
-        public string Telefone { get; set; } = "";
-        public string Nascimento { get; set; } = "";
+        public string Phone { get; set; } = "";
+        public string BirthDate { get; set; } = "";
         public string? Mac { get; set; }
         public string? Ap { get; set; }
         public string? Ssid { get; set; }

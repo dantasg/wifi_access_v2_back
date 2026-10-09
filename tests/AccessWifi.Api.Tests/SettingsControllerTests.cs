@@ -53,7 +53,7 @@ public class SettingsControllerTests
     }
 
     [Fact]
-    public async Task Get_SemSlug_Retorna400()
+    public async Task Get_NoSlug_Returns400()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         SettingsController objController = new SettingsController(objDbContext);
@@ -64,7 +64,7 @@ public class SettingsControllerTests
     }
 
     [Fact]
-    public async Task Get_UnidadeInexistente_Retorna404()
+    public async Task Get_UnknownUnit_Returns404()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         SettingsController objController = new SettingsController(objDbContext);
@@ -77,7 +77,7 @@ public class SettingsControllerTests
     }
 
     [Fact]
-    public async Task Get_UnidadeSemLinhaGravada_DevolveOPadraoNeutro()
+    public async Task Get_UnitWithoutSavedRow_ReturnsNeutralDefault()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
@@ -94,7 +94,7 @@ public class SettingsControllerTests
     }
 
     [Fact]
-    public async Task Put_AdminDaEmpresa_CriaALinhaDaSuaEmpresaEOGetPassaADevolver()
+    public async Task Put_CompanyAdmin_CreatesOwnCompanyRowAndGetReturnsIt()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
@@ -119,7 +119,7 @@ public class SettingsControllerTests
     }
 
     [Fact]
-    public async Task Put_DuasEmpresas_CadaUmaTemSuaLinha()
+    public async Task Put_TwoCompanies_EachHasOwnRow()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompanyA = CreateCompany(objDbContext, "exemplo");
@@ -142,7 +142,7 @@ public class SettingsControllerTests
     }
 
     [Fact]
-    public async Task Put_SuperAdminSemSlug_Retorna400()
+    public async Task Put_SuperAdminWithoutSlug_Returns400()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateCompany(objDbContext);
@@ -156,7 +156,7 @@ public class SettingsControllerTests
     }
 
     [Fact]
-    public async Task Put_SuperAdminComSlug_SalvaNaEmpresaIndicada()
+    public async Task Put_SuperAdminWithSlug_SavesOnGivenCompany()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
@@ -171,7 +171,7 @@ public class SettingsControllerTests
     }
 
     [Fact]
-    public async Task Put_CorInvalida_Retorna400()
+    public async Task Put_InvalidColor_Returns400()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
@@ -188,7 +188,7 @@ public class SettingsControllerTests
     }
 
     [Fact]
-    public async Task Put_ImagemQueNaoEDataUrl_Retorna400()
+    public async Task Put_ImageNotDataUrl_Returns400()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
@@ -202,7 +202,7 @@ public class SettingsControllerTests
     }
 
     [Fact]
-    public async Task Put_MinutosForaDoIntervalo_Retorna400()
+    public async Task Put_MinutesOutOfRange_Returns400()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
@@ -216,7 +216,7 @@ public class SettingsControllerTests
     }
 
     [Fact]
-    public async Task Put_UrlDeRedirecionamentoValida_SalvaEODevolveNoGet()
+    public async Task Put_ValidRedirectUrl_SavesAndGetReturnsIt()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
@@ -238,7 +238,7 @@ public class SettingsControllerTests
     }
 
     [Fact]
-    public async Task Put_UrlDeRedirecionamentoVazia_GravaComoNula()
+    public async Task Put_EmptyRedirectUrl_SavesAsNull()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
@@ -251,7 +251,7 @@ public class SettingsControllerTests
     }
 
     [Fact]
-    public async Task Put_UrlDeRedirecionamentoInvalida_Retorna400()
+    public async Task Put_InvalidRedirectUrl_Returns400()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
@@ -290,7 +290,7 @@ public class SettingsControllerTests
     }
 
     [Fact]
-    public async Task Get_ComLogo_DevolveOEnderecoDaImagemEmVezDosDados()
+    public async Task Get_WithLogo_ReturnsImageAddressInsteadOfData()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         (_, string sUnitSlug) = CreateCompanyWithLogo(objDbContext);
@@ -306,7 +306,7 @@ public class SettingsControllerTests
     }
 
     [Fact]
-    public async Task GetImage_VersaoAtual_DevolveOArquivoGuardadoPorUmAno()
+    public async Task GetImage_CurrentVersion_ReturnsFileCachedForOneYear()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         (_, string sUnitSlug) = CreateCompanyWithLogo(objDbContext);
@@ -323,7 +323,7 @@ public class SettingsControllerTests
     }
 
     [Fact]
-    public async Task GetImage_VersaoAntiga_EntregaAAtualSemGuardarParaSempre()
+    public async Task GetImage_OldVersion_ServesCurrentWithoutCachingForever()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         (_, string sUnitSlug) = CreateCompanyWithLogo(objDbContext);
@@ -339,7 +339,7 @@ public class SettingsControllerTests
     [InlineData("exemplo-matriz", "banner")] // empresa sem banner
     [InlineData("exemplo-matriz", "senha")] // tipo que não existe
     [InlineData("nada", "logo")] // unidade que não existe
-    public async Task GetImage_SemImagem_Retorna404(string sUnitSlug, string sKind)
+    public async Task GetImage_NoImage_Returns404(string sUnitSlug, string sKind)
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateCompanyWithLogo(objDbContext);
@@ -351,7 +351,7 @@ public class SettingsControllerTests
     }
 
     [Fact]
-    public async Task GetImage_UnidadeDesativada_Retorna404()
+    public async Task GetImage_DisabledUnit_Returns404()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         (_, string sUnitSlug) = CreateCompanyWithLogo(objDbContext);
@@ -371,16 +371,16 @@ public class SettingsControllerTests
     [InlineData("data:image/png,naoebase64", false, "")]
     [InlineData("data:image/png;base64,%%%", false, "")]
     [InlineData("https://exemplo.com/logo.png", false, "")]
-    public void PortalImage_TryDecode_SoAceitaImagemEmBase64(string sDataUrl, bool bEsperado, string sTipo)
+    public void PortalImage_TryDecode_AcceptsOnlyBase64Image(string sDataUrl, bool bExpected, string sKind)
     {
         bool bOk = PortalImage.TryDecode(sDataUrl, out _, out string sContentType);
 
-        Assert.Equal(bEsperado, bOk);
-        Assert.Equal(sTipo, sContentType);
+        Assert.Equal(bExpected, bOk);
+        Assert.Equal(sKind, sContentType);
     }
 
     [Fact]
-    public async Task GetAdmin_AdminDaEmpresa_DevolveAsImagensInteirasSemPrecisarDeUnidade()
+    public async Task GetAdmin_CompanyAdmin_ReturnsFullImagesWithoutUnit()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
@@ -397,7 +397,7 @@ public class SettingsControllerTests
     }
 
     [Fact]
-    public async Task GetAdmin_EmpresaSemTemaGravado_DevolveOPadraoNeutro()
+    public async Task GetAdmin_CompanyWithoutSavedTheme_ReturnsNeutralDefault()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateCompany(objDbContext);
@@ -415,7 +415,7 @@ public class SettingsControllerTests
     // ---- DDD do exemplo de telefone no portal ----
 
     [Fact]
-    public async Task Put_ComDdd_GravaEOPortalDaUnidadeSemDddRecebeODaEmpresa()
+    public async Task Put_WithAreaCode_SavesAndUnitPortalWithoutOwnGetsCompanys()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
@@ -423,47 +423,47 @@ public class SettingsControllerTests
         SettingsController objController = CreateAnonymousController(objDbContext);
         TestHelpers.SetUser(objController, objCompany.Id);
 
-        await objController.Put(CreateDto() with { Ddd = "(93)" }, null, CancellationToken.None);
+        await objController.Put(CreateDto() with { AreaCode = "(93)" }, null, CancellationToken.None);
 
-        Assert.Equal("93", objDbContext.PortalSettings.Single().Ddd);
+        Assert.Equal("93", objDbContext.PortalSettings.Single().AreaCode);
         ActionResult<SettingsDto> objResult = await objController.Get(sUnitSlug, null, null, CancellationToken.None);
         SettingsDto objPortal = Assert.IsType<SettingsDto>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
-        Assert.Equal("93", objPortal.Ddd);
+        Assert.Equal("93", objPortal.AreaCode);
     }
 
     [Fact]
-    public async Task Get_UnidadeComDddProprio_RecebeODelaEONaoODaEmpresa()
+    public async Task Get_UnitWithOwnAreaCode_GetsItsOwnNotCompanys()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
-        objDbContext.Units.Add(new Unit { IDCompany = objCompany.Id, Name = "Outra cidade", Slug = "exemplo-outra", Ddd = "91" });
-        objDbContext.PortalSettings.Add(new PortalSettings { IDCompany = objCompany.Id, Ssid = "Exemplo", Ddd = "93" });
+        objDbContext.Units.Add(new Unit { IDCompany = objCompany.Id, Name = "Outra cidade", Slug = "exemplo-outra", AreaCode = "91" });
+        objDbContext.PortalSettings.Add(new PortalSettings { IDCompany = objCompany.Id, Ssid = "Exemplo", AreaCode = "93" });
         objDbContext.SaveChanges();
         SettingsController objController = CreateAnonymousController(objDbContext);
 
         ActionResult<SettingsDto> objResult = await objController.Get("exemplo-outra", null, null, CancellationToken.None);
 
         SettingsDto objPortal = Assert.IsType<SettingsDto>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
-        Assert.Equal("91", objPortal.Ddd);
+        Assert.Equal("91", objPortal.AreaCode);
     }
 
     [Fact]
-    public async Task Put_DddNulo_MantemOGravado()
+    public async Task Put_NullAreaCode_KeepsSavedOne()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
-        objDbContext.PortalSettings.Add(new PortalSettings { IDCompany = objCompany.Id, Ssid = "Exemplo", Ddd = "93" });
+        objDbContext.PortalSettings.Add(new PortalSettings { IDCompany = objCompany.Id, Ssid = "Exemplo", AreaCode = "93" });
         objDbContext.SaveChanges();
         SettingsController objController = new SettingsController(objDbContext);
         TestHelpers.SetUser(objController, objCompany.Id);
 
         await objController.Put(CreateDto(), null, CancellationToken.None);
 
-        Assert.Equal("93", objDbContext.PortalSettings.Single().Ddd);
+        Assert.Equal("93", objDbContext.PortalSettings.Single().AreaCode);
     }
 
     [Fact]
-    public async Task Put_DddInexistente_Retorna400()
+    public async Task Put_UnknownAreaCode_Returns400()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
@@ -471,7 +471,7 @@ public class SettingsControllerTests
         TestHelpers.SetUser(objController, objCompany.Id);
 
         ActionResult<SettingsDto> objResult =
-            await objController.Put(CreateDto() with { Ddd = "20" }, null, CancellationToken.None);
+            await objController.Put(CreateDto() with { AreaCode = "20" }, null, CancellationToken.None);
 
         BadRequestObjectResult objBadRequest = Assert.IsType<BadRequestObjectResult>(objResult.Result);
         Assert.Contains("DDD", Assert.IsType<ErrorResponse>(objBadRequest.Value).Error);
@@ -481,7 +481,7 @@ public class SettingsControllerTests
     // ---- PDF de campanha de exemplo ----
 
     [Fact]
-    public async Task CampaignPdfPreview_ComAsCoresDaTela_DevolveUmPdfSemGravarNada()
+    public async Task CampaignPdfPreview_WithScreenColors_ReturnsPdfWithoutSaving()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
@@ -499,7 +499,7 @@ public class SettingsControllerTests
     }
 
     [Fact]
-    public async Task CampaignPdfPreview_CorInvalida_Retorna400()
+    public async Task CampaignPdfPreview_InvalidColor_Returns400()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
@@ -513,19 +513,19 @@ public class SettingsControllerTests
     }
 
     [Fact]
-    public void CampaignPdfSample_UsaODddDaEmpresaEDestacaOsDeHoje()
+    public void CampaignPdfSample_UsesCompanyAreaCodeAndHighlightsToday()
     {
-        Models.Campaigns.CampaignPdfData objDados = CampaignPdfSample.Build(
+        Models.Campaigns.CampaignPdfData objData = CampaignPdfSample.Build(
             "Lojas Nacional", "NACIONAL ADM", "91", null, new ThemeColors(), new DateOnly(2026, 10, 9));
 
-        Assert.Equal(6, objDados.Rows.Count);
-        Assert.All(objDados.Rows, row => Assert.StartsWith("91", row.Phone));
-        Assert.Equal(2, objDados.Rows.Count(row => row.IsToday));
-        Assert.Contains("Lojas Nacional", objDados.Rows[0].Message);
+        Assert.Equal(6, objData.Rows.Count);
+        Assert.All(objData.Rows, row => Assert.StartsWith("91", row.Phone));
+        Assert.Equal(2, objData.Rows.Count(row => row.IsToday));
+        Assert.Contains("Lojas Nacional", objData.Rows[0].Message);
     }
 
     [Fact]
-    public async Task GetAdmin_SuperAdminSemEmpresa_Retorna400EEmpresaInexistente404()
+    public async Task GetAdmin_SuperAdminWithoutCompany_Returns400AndUnknownCompany404()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         SettingsController objController = new SettingsController(objDbContext);

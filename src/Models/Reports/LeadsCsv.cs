@@ -25,10 +25,10 @@ namespace Models.Reports
                 [
                     objLead.CreatedAt.ToString("o", CultureInfo.InvariantCulture),
                     objRow.UnitName,
-                    objLead.Nome,
+                    objLead.Name,
                     InstagramLink(objLead.Instagram),
-                    objLead.Telefone,
-                    objLead.Nascimento,
+                    objLead.Phone,
+                    objLead.BirthDate,
                     objLead.Mac ?? "",
                     objLead.Ap ?? "",
                     objLead.Ssid ?? "",

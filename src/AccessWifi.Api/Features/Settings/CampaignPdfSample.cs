@@ -14,10 +14,10 @@ public static class CampaignPdfSample
 {
     public const string CampaignName = "Aniversariantes da semana (exemplo)";
 
-    private const string Mensagem =
+    private const string SampleMessage =
         "Feliz aniversário, {primeiro_nome}! 🎉 A {empresa} deseja um dia incrível para você.";
 
-    private static readonly (string sNome, string sInstagram, int iIdade)[] s_arrClientes =
+    private static readonly (string sName, string sInstagram, int iAge)[] s_arrCustomers =
     [
         ("Ana Exemplo", "ana.exemplo", 28),
         ("Bruno Exemplo", "bruno.exemplo", 35),
@@ -27,35 +27,35 @@ public static class CampaignPdfSample
         ("Felipe Exemplo", "", 33),
     ];
 
-    /// <param name="sDdd">DDD da empresa, para os telefones de exemplo; vazio = "00".</param>
+    /// <param name="sAreaCode">DDD da empresa, para os telefones de exemplo; vazio = "00".</param>
     public static CampaignPdfData Build(
-        string sCompanyName, string sUnitName, string sDdd, string? sLogo, ThemeColors objColors, DateOnly dtHoje)
+        string sCompanyName, string sUnitName, string sAreaCode, string? sLogo, ThemeColors objColors, DateOnly dtToday)
     {
         // Dias da semana de aniversários que ainda vêm depois de hoje (no sábado, nenhum).
-        (_, DateOnly dtFim) = CampaignCalendar.BirthdayRange(dtHoje);
-        int iDepois = dtFim.DayNumber - dtHoje.DayNumber;
-        string sPrefixo = sDdd.Length == 2 ? sDdd : "00";
+        (_, DateOnly dtEnd) = CampaignCalendar.BirthdayRange(dtToday);
+        int iAfter = dtEnd.DayNumber - dtToday.DayNumber;
+        string sPrefix = sAreaCode.Length == 2 ? sAreaCode : "00";
 
-        List<CampaignPdfRow> objRows = s_arrClientes
-            .Select((objCliente, iIndice) =>
+        List<CampaignPdfRow> objRows = s_arrCustomers
+            .Select((objCustomer, iIndex) =>
             {
                 // Os dois primeiros fazem aniversário hoje (aparecem em destaque); os outros, nos dias seguintes.
-                DateOnly dtAniversario = iIndice < 2 || iDepois == 0 ? dtHoje : dtHoje.AddDays(1 + (iIndice - 2) % iDepois);
-                string sMensagem = CampaignMessage.Render(Mensagem, new CampaignMessageData(
-                    objCliente.sNome, sCompanyName, sUnitName, objCliente.iIdade, null));
-                return (dtAniversario, Row: new CampaignPdfRow(
-                    objCliente.sNome,
-                    $"{sPrefixo}90000{iIndice + 1:0000}",
-                    objCliente.sInstagram,
-                    $"{CampaignPdf.ShortDate(dtAniversario)} · {objCliente.iIdade} anos",
-                    dtAniversario == dtHoje,
-                    sMensagem));
+                DateOnly dtBirthday = iIndex < 2 || iAfter == 0 ? dtToday : dtToday.AddDays(1 + (iIndex - 2) % iAfter);
+                string sMessage = CampaignMessage.Render(SampleMessage, new CampaignMessageData(
+                    objCustomer.sName, sCompanyName, sUnitName, objCustomer.iAge, null));
+                return (dtBirthday, Row: new CampaignPdfRow(
+                    objCustomer.sName,
+                    $"{sPrefix}90000{iIndex + 1:0000}",
+                    objCustomer.sInstagram,
+                    $"{CampaignPdf.ShortDate(dtBirthday)} · {objCustomer.iAge} anos",
+                    dtBirthday == dtToday,
+                    sMessage));
             })
-            .OrderBy(item => item.dtAniversario)
+            .OrderBy(item => item.dtBirthday)
             .Select(item => item.Row)
             .ToList();
 
         return new CampaignPdfData(
-            sCompanyName, sUnitName, CampaignName, CampaignKind.Birthday, dtHoje, Mensagem, sLogo, objColors, objRows);
+            sCompanyName, sUnitName, CampaignName, CampaignKind.Birthday, dtToday, SampleMessage, sLogo, objColors, objRows);
     }
 }

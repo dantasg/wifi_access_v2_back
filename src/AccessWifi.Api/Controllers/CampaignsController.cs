@@ -45,8 +45,8 @@ public class CampaignsController : ControllerBase
             return objError!;
         }
 
-        HashSet<string> objLigados = await EnabledKindsAsync(objCompany.Id, objCancellationToken);
-        Dictionary<string, Guid> objSistema = (await _objDbContext.Campaigns.AsNoTracking()
+        HashSet<string> objEnabled = await EnabledKindsAsync(objCompany.Id, objCancellationToken);
+        Dictionary<string, Guid> objSystem = (await _objDbContext.Campaigns.AsNoTracking()
                 .Where(campaign => campaign.IDCompany == objCompany.Id && campaign.Kind != CampaignKind.Filtered)
                 .Select(campaign => new { campaign.Kind, campaign.Id })
                 .ToListAsync(objCancellationToken))
@@ -55,8 +55,8 @@ public class CampaignsController : ControllerBase
 
         return Ok(CampaignKind.All
             .Select(sKind => new CampaignCatalogItemDto(
-                sKind, CampaignKind.Label(sKind), CampaignKind.IsSystem(sKind), objLigados.Contains(sKind),
-                objSistema.TryGetValue(sKind, out Guid objId) ? objId : null, CampaignKind.IsAvailable(sKind)))
+                sKind, CampaignKind.Label(sKind), CampaignKind.IsSystem(sKind), objEnabled.Contains(sKind),
+                objSystem.TryGetValue(sKind, out Guid objId) ? objId : null, CampaignKind.IsAvailable(sKind)))
             .ToList());
     }
 
@@ -71,7 +71,7 @@ public class CampaignsController : ControllerBase
             return objError!;
         }
 
-        HashSet<string> objLigados = await EnabledKindsAsync(objCompany.Id, objCancellationToken);
+        HashSet<string> objEnabled = await EnabledKindsAsync(objCompany.Id, objCancellationToken);
         // Cada campanha com a sua última execução (sem as "perdidas", que não rodaram).
         var objCampaigns = await _objDbContext.Campaigns.AsNoTracking()
             .Where(campaign => campaign.IDCompany == objCompany.Id)
@@ -86,7 +86,7 @@ public class CampaignsController : ControllerBase
             .ToListAsync(objCancellationToken);
 
         AccessScope objScope = await AccessScope.LoadAsync(_objDbContext, User, objCancellationToken);
-        Dictionary<Guid, CampaignRunDto> objUltimas = (await RunDtosAsync(
+        Dictionary<Guid, CampaignRunDto> objLatest = (await RunDtosAsync(
                 objCampaigns.Select(item => item.LastRun).OfType<CampaignRun>().ToList(), objScope, objCancellationToken))
             .ToDictionary(run => run.Id);
 
@@ -99,9 +99,9 @@ public class CampaignsController : ControllerBase
                 CampaignConfig objConfig = CampaignConfig.FromJson(objCampaign.ConfigJson);
                 return new CampaignSummaryDto(
                     objCampaign.Id, objCampaign.Kind, CampaignKind.Label(objCampaign.Kind), objCampaign.Name,
-                    objCampaign.Status, objLigados.Contains(objCampaign.Kind), objConfig.Channel, objConfig.SendTime,
+                    objCampaign.Status, objEnabled.Contains(objCampaign.Kind), objConfig.Channel, objConfig.SendTime,
                     objCampaign.CurrentVersion, objCampaign.NextRunAt,
-                    item.LastRun is null ? null : objUltimas[item.LastRun.Id],
+                    item.LastRun is null ? null : objLatest[item.LastRun.Id],
                     objCampaign.UpdatedAt);
             })
             .ToList());
@@ -116,8 +116,8 @@ public class CampaignsController : ControllerBase
         {
             return objError!;
         }
-        HashSet<string> objLigados = await EnabledKindsAsync(objCampaign.IDCompany, objCancellationToken);
-        return Ok(CampaignDetailDto.FromEntity(objCampaign, objLigados.Contains(objCampaign.Kind)));
+        HashSet<string> objEnabled = await EnabledKindsAsync(objCampaign.IDCompany, objCancellationToken);
+        return Ok(CampaignDetailDto.FromEntity(objCampaign, objEnabled.Contains(objCampaign.Kind)));
     }
 
     // ------------------------------------------------------------ Criar e editar
@@ -143,8 +143,8 @@ public class CampaignsController : ControllerBase
             return BadRequest(new ErrorResponse(
                 $"A campanha \"{CampaignKind.Label(sKind)}\" ainda não está disponível (em breve)."));
         }
-        HashSet<string> objLigados = await EnabledKindsAsync(objCompany.Id, objCancellationToken);
-        if (!objLigados.Contains(sKind))
+        HashSet<string> objEnabled = await EnabledKindsAsync(objCompany.Id, objCancellationToken);
+        if (!objEnabled.Contains(sKind))
         {
             return BadRequest(new ErrorResponse(
                 $"A campanha \"{CampaignKind.Label(sKind)}\" não está liberada para esta empresa."));
@@ -157,10 +157,10 @@ public class CampaignsController : ControllerBase
         }
 
         string sName = string.IsNullOrWhiteSpace(objRequest.Name) ? CampaignKind.Label(sKind) : objRequest.Name.Trim();
-        string? sInvalida = ValidateSave(sKind, sName, objRequest.Config);
-        if (sInvalida is not null)
+        string? sInvalid = ValidateSave(sKind, sName, objRequest.Config);
+        if (sInvalid is not null)
         {
-            return BadRequest(new ErrorResponse(sInvalida));
+            return BadRequest(new ErrorResponse(sInvalid));
         }
 
         DateTime dtNowUtc = DateTime.UtcNow;
@@ -178,7 +178,7 @@ public class CampaignsController : ControllerBase
         CampaignScheduling.RefreshNextRun(objCampaign, CompanyTimeZone.Resolve(objCompany.TimeZone), dtNowUtc, true);
         if (objCampaign.NextRunAt is null)
         {
-            return BadRequest(new ErrorResponse(SemDisparoFuturo));
+            return BadRequest(new ErrorResponse(NoFutureRun));
         }
 
         (Guid? objUserId, string sUsername) = await CurrentUserAsync(objCancellationToken);
@@ -217,19 +217,19 @@ public class CampaignsController : ControllerBase
         }
 
         string sName = string.IsNullOrWhiteSpace(objRequest.Name) ? objCampaign.Name : objRequest.Name.Trim();
-        string? sInvalida = ValidateSave(objCampaign.Kind, sName, objRequest.Config);
-        if (sInvalida is not null)
+        string? sInvalid = ValidateSave(objCampaign.Kind, sName, objRequest.Config);
+        if (sInvalid is not null)
         {
-            return BadRequest(new ErrorResponse(sInvalida));
+            return BadRequest(new ErrorResponse(sInvalid));
         }
 
-        HashSet<string> objLigados = await EnabledKindsAsync(objCampaign.IDCompany, objCancellationToken);
-        bool bLigado = objLigados.Contains(objCampaign.Kind);
-        CampaignConfig objAntiga = CampaignConfig.FromJson(objCampaign.ConfigJson);
-        string sMudancas = CampaignChanges.Describe(objCampaign.Name, objAntiga, sName, objRequest.Config);
-        if (sMudancas.Length == 0)
+        HashSet<string> objEnabled = await EnabledKindsAsync(objCampaign.IDCompany, objCancellationToken);
+        bool bEnabled = objEnabled.Contains(objCampaign.Kind);
+        CampaignConfig objOld = CampaignConfig.FromJson(objCampaign.ConfigJson);
+        string sChanges = CampaignChanges.Describe(objCampaign.Name, objOld, sName, objRequest.Config);
+        if (sChanges.Length == 0)
         {
-            return Ok(CampaignDetailDto.FromEntity(objCampaign, bLigado));
+            return Ok(CampaignDetailDto.FromEntity(objCampaign, bEnabled));
         }
 
         DateTime dtNowUtc = DateTime.UtcNow;
@@ -245,10 +245,10 @@ public class CampaignsController : ControllerBase
             // Encerrada com agenda nova (ex.: outra data): volta a valer.
             objCampaign.Status = CampaignStatus.Active;
         }
-        CampaignScheduling.RefreshNextRun(objCampaign, CompanyTimeZone.Resolve(sTimeZone), dtNowUtc, bLigado);
+        CampaignScheduling.RefreshNextRun(objCampaign, CompanyTimeZone.Resolve(sTimeZone), dtNowUtc, bEnabled);
         if (objCampaign.Status == CampaignStatus.Finished)
         {
-            return BadRequest(new ErrorResponse(SemDisparoFuturo));
+            return BadRequest(new ErrorResponse(NoFutureRun));
         }
 
         objCampaign.CurrentVersion++;
@@ -260,7 +260,7 @@ public class CampaignsController : ControllerBase
             Number = objCampaign.CurrentVersion,
             Name = sName,
             ConfigJson = objCampaign.ConfigJson,
-            Changes = sMudancas.Length <= 2000 ? sMudancas : sMudancas[..2000],
+            Changes = sChanges.Length <= 2000 ? sChanges : sChanges[..2000],
             CreatedAt = dtNowUtc,
             IDUser = objUserId,
             Username = sUsername,
@@ -268,7 +268,7 @@ public class CampaignsController : ControllerBase
         AddEvent(objCampaign.Id, null, CampaignEventAction.Edited, objUserId, sUsername, dtNowUtc);
         await _objDbContext.SaveChangesAsync(objCancellationToken);
 
-        return Ok(CampaignDetailDto.FromEntity(objCampaign, bLigado));
+        return Ok(CampaignDetailDto.FromEntity(objCampaign, bEnabled));
     }
 
     /// <summary>Pausar a campanha impede novos disparos; uma execução em andamento segue (pause-a à parte).</summary>
@@ -299,14 +299,14 @@ public class CampaignsController : ControllerBase
         }
 
         DateTime dtNowUtc = DateTime.UtcNow;
-        DateOnly dtHoje = CompanyTimeZone.Today(CompanyTimeZone.Resolve(objCompany.TimeZone), dtNowUtc);
+        DateOnly dtToday = CompanyTimeZone.Today(CompanyTimeZone.Resolve(objCompany.TimeZone), dtNowUtc);
         Guid? objCampaignId = objRequest.CampaignId is Guid objId && await _objDbContext.Campaigns.AnyAsync(
             campaign => campaign.Id == objId && campaign.IDCompany == objCompany.Id, objCancellationToken)
             ? objId
             : null;
 
         IQueryable<Customer> objAudience = CampaignAudience.Query(
-            _objDbContext, objCompany.Id, objCampaignId, objRequest.Kind, objRequest.Config, dtHoje, dtNowUtc);
+            _objDbContext, objCompany.Id, objCampaignId, objRequest.Kind, objRequest.Config, dtToday, dtNowUtc);
         // Usuário de unidade: conta e mostra de exemplo só clientes das unidades dele (o cliente vai
         // para a unidade da última visita).
         AccessScope objScope = await AccessScope.LoadAsync(_objDbContext, User, objCancellationToken);
@@ -317,25 +317,25 @@ public class CampaignsController : ControllerBase
                 customer.IDLastUnit != null && arrUnits.Contains(customer.IDLastUnit.Value));
         }
         int iCount = await objAudience.CountAsync(objCancellationToken);
-        Customer? objExemplo = await objAudience.AsNoTracking()
+        Customer? objSample = await objAudience.AsNoTracking()
             .OrderByDescending(customer => customer.LastVisitAt)
             .FirstOrDefaultAsync(objCancellationToken);
 
-        string? sMensagem = null;
-        if (objExemplo is not null)
+        string? sMessage = null;
+        if (objSample is not null)
         {
-            string sUnidade = objExemplo.IDLastUnit is Guid objUnitId
+            string sUnit = objSample.IDLastUnit is Guid objUnitId
                 ? await _objDbContext.Units.AsNoTracking()
                     .Where(unit => unit.Id == objUnitId).Select(unit => unit.Name)
                     .FirstOrDefaultAsync(objCancellationToken) ?? ""
                 : "";
-            sMensagem = CampaignMessage.Render(objRequest.Config.Message ?? "", new CampaignMessageData(
-                objExemplo.Name, objCompany.Name, sUnidade,
-                CampaignMessage.AgeOn(objExemplo.BirthDate, dtHoje),
-                CampaignMessage.FullYearsBetween(objExemplo.FirstVisitDate, dtHoje)));
+            sMessage = CampaignMessage.Render(objRequest.Config.Message ?? "", new CampaignMessageData(
+                objSample.Name, objCompany.Name, sUnit,
+                CampaignMessage.AgeOn(objSample.BirthDate, dtToday),
+                CampaignMessage.FullYearsBetween(objSample.FirstVisitDate, dtToday)));
         }
 
-        return Ok(new AudiencePreviewDto(iCount, dtHoje, objExemplo?.Name, sMensagem));
+        return Ok(new AudiencePreviewDto(iCount, dtToday, objSample?.Name, sMessage));
     }
 
     // -------------------------------------------------------------- Histórico
@@ -446,17 +446,17 @@ public class CampaignsController : ControllerBase
         }
 
         int iTotal = await objQuery.CountAsync(objCancellationToken);
-        List<CampaignRecipient> objPagina = await objQuery
+        List<CampaignRecipient> objPage = await objQuery
             .OrderBy(recipient => recipient.Id)
             .Skip((iPage - 1) * iPageSize)
             .Take(iPageSize)
             .ToListAsync(objCancellationToken);
-        Dictionary<Guid, string> objUnidades = await UnitNamesAsync(objRun.IDCompany, objCancellationToken);
-        List<CampaignRecipientDto> objItems = objPagina
+        Dictionary<Guid, string> objUnits = await UnitNamesAsync(objRun.IDCompany, objCancellationToken);
+        List<CampaignRecipientDto> objItems = objPage
             .Select(recipient => new CampaignRecipientDto(
                 recipient.Id, recipient.Phone, recipient.Name, recipient.Message, recipient.Status,
                 recipient.Reason, recipient.Milestone, recipient.ProcessedAt,
-                recipient.IDUnit is Guid objUnitId ? objUnidades.GetValueOrDefault(objUnitId, "") : "",
+                recipient.IDUnit is Guid objUnitId ? objUnits.GetValueOrDefault(objUnitId, "") : "",
                 recipient.Instagram, recipient.Info, recipient.EventDate))
             .ToList();
         return Ok(new PagedDto<CampaignRecipientDto>(objItems, iTotal, iPage, iPageSize));
@@ -509,15 +509,15 @@ public class CampaignsController : ControllerBase
             return NotFound(new ErrorResponse("Envio não encontrado."));
         }
 
-        CampaignPdfData objDados = await CampaignDeliveryDocument.LoadAsync(
+        CampaignPdfData objData = await CampaignDeliveryDocument.LoadAsync(
             _objDbContext, objRun, objDelivery.IDUnit, CampaignDeliveryDocument.HistoryStatuses, objCancellationToken);
-        if (objDados.Rows.Count == 0)
+        if (objData.Rows.Count == 0)
         {
             return NotFound(new ErrorResponse("Este envio não tem clientes."));
         }
         // A unidade pode ter mudado de nome: o PDF mostra o nome de quando saiu.
-        objDados = objDados with { UnitName = objDelivery.UnitName };
-        return File(CampaignPdf.Build(objDados), "application/pdf", objDelivery.FileName);
+        objData = objData with { UnitName = objDelivery.UnitName };
+        return File(CampaignPdf.Build(objData), "application/pdf", objDelivery.FileName);
     }
 
     /// <summary>Todos os destinatários da execução em CSV (abre no Excel: BOM + CRLF).</summary>
@@ -537,14 +537,14 @@ public class CampaignsController : ControllerBase
             .OrderBy(recipient => recipient.Id)
             .ToListAsync(objCancellationToken);
 
-        Dictionary<Guid, string> objUnidades = await UnitNamesAsync(objRun.IDCompany, objCancellationToken);
+        Dictionary<Guid, string> objUnits = await UnitNamesAsync(objRun.IDCompany, objCancellationToken);
         StringBuilder objCsv = new StringBuilder();
         objCsv.Append("telefone,nome,unidade,informacao,situacao,motivo,processado_em,mensagem\r\n");
         foreach (CampaignRecipient objRecipient in objRecipients)
         {
-            string sUnidade = objRecipient.IDUnit is Guid objUnitId ? objUnidades.GetValueOrDefault(objUnitId, "") : "";
+            string sUnit = objRecipient.IDUnit is Guid objUnitId ? objUnits.GetValueOrDefault(objUnitId, "") : "";
             objCsv.Append(string.Join(',',
-                Csv(objRecipient.Phone), Csv(objRecipient.Name), Csv(sUnidade), Csv(objRecipient.Info),
+                Csv(objRecipient.Phone), Csv(objRecipient.Name), Csv(sUnit), Csv(objRecipient.Info),
                 Csv(StatusLabel(objRecipient.Status)), Csv(objRecipient.Reason ?? ""),
                 Csv(objRecipient.ProcessedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? ""), Csv(objRecipient.Message)));
             objCsv.Append("\r\n");
@@ -573,7 +573,7 @@ public class CampaignsController : ControllerBase
 
     // ---------------------------------------------------------------- Apoio
 
-    private const string SemDisparoFuturo =
+    private const string NoFutureRun =
         "Essa agenda não tem nenhum disparo daqui para frente — confira a data de início, a de fim e o horário.";
 
     private static string? ValidateSave(string sKind, string sName, CampaignConfig? objConfig)
@@ -599,12 +599,12 @@ public class CampaignsController : ControllerBase
             return objError!;
         }
 
-        HashSet<string> objLigados = await EnabledKindsAsync(objCampaign.IDCompany, objCancellationToken);
-        bool bLigado = objLigados.Contains(objCampaign.Kind);
-        bool bPausar = sStatus == CampaignStatus.Paused;
-        if (bPausar ? objCampaign.Status != CampaignStatus.Active : objCampaign.Status != CampaignStatus.Paused)
+        HashSet<string> objEnabled = await EnabledKindsAsync(objCampaign.IDCompany, objCancellationToken);
+        bool bEnabled = objEnabled.Contains(objCampaign.Kind);
+        bool bPause = sStatus == CampaignStatus.Paused;
+        if (bPause ? objCampaign.Status != CampaignStatus.Active : objCampaign.Status != CampaignStatus.Paused)
         {
-            return BadRequest(new ErrorResponse(bPausar
+            return BadRequest(new ErrorResponse(bPause
                 ? "Só dá para pausar uma campanha ativa."
                 : "Só dá para retomar uma campanha pausada."));
         }
@@ -617,13 +617,13 @@ public class CampaignsController : ControllerBase
         objCampaign.Status = sStatus;
         objCampaign.UpdatedAt = dtNowUtc;
         // Retomar recalcula a partir de agora: o que venceu enquanto estava pausada não dispara.
-        CampaignScheduling.RefreshNextRun(objCampaign, CompanyTimeZone.Resolve(sTimeZone), dtNowUtc, bLigado);
+        CampaignScheduling.RefreshNextRun(objCampaign, CompanyTimeZone.Resolve(sTimeZone), dtNowUtc, bEnabled);
 
         (Guid? objUserId, string sUsername) = await CurrentUserAsync(objCancellationToken);
-        AddEvent(objCampaign.Id, null, bPausar ? CampaignEventAction.Paused : CampaignEventAction.Resumed,
+        AddEvent(objCampaign.Id, null, bPause ? CampaignEventAction.Paused : CampaignEventAction.Resumed,
             objUserId, sUsername, dtNowUtc);
         await _objDbContext.SaveChangesAsync(objCancellationToken);
-        return Ok(CampaignDetailDto.FromEntity(objCampaign, bLigado));
+        return Ok(CampaignDetailDto.FromEntity(objCampaign, bEnabled));
     }
 
     private async Task<ActionResult<CampaignRunDto>> SetRunStatusAsync(
@@ -636,7 +636,7 @@ public class CampaignsController : ControllerBase
             return objError!;
         }
 
-        string? sProibido = (sStatus, objRun.Status) switch
+        string? sForbidden = (sStatus, objRun.Status) switch
         {
             (CampaignRunStatus.Paused, CampaignRunStatus.Running) => null,
             (CampaignRunStatus.Paused, _) => "Só dá para pausar uma execução em andamento.",
@@ -646,9 +646,9 @@ public class CampaignsController : ControllerBase
             (CampaignRunStatus.Cancelled, _) => "Esta execução já terminou.",
             _ => "Ação inválida.",
         };
-        if (sProibido is not null)
+        if (sForbidden is not null)
         {
-            return BadRequest(new ErrorResponse(sProibido));
+            return BadRequest(new ErrorResponse(sForbidden));
         }
 
         DateTime dtNowUtc = DateTime.UtcNow;
@@ -784,14 +784,14 @@ public class CampaignsController : ControllerBase
         }
 
         Guid[] arrRuns = objRuns.Select(run => run.Id).ToArray();
-        List<RunStatusCount> objContagem = await ApplyScope(_objDbContext.CampaignRecipients.AsNoTracking()
+        List<RunStatusCount> objCounts = await ApplyScope(_objDbContext.CampaignRecipients.AsNoTracking()
                 .Where(recipient => arrRuns.Contains(recipient.IDRun)), objScope)
             .GroupBy(recipient => new { recipient.IDRun, recipient.Status })
-            .Select(grupo => new RunStatusCount(grupo.Key.IDRun, grupo.Key.Status, grupo.Count()))
+            .Select(group => new RunStatusCount(group.Key.IDRun, group.Key.Status, group.Count()))
             .ToListAsync(objCancellationToken);
 
         return objRuns
-            .Select(run => CampaignRunDto.ForUnits(run, objContagem
+            .Select(run => CampaignRunDto.ForUnits(run, objCounts
                 .Where(item => item.IDRun == run.Id)
                 .ToDictionary(item => item.Status, item => item.Total)))
             .ToList();

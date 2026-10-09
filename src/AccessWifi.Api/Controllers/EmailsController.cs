@@ -64,14 +64,14 @@ public class EmailsController : ControllerBase
             objQuery = objQuery.Where(email => email.Kind == sKind);
         }
 
-        int iTamanho = Math.Clamp(iPageSize, 1, MaxPageSize);
-        int iPagina = Math.Max(1, iPage);
+        int iSize = Math.Clamp(iPageSize, 1, MaxPageSize);
+        int iCurrentPage = Math.Max(1, iPage);
         int iTotal = await objQuery.CountAsync(objCancellationToken);
         List<SentEmail> objEmails = await objQuery
             .OrderByDescending(email => email.SentAt)
             .ThenByDescending(email => email.Id)
-            .Skip((iPagina - 1) * iTamanho)
-            .Take(iTamanho)
+            .Skip((iCurrentPage - 1) * iSize)
+            .Take(iSize)
             .ToListAsync(objCancellationToken);
 
         return Ok(new SentEmailPageDto(objEmails.Select(SentEmailListItemDto.FromEntity).ToList(), iTotal));
@@ -108,23 +108,23 @@ public class EmailsController : ControllerBase
             {
                 return NotFound(new ErrorResponse("A execução desta campanha não existe mais."));
             }
-            CampaignPdfData objDados = await CampaignDeliveryDocument.LoadAsync(
+            CampaignPdfData objData = await CampaignDeliveryDocument.LoadAsync(
                 _objDbContext, objRun, objEmail.IDUnit, CampaignDeliveryDocument.HistoryStatuses, objCancellationToken);
-            if (objDados.Rows.Count == 0)
+            if (objData.Rows.Count == 0)
             {
                 return NotFound(new ErrorResponse(
                     "A lista de clientes deste envio já foi apagada pela regra de retenção (LGPD), então o PDF não pode ser remontado."));
             }
             // A unidade pode ter mudado de nome: o PDF mostra o nome de quando saiu.
-            objDados = objDados with { UnitName = objEmail.UnitName };
-            return File(CampaignPdf.Build(objDados), "application/pdf", objEmail.AttachmentName);
+            objData = objData with { UnitName = objEmail.UnitName };
+            return File(CampaignPdf.Build(objData), "application/pdf", objEmail.AttachmentName);
         }
 
         if (objEmail.Kind == SentEmailKind.Report && objEmail.IDUnit is Guid objUnitId
-            && objEmail.PeriodStart is DateTime dtInicio && objEmail.PeriodEnd is DateTime dtFim)
+            && objEmail.PeriodStart is DateTime dtStart && objEmail.PeriodEnd is DateTime dtEnd)
         {
             List<LeadReportRow> objRows = await _objDbContext.Leads.AsNoTracking()
-                .Where(lead => lead.IDUnit == objUnitId && lead.CreatedAt >= dtInicio && lead.CreatedAt < dtFim)
+                .Where(lead => lead.IDUnit == objUnitId && lead.CreatedAt >= dtStart && lead.CreatedAt < dtEnd)
                 .OrderBy(lead => lead.CreatedAt)
                 .Select(lead => new LeadReportRow(lead, objEmail.UnitName))
                 .ToListAsync(objCancellationToken);
@@ -165,8 +165,8 @@ public class EmailsController : ControllerBase
             .Where(email => email.IDCompany == objCompanyId);
         if (objScope.IsUnitRestricted)
         {
-            Guid[] arrUnidades = objScope.UnitIds;
-            objQuery = objQuery.Where(email => email.IDUnit != null && arrUnidades.Contains(email.IDUnit.Value));
+            Guid[] arrUnits = objScope.UnitIds;
+            objQuery = objQuery.Where(email => email.IDUnit != null && arrUnits.Contains(email.IDUnit.Value));
         }
         return (objQuery, null);
     }

@@ -148,19 +148,19 @@ namespace Models.Campaigns
                     company.TimeZone,
                 }).ToListAsync(objCancellationToken);
 
-            int iCriados = 0;
+            int iCreated = 0;
             foreach (var objGroup in objLeads
-                .Select(item => new { item.Lead, item.IDCompany, item.TimeZone, Phone = NormalizePhone(item.Lead.Telefone) })
+                .Select(item => new { item.Lead, item.IDCompany, item.TimeZone, Phone = NormalizePhone(item.Lead.Phone) })
                 .Where(item => item.Phone.Length is >= MinPhoneDigits and <= MaxPhoneDigits)
                 .GroupBy(item => new { item.IDCompany, item.Phone }))
             {
                 TimeZoneInfo objZone = CompanyTimeZone.Resolve(objGroup.First().TimeZone);
-                List<Lead> objDoCliente = objGroup.Select(item => item.Lead).ToList();
-                Lead objMaisRecente = objDoCliente.OrderByDescending(lead => lead.Timestamp).First();
-                DateTime dtFirst = objDoCliente.Min(lead => lead.CreatedAt);
+                List<Lead> objCustomerLeads = objGroup.Select(item => item.Lead).ToList();
+                Lead objMostRecent = objCustomerLeads.OrderByDescending(lead => lead.Timestamp).First();
+                DateTime dtFirst = objCustomerLeads.Min(lead => lead.CreatedAt);
                 DateOnly dtToday = CompanyTimeZone.Today(objZone, dtNowUtc);
 
-                int iDias = objDoCliente
+                int iDays = objCustomerLeads
                     .SelectMany(lead => new[] { lead.CreatedAt, lead.Timestamp })
                     .Select(dtVisit => CompanyTimeZone.Today(objZone, dtVisit))
                     .Distinct()
@@ -170,41 +170,41 @@ namespace Models.Campaigns
                 {
                     IDCompany = objGroup.Key.IDCompany,
                     Phone = objGroup.Key.Phone,
-                    Name = Truncate(objMaisRecente.Nome.Trim(), 200),
+                    Name = Truncate(objMostRecent.Name.Trim(), 200),
                     Instagram = Truncate(
-                        objDoCliente.OrderByDescending(lead => lead.Timestamp)
+                        objCustomerLeads.OrderByDescending(lead => lead.Timestamp)
                             .Select(lead => lead.Instagram.Trim())
                             .FirstOrDefault(sValue => sValue.Length > 0) ?? "",
                         100),
-                    BirthDate = objDoCliente.OrderByDescending(lead => lead.Timestamp)
-                        .Select(lead => ParseBirthDate(lead.Nascimento, dtToday))
+                    BirthDate = objCustomerLeads.OrderByDescending(lead => lead.Timestamp)
+                        .Select(lead => ParseBirthDate(lead.BirthDate, dtToday))
                         .FirstOrDefault(dtBirth => dtBirth is not null),
                     FirstVisitAt = dtFirst,
                     FirstVisitDate = CompanyTimeZone.Today(objZone, dtFirst),
-                    LastVisitAt = objMaisRecente.Timestamp,
-                    LastVisitDate = CompanyTimeZone.Today(objZone, objMaisRecente.Timestamp),
-                    VisitCount = Math.Max(1, iDias),
-                    IDLastUnit = objMaisRecente.IDUnit,
+                    LastVisitAt = objMostRecent.Timestamp,
+                    LastVisitDate = CompanyTimeZone.Today(objZone, objMostRecent.Timestamp),
+                    VisitCount = Math.Max(1, iDays),
+                    IDLastUnit = objMostRecent.IDUnit,
                     CreatedAt = dtNowUtc,
                     UpdatedAt = dtNowUtc,
                 };
                 objDbContext.Customers.Add(objCustomer);
 
-                foreach (IGrouping<Guid, Lead> objPorUnidade in objDoCliente.GroupBy(lead => lead.IDUnit))
+                foreach (IGrouping<Guid, Lead> objByUnit in objCustomerLeads.GroupBy(lead => lead.IDUnit))
                 {
                     objDbContext.CustomerUnits.Add(new CustomerUnit
                     {
                         IDCustomer = objCustomer.Id,
-                        IDUnit = objPorUnidade.Key,
-                        FirstVisitAt = objPorUnidade.Min(lead => lead.CreatedAt),
-                        LastVisitAt = objPorUnidade.Max(lead => lead.Timestamp),
+                        IDUnit = objByUnit.Key,
+                        FirstVisitAt = objByUnit.Min(lead => lead.CreatedAt),
+                        LastVisitAt = objByUnit.Max(lead => lead.Timestamp),
                     });
                 }
-                iCriados++;
+                iCreated++;
             }
 
             await objDbContext.SaveChangesAsync(objCancellationToken);
-            return iCriados;
+            return iCreated;
         }
 
         private static string Truncate(string sValue, int iMax) => sValue.Length <= iMax ? sValue : sValue[..iMax];

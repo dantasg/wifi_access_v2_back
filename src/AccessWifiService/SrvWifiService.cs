@@ -73,7 +73,7 @@ namespace AccessWifiService
         }
 
         private async Task RunJobAsync(
-            string sNome, Func<IServiceScope, Task> objJob, CancellationToken objCancellationToken)
+            string sName, Func<IServiceScope, Task> objJob, CancellationToken objCancellationToken)
         {
             try
             {
@@ -87,7 +87,7 @@ namespace AccessWifiService
             }
             catch (Exception objException)
             {
-                _objLogger.LogError(objException, "Falha no ciclo diário: {Tarefa}.", sNome);
+                _objLogger.LogError(objException, "Falha no ciclo diário: {Tarefa}.", sName);
             }
         }
 

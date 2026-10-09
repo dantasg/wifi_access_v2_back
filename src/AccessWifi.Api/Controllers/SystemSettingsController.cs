@@ -76,10 +76,10 @@ public partial class SystemSettingsController : ControllerBase
         string sFromEmail = (objSmtp.FromEmail ?? "").Trim();
         string sFromName = string.IsNullOrWhiteSpace(objSmtp.FromName) ? DefaultFromName : objSmtp.FromName.Trim();
 
-        string? sErro = Validate(sHost, iPort, sUsername, objSmtp.Password, sFromEmail, sFromName);
-        if (sErro is not null)
+        string? sError = Validate(sHost, iPort, sUsername, objSmtp.Password, sFromEmail, sFromName);
+        if (sError is not null)
         {
-            return BadRequest(new ErrorResponse(sErro));
+            return BadRequest(new ErrorResponse(sError));
         }
 
         Dictionary<string, string> dicValues = new Dictionary<string, string>
@@ -101,12 +101,12 @@ public partial class SystemSettingsController : ControllerBase
         }
 
         string[] arrKeys = [.. dicValues.Keys];
-        List<Configuration> objAtuais = await _objDbContext.Configurations
+        List<Configuration> objCurrent = await _objDbContext.Configurations
             .Where(config => arrKeys.Contains(config.IDConfiguration))
             .ToListAsync(objCancellationToken);
         foreach (KeyValuePair<string, string> objPair in dicValues)
         {
-            Configuration? objRow = objAtuais.FirstOrDefault(config => config.IDConfiguration == objPair.Key);
+            Configuration? objRow = objCurrent.FirstOrDefault(config => config.IDConfiguration == objPair.Key);
             if (objRow is null)
             {
                 _objDbContext.Configurations.Add(new Configuration { IDConfiguration = objPair.Key, Value = objPair.Value });

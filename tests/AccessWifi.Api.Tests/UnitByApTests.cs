@@ -22,9 +22,9 @@ namespace AccessWifi.Api.Tests;
 /// AP (que a UniFi manda em toda visita) diz de qual loja é. A Itaituba, que já usa o portal pelo endereço,
 /// não pode parar em nenhum passo — vários testes abaixo existem só para isso.
 /// </summary>
-public class UnidadePeloApTests
+public class UnitByApTests
 {
-    private const string HostCompartilhado = "vps11702.panel.icontainer.online";
+    private const string SharedHost = "vps11702.panel.icontainer.online";
     private const string ConsoleItaituba = "58D61F5E1531000000000A2C62C1000000006921:896725606";
     private const string ConsoleCameta = "70A7413F0E9A00000000079D4F6A000000000841:1281399421";
     private const string ApItaituba = "8c:30:66:4e:9b:58";
@@ -35,9 +35,9 @@ public class UnidadePeloApTests
 
     private class FakeCloud : HttpMessageHandler
     {
-        public int IChamadas { get; private set; }
+        public int ICalls { get; private set; }
         public HttpStatusCode Status { get; set; } = HttpStatusCode.OK;
-        public TimeSpan Atraso { get; set; } = TimeSpan.Zero;
+        public TimeSpan Delay { get; set; } = TimeSpan.Zero;
 
         /// <summary>hostId → aparelhos (mac, nome, modelo).</summary>
         public Dictionary<string, List<(string Mac, string Name, string Model)>> ObjConsoles { get; } = [];
@@ -45,10 +45,10 @@ public class UnidadePeloApTests
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage objRequest, CancellationToken objCancellationToken)
         {
-            IChamadas++;
-            if (Atraso > TimeSpan.Zero)
+            ICalls++;
+            if (Delay > TimeSpan.Zero)
             {
-                await Task.Delay(Atraso, objCancellationToken);
+                await Task.Delay(Delay, objCancellationToken);
             }
             Assert.Equal(ApiKey, objRequest.Headers.GetValues("X-API-KEY").Single());
             Assert.StartsWith("https://api.ui.com/v1/devices", objRequest.RequestUri!.ToString());
@@ -78,12 +78,12 @@ public class UnidadePeloApTests
 
     private class FakeUnifiClient : IUnifiClient
     {
-        public CompanyUnifi? ObjConfigRecebida { get; private set; }
+        public CompanyUnifi? ObjReceivedConfig { get; private set; }
 
         public Task AuthorizeGuestAsync(
             CompanyUnifi objConfig, string sMac, int iAccessMinutes, CancellationToken objCancellationToken = default)
         {
-            ObjConfigRecebida = objConfig;
+            ObjReceivedConfig = objConfig;
             return Task.CompletedTask;
         }
 
@@ -92,14 +92,14 @@ public class UnidadePeloApTests
     }
 
     /// <summary>Banco compartilhado entre o "request" do teste e o escopo próprio da leitura na hora.</summary>
-    private sealed class Ambiente : IDisposable
+    private sealed class TestEnvironment : IDisposable
     {
         public FakeCloud ObjCloud { get; } = new FakeCloud();
         public ServiceProvider ObjServices { get; }
         public AppDbContext ObjDb { get; }
         public IMemoryCache ObjCache { get; } = new MemoryCache(new MemoryCacheOptions());
 
-        public Ambiente()
+        public TestEnvironment()
         {
             string sDbName = Guid.NewGuid().ToString();
             InMemoryDatabaseRoot objRoot = new InMemoryDatabaseRoot();
@@ -168,10 +168,10 @@ public class UnidadePeloApTests
     }
 
     /// <summary>Itaituba como está em produção: nuvem, endereço do portal = o endereço compartilhado.</summary>
-    private static (Unit Itaituba, Unit Cameta) CreateLojas(AppDbContext objDb)
+    private static (Unit Itaituba, Unit Cameta) CreateStores(AppDbContext objDb)
     {
         Company objCompany = CreateCompany(objDb);
-        Unit objItaituba = CreateCloudUnit(objDb, objCompany, "itaituba", ConsoleItaituba, HostCompartilhado);
+        Unit objItaituba = CreateCloudUnit(objDb, objCompany, "itaituba", ConsoleItaituba, SharedHost);
         Unit objCameta = CreateCloudUnit(objDb, objCompany, "cameta-04", ConsoleCameta);
         return (objItaituba, objCameta);
     }
@@ -189,121 +189,121 @@ public class UnidadePeloApTests
     [InlineData("8c:30:66:4e:9b:58:00", "")]
     [InlineData("zz:30:66:4e:9b:58", "")]
     [InlineData("8c:30:66:4e:9b:58-lixo-que-nao-e-mac", "")]
-    public void MacAddress_Normaliza(string? sEntrada, string sEsperado)
+    public void MacAddress_Normalizes(string? sInput, string sExpected)
     {
-        Assert.Equal(sEsperado, MacAddress.Normalize(sEntrada));
+        Assert.Equal(sExpected, MacAddress.Normalize(sInput));
     }
 
     // ---------------------------------------------------------------- Locator (só banco)
 
     [Fact]
-    public async Task Locator_ApConhecido_AchaALojaDoAp_MesmoNoEnderecoDeOutra()
+    public async Task Locator_KnownAp_FindsApStore_EvenOnAnotherAddress()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        (Unit objItaituba, Unit objCameta) = CreateLojas(objDb);
+        (Unit objItaituba, Unit objCameta) = CreateStores(objDb);
         AddDevice(objDb, objItaituba, ApItaituba);
         AddDevice(objDb, objCameta, ApCameta);
 
-        Unit? objUnit = await new UnitLocator(objDb).FindAsync(objDb.Units, null, HostCompartilhado, "D0-21-F9-AA-BB-01");
+        Unit? objUnit = await new UnitLocator(objDb).FindAsync(objDb.Units, null, SharedHost, "D0-21-F9-AA-BB-01");
 
         Assert.Equal(objCameta.Id, objUnit?.Id);
     }
 
     [Fact]
-    public async Task Locator_ItaitubaPeloAp()
+    public async Task Locator_ItaitubaByAp()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        (Unit objItaituba, Unit objCameta) = CreateLojas(objDb);
+        (Unit objItaituba, Unit objCameta) = CreateStores(objDb);
         AddDevice(objDb, objItaituba, ApItaituba);
         AddDevice(objDb, objCameta, ApCameta);
 
-        Unit? objUnit = await new UnitLocator(objDb).FindAsync(objDb.Units, null, HostCompartilhado, ApItaituba);
+        Unit? objUnit = await new UnitLocator(objDb).FindAsync(objDb.Units, null, SharedHost, ApItaituba);
 
         Assert.Equal(objItaituba.Id, objUnit?.Id);
     }
 
     [Fact]
-    public async Task Locator_SlugTemPrioridadeSobreOAp()
+    public async Task Locator_SlugTakesPriorityOverAp()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        (Unit objItaituba, Unit objCameta) = CreateLojas(objDb);
+        (Unit objItaituba, Unit objCameta) = CreateStores(objDb);
         AddDevice(objDb, objCameta, ApCameta);
 
-        Unit? objUnit = await new UnitLocator(objDb).FindAsync(objDb.Units, "itaituba", HostCompartilhado, ApCameta);
+        Unit? objUnit = await new UnitLocator(objDb).FindAsync(objDb.Units, "itaituba", SharedHost, ApCameta);
 
         Assert.Equal(objItaituba.Id, objUnit?.Id);
     }
 
     [Fact]
-    public async Task Locator_SemAp_ContinuaPeloEndereco()
+    public async Task Locator_NoAp_KeepsWorkingByAddress()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        (Unit objItaituba, Unit objCameta) = CreateLojas(objDb);
+        (Unit objItaituba, Unit objCameta) = CreateStores(objDb);
         AddDevice(objDb, objItaituba, ApItaituba);
 
-        Unit? objUnit = await new UnitLocator(objDb).FindAsync(objDb.Units, null, HostCompartilhado, null);
+        Unit? objUnit = await new UnitLocator(objDb).FindAsync(objDb.Units, null, SharedHost, null);
 
         Assert.Equal(objItaituba.Id, objUnit?.Id);
     }
 
     [Fact]
-    public async Task Locator_AntesDaPrimeiraLeitura_ItaitubaContinuaPeloEndereco()
+    public async Task Locator_BeforeFirstRead_ItaitubaKeepsWorkingByAddress()
     {
         // Logo depois do deploy ainda não há aparelho gravado: nada pode mudar para a Itaituba.
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        (Unit objItaituba, _) = CreateLojas(objDb);
+        (Unit objItaituba, _) = CreateStores(objDb);
 
-        Unit? objUnit = await new UnitLocator(objDb).FindAsync(objDb.Units, null, HostCompartilhado, ApItaituba);
+        Unit? objUnit = await new UnitLocator(objDb).FindAsync(objDb.Units, null, SharedHost, ApItaituba);
 
         Assert.Equal(objItaituba.Id, objUnit?.Id);
     }
 
     [Fact]
-    public async Task Locator_ApDesconhecido_ComListaNaUnidadeDoEndereco_NaoChuta()
+    public async Task Locator_UnknownAp_WithListOnAddressUnit_DoesNotGuess()
     {
         // O endereço é de todas as lojas: AP que ninguém conhece não pode virar cadastro da Itaituba.
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        (Unit objItaituba, _) = CreateLojas(objDb);
+        (Unit objItaituba, _) = CreateStores(objDb);
         AddDevice(objDb, objItaituba, ApItaituba);
 
-        Unit? objUnit = await new UnitLocator(objDb).FindAsync(objDb.Units, null, HostCompartilhado, "aa:aa:aa:aa:aa:aa");
+        Unit? objUnit = await new UnitLocator(objDb).FindAsync(objDb.Units, null, SharedHost, "aa:aa:aa:aa:aa:aa");
 
         Assert.Null(objUnit);
     }
 
     [Fact]
-    public async Task Locator_ApLixo_ValeComoSemAp()
+    public async Task Locator_GarbageAp_CountsAsNoAp()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        (Unit objItaituba, _) = CreateLojas(objDb);
+        (Unit objItaituba, _) = CreateStores(objDb);
         AddDevice(objDb, objItaituba, ApItaituba);
 
-        Unit? objUnit = await new UnitLocator(objDb).FindAsync(objDb.Units, null, HostCompartilhado, "nao-e-mac");
+        Unit? objUnit = await new UnitLocator(objDb).FindAsync(objDb.Units, null, SharedHost, "nao-e-mac");
 
         Assert.Equal(objItaituba.Id, objUnit?.Id);
     }
 
     [Fact]
-    public async Task Locator_ApEmDuasUnidades_SoAceitaSeAUnidadeDoEnderecoForUmaDelas()
+    public async Task Locator_ApInTwoUnits_AcceptsOnlyIfAddressUnitIsOneOfThem()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        (Unit objItaituba, Unit objCameta) = CreateLojas(objDb);
-        Unit objOutra = CreateCloudUnit(objDb, objDb.Companies.Single(), "santarem", ConsoleCameta);
+        (Unit objItaituba, Unit objCameta) = CreateStores(objDb);
+        Unit objOther = CreateCloudUnit(objDb, objDb.Companies.Single(), "santarem", ConsoleCameta);
         AddDevice(objDb, objItaituba, ApItaituba);
         AddDevice(objDb, objCameta, ApItaituba);
         AddDevice(objDb, objCameta, ApCameta);
-        AddDevice(objDb, objOutra, ApCameta);
+        AddDevice(objDb, objOther, ApCameta);
 
         UnitLocator objLocator = new UnitLocator(objDb);
-        Assert.Equal(objItaituba.Id, (await objLocator.FindAsync(objDb.Units, null, HostCompartilhado, ApItaituba))?.Id);
-        Assert.Null(await objLocator.FindAsync(objDb.Units, null, HostCompartilhado, ApCameta));
+        Assert.Equal(objItaituba.Id, (await objLocator.FindAsync(objDb.Units, null, SharedHost, ApItaituba))?.Id);
+        Assert.Null(await objLocator.FindAsync(objDb.Units, null, SharedHost, ApCameta));
     }
 
     [Fact]
-    public async Task Locator_SemSlugSemHostSemAp_Nulo()
+    public async Task Locator_NoSlugNoHostNoAp_Null()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        CreateLojas(objDb);
+        CreateStores(objDb);
 
         Assert.Null(await new UnitLocator(objDb).FindAsync(objDb.Units, null, null, null));
         Assert.Null(await new UnitLocator(objDb).FindAsync(objDb.Units, null, "  ", ""));
@@ -312,167 +312,167 @@ public class UnidadePeloApTests
     // ---------------------------------------------------------------- leitura da nuvem
 
     [Fact]
-    public async Task Sync_GravaOsApsDeCadaConsole_UmaChamadaPorChave()
+    public async Task Sync_SavesApsOfEachConsole_OneCallPerKey()
     {
-        using Ambiente objAmb = new Ambiente();
-        (Unit objItaituba, Unit objCameta) = CreateLojas(objAmb.ObjDb);
-        objAmb.ObjCloud.ObjConsoles[ConsoleItaituba] =
+        using TestEnvironment objEnv = new TestEnvironment();
+        (Unit objItaituba, Unit objCameta) = CreateStores(objEnv.ObjDb);
+        objEnv.ObjCloud.ObjConsoles[ConsoleItaituba] =
         [
             ("8C:30:66:4E:9B:58", "AP Salão", "U6 Lite"),
             ("8c:30:66:4e:9b:59", "AP Caixa", "U6 Lite"),
             ("70:a7:41:00:00:01", "UDR", "UDR"),
         ];
-        objAmb.ObjCloud.ObjConsoles[ConsoleCameta] = [(ApCameta, "AP", "U6 Lite")];
-        objAmb.ObjCloud.ObjConsoles["console-de-outra-empresa"] = [("11:11:11:11:11:11", "AP", "U6 Lite")];
+        objEnv.ObjCloud.ObjConsoles[ConsoleCameta] = [(ApCameta, "AP", "U6 Lite")];
+        objEnv.ObjCloud.ObjConsoles["console-de-outra-empresa"] = [("11:11:11:11:11:11", "AP", "U6 Lite")];
 
-        UnitDeviceSync.Result objResult = await objAmb.Sync().SyncAsync();
+        UnitDeviceSync.Result objResult = await objEnv.Sync().SyncAsync();
 
         Assert.Equal(new UnitDeviceSync.Result(2, 4, 0), objResult);
-        Assert.Equal(1, objAmb.ObjCloud.IChamadas);
-        List<string> objMacsItaituba = objAmb.ObjDb.UnitDevices
+        Assert.Equal(1, objEnv.ObjCloud.ICalls);
+        List<string> objMacsItaituba = objEnv.ObjDb.UnitDevices
             .Where(device => device.IDUnit == objItaituba.Id).Select(device => device.Mac).OrderBy(sMac => sMac).ToList();
         Assert.Equal(new List<string> { "70:a7:41:00:00:01", "8c:30:66:4e:9b:58", "8c:30:66:4e:9b:59" }, objMacsItaituba);
-        Assert.False(objAmb.ObjDb.UnitDevices.Any(device => device.Mac == "11:11:11:11:11:11"));
-        Assert.Equal("AP Salão", objAmb.ObjDb.UnitDevices.Single(device => device.Mac == ApItaituba).Name);
-        Assert.NotNull(objAmb.ObjDb.Units.Single(unit => unit.Id == objCameta.Id).DevicesSyncedAt);
+        Assert.False(objEnv.ObjDb.UnitDevices.Any(device => device.Mac == "11:11:11:11:11:11"));
+        Assert.Equal("AP Salão", objEnv.ObjDb.UnitDevices.Single(device => device.Mac == ApItaituba).Name);
+        Assert.NotNull(objEnv.ObjDb.Units.Single(unit => unit.Id == objCameta.Id).DevicesSyncedAt);
     }
 
     [Fact]
-    public async Task Sync_ApQueSaiuDoConsole_DeixaDeContar_EONovoEntra()
+    public async Task Sync_ApRemovedFromConsole_StopsCounting_AndNewOneEnters()
     {
-        using Ambiente objAmb = new Ambiente();
-        (Unit objItaituba, _) = CreateLojas(objAmb.ObjDb);
-        AddDevice(objAmb.ObjDb, objItaituba, "8c:30:66:00:00:99");
-        AddDevice(objAmb.ObjDb, objItaituba, ApItaituba);
-        objAmb.ObjCloud.ObjConsoles[ConsoleItaituba] = [(ApItaituba, "AP Salão", "U6 Lite"), ("8c:30:66:00:00:01", "AP Novo", "U7")];
+        using TestEnvironment objEnv = new TestEnvironment();
+        (Unit objItaituba, _) = CreateStores(objEnv.ObjDb);
+        AddDevice(objEnv.ObjDb, objItaituba, "8c:30:66:00:00:99");
+        AddDevice(objEnv.ObjDb, objItaituba, ApItaituba);
+        objEnv.ObjCloud.ObjConsoles[ConsoleItaituba] = [(ApItaituba, "AP Salão", "U6 Lite"), ("8c:30:66:00:00:01", "AP Novo", "U7")];
 
-        await objAmb.Sync().SyncAsync();
+        await objEnv.Sync().SyncAsync();
 
-        List<string> objMacs = objAmb.ObjDb.UnitDevices.AsNoTracking()
+        List<string> objMacs = objEnv.ObjDb.UnitDevices.AsNoTracking()
             .Where(device => device.IDUnit == objItaituba.Id).Select(device => device.Mac).OrderBy(sMac => sMac).ToList();
         Assert.Equal(new List<string> { "8c:30:66:00:00:01", ApItaituba }, objMacs);
     }
 
     [Fact]
-    public async Task Sync_NuvemFalhou_MantemOsApsJaGravados_EAnotaOMotivo()
+    public async Task Sync_CloudFailed_KeepsSavedAps_AndRecordsReason()
     {
-        using Ambiente objAmb = new Ambiente();
-        (Unit objItaituba, _) = CreateLojas(objAmb.ObjDb);
-        AddDevice(objAmb.ObjDb, objItaituba, ApItaituba);
-        objAmb.ObjCloud.Status = HttpStatusCode.Unauthorized;
+        using TestEnvironment objEnv = new TestEnvironment();
+        (Unit objItaituba, _) = CreateStores(objEnv.ObjDb);
+        AddDevice(objEnv.ObjDb, objItaituba, ApItaituba);
+        objEnv.ObjCloud.Status = HttpStatusCode.Unauthorized;
 
-        UnitDeviceSync.Result objResult = await objAmb.Sync().SyncAsync();
+        UnitDeviceSync.Result objResult = await objEnv.Sync().SyncAsync();
 
         Assert.Equal(2, objResult.Failures);
-        Assert.True(objAmb.ObjDb.UnitDevices.Any(device => device.Mac == ApItaituba));
-        Assert.Contains("inválida", objAmb.ObjDb.Units.Single(unit => unit.Id == objItaituba.Id).DevicesSyncError);
+        Assert.True(objEnv.ObjDb.UnitDevices.Any(device => device.Mac == ApItaituba));
+        Assert.Contains("inválida", objEnv.ObjDb.Units.Single(unit => unit.Id == objItaituba.Id).DevicesSyncError);
     }
 
     [Fact]
-    public async Task Sync_ConsoleSemAparelhoNaNuvem_MantemOsGravados()
+    public async Task Sync_ConsoleWithoutCloudDevices_KeepsSavedOnes()
     {
-        using Ambiente objAmb = new Ambiente();
-        (Unit objItaituba, _) = CreateLojas(objAmb.ObjDb);
-        AddDevice(objAmb.ObjDb, objItaituba, ApItaituba);
-        objAmb.ObjCloud.ObjConsoles[ConsoleCameta] = [(ApCameta, "AP", "U6 Lite")];
+        using TestEnvironment objEnv = new TestEnvironment();
+        (Unit objItaituba, _) = CreateStores(objEnv.ObjDb);
+        AddDevice(objEnv.ObjDb, objItaituba, ApItaituba);
+        objEnv.ObjCloud.ObjConsoles[ConsoleCameta] = [(ApCameta, "AP", "U6 Lite")];
 
-        await objAmb.Sync().SyncAsync();
+        await objEnv.Sync().SyncAsync();
 
-        Assert.True(objAmb.ObjDb.UnitDevices.Any(device => device.Mac == ApItaituba));
-        Assert.StartsWith("Nenhum aparelho", objAmb.ObjDb.Units.Single(unit => unit.Id == objItaituba.Id).DevicesSyncError);
+        Assert.True(objEnv.ObjDb.UnitDevices.Any(device => device.Mac == ApItaituba));
+        Assert.StartsWith("Nenhum aparelho", objEnv.ObjDb.Units.Single(unit => unit.Id == objItaituba.Id).DevicesSyncError);
     }
 
     [Fact]
-    public async Task Sync_IgnoraUnidadeLocalEInativa()
+    public async Task Sync_IgnoresLocalAndInactiveUnits()
     {
-        using Ambiente objAmb = new Ambiente();
-        (Unit objItaituba, Unit objCameta) = CreateLojas(objAmb.ObjDb);
+        using TestEnvironment objEnv = new TestEnvironment();
+        (Unit objItaituba, Unit objCameta) = CreateStores(objEnv.ObjDb);
         objItaituba.Unifi.Mode = UnifiMode.Local;
         objCameta.Active = false;
-        objAmb.ObjDb.SaveChanges();
+        objEnv.ObjDb.SaveChanges();
 
-        UnitDeviceSync.Result objResult = await objAmb.Sync().SyncAsync();
+        UnitDeviceSync.Result objResult = await objEnv.Sync().SyncAsync();
 
         Assert.Equal(new UnitDeviceSync.Result(0, 0, 0), objResult);
-        Assert.Equal(0, objAmb.ObjCloud.IChamadas);
+        Assert.Equal(0, objEnv.ObjCloud.ICalls);
     }
 
     // ---------------------------------------------------------------- leitura na hora (AP ainda desconhecido)
 
     [Fact]
-    public async Task Locator_ApNovo_LeANuvemNaHora_EAchaALoja()
+    public async Task Locator_NewAp_ReadsCloudAtOnce_AndFindsStore()
     {
-        using Ambiente objAmb = new Ambiente();
-        (Unit objItaituba, Unit objCameta) = CreateLojas(objAmb.ObjDb);
-        AddDevice(objAmb.ObjDb, objItaituba, ApItaituba);
-        objAmb.ObjCloud.ObjConsoles[ConsoleItaituba] = [(ApItaituba, "AP", "U6 Lite")];
-        objAmb.ObjCloud.ObjConsoles[ConsoleCameta] = [(ApCameta, "AP", "U6 Lite")];
+        using TestEnvironment objEnv = new TestEnvironment();
+        (Unit objItaituba, Unit objCameta) = CreateStores(objEnv.ObjDb);
+        AddDevice(objEnv.ObjDb, objItaituba, ApItaituba);
+        objEnv.ObjCloud.ObjConsoles[ConsoleItaituba] = [(ApItaituba, "AP", "U6 Lite")];
+        objEnv.ObjCloud.ObjConsoles[ConsoleCameta] = [(ApCameta, "AP", "U6 Lite")];
 
-        Unit? objUnit = await objAmb.Locator().FindAsync(objAmb.ObjDb.Units, null, HostCompartilhado, ApCameta);
+        Unit? objUnit = await objEnv.Locator().FindAsync(objEnv.ObjDb.Units, null, SharedHost, ApCameta);
 
         Assert.Equal(objCameta.Id, objUnit?.Id);
-        Assert.Equal(1, objAmb.ObjCloud.IChamadas);
+        Assert.Equal(1, objEnv.ObjCloud.ICalls);
     }
 
     [Fact]
-    public async Task Locator_ApConhecido_NaoChamaANuvem()
+    public async Task Locator_KnownAp_DoesNotCallCloud()
     {
-        using Ambiente objAmb = new Ambiente();
-        (Unit objItaituba, _) = CreateLojas(objAmb.ObjDb);
-        AddDevice(objAmb.ObjDb, objItaituba, ApItaituba);
+        using TestEnvironment objEnv = new TestEnvironment();
+        (Unit objItaituba, _) = CreateStores(objEnv.ObjDb);
+        AddDevice(objEnv.ObjDb, objItaituba, ApItaituba);
 
         for (int i = 0; i < 5; i++)
         {
-            Assert.Equal(objItaituba.Id, (await objAmb.Locator().FindAsync(objAmb.ObjDb.Units, null, HostCompartilhado, ApItaituba))?.Id);
+            Assert.Equal(objItaituba.Id, (await objEnv.Locator().FindAsync(objEnv.ObjDb.Units, null, SharedHost, ApItaituba))?.Id);
         }
-        Assert.Equal(0, objAmb.ObjCloud.IChamadas);
+        Assert.Equal(0, objEnv.ObjCloud.ICalls);
     }
 
     [Fact]
-    public async Task Locator_ApInventado_NaoViraEnxurradaNaNuvem()
+    public async Task Locator_MadeUpAp_DoesNotFloodCloud()
     {
-        using Ambiente objAmb = new Ambiente();
-        (Unit objItaituba, _) = CreateLojas(objAmb.ObjDb);
-        AddDevice(objAmb.ObjDb, objItaituba, ApItaituba);
-        objAmb.ObjCloud.ObjConsoles[ConsoleItaituba] = [(ApItaituba, "AP", "U6 Lite")];
+        using TestEnvironment objEnv = new TestEnvironment();
+        (Unit objItaituba, _) = CreateStores(objEnv.ObjDb);
+        AddDevice(objEnv.ObjDb, objItaituba, ApItaituba);
+        objEnv.ObjCloud.ObjConsoles[ConsoleItaituba] = [(ApItaituba, "AP", "U6 Lite")];
 
         for (int i = 0; i < 10; i++)
         {
             string sMac = $"aa:aa:aa:aa:aa:{i:x2}";
-            Assert.Null(await objAmb.Locator().FindAsync(objAmb.ObjDb.Units, null, HostCompartilhado, sMac));
-            Assert.Null(await objAmb.Locator().FindAsync(objAmb.ObjDb.Units, null, HostCompartilhado, sMac));
+            Assert.Null(await objEnv.Locator().FindAsync(objEnv.ObjDb.Units, null, SharedHost, sMac));
+            Assert.Null(await objEnv.Locator().FindAsync(objEnv.ObjDb.Units, null, SharedHost, sMac));
         }
 
         // Uma leitura só: as outras caem no intervalo mínimo de 30 s ou no "já sei que não existe".
-        Assert.Equal(1, objAmb.ObjCloud.IChamadas);
+        Assert.Equal(1, objEnv.ObjCloud.ICalls);
     }
 
     [Fact]
-    public async Task Locator_NuvemLenta_DesisteEmQuatroSegundos_ESegueSemOAp()
+    public async Task Locator_SlowCloud_GivesUpAfterFourSeconds_AndContinuesWithoutAp()
     {
-        using Ambiente objAmb = new Ambiente();
-        (Unit objItaituba, _) = CreateLojas(objAmb.ObjDb);
-        objAmb.ObjCloud.Atraso = TimeSpan.FromSeconds(30);
+        using TestEnvironment objEnv = new TestEnvironment();
+        (Unit objItaituba, _) = CreateStores(objEnv.ObjDb);
+        objEnv.ObjCloud.Delay = TimeSpan.FromSeconds(30);
 
-        System.Diagnostics.Stopwatch objRelogio = System.Diagnostics.Stopwatch.StartNew();
-        Unit? objUnit = await objAmb.Locator().FindAsync(objAmb.ObjDb.Units, null, HostCompartilhado, ApItaituba);
-        objRelogio.Stop();
+        System.Diagnostics.Stopwatch objClock = System.Diagnostics.Stopwatch.StartNew();
+        Unit? objUnit = await objEnv.Locator().FindAsync(objEnv.ObjDb.Units, null, SharedHost, ApItaituba);
+        objClock.Stop();
 
         // Itaituba sem lista ainda: segue pelo endereço, como hoje.
         Assert.Equal(objItaituba.Id, objUnit?.Id);
-        Assert.True(objRelogio.Elapsed < TimeSpan.FromSeconds(8), $"Demorou {objRelogio.Elapsed}.");
+        Assert.True(objClock.Elapsed < TimeSpan.FromSeconds(8), $"Demorou {objClock.Elapsed}.");
     }
 
     [Fact]
-    public async Task Locator_NuvemForaDoAr_ItaitubaComListaContinua()
+    public async Task Locator_CloudDown_ItaitubaWithListKeepsWorking()
     {
-        using Ambiente objAmb = new Ambiente();
-        (Unit objItaituba, _) = CreateLojas(objAmb.ObjDb);
-        AddDevice(objAmb.ObjDb, objItaituba, ApItaituba);
-        objAmb.ObjCloud.Status = HttpStatusCode.InternalServerError;
+        using TestEnvironment objEnv = new TestEnvironment();
+        (Unit objItaituba, _) = CreateStores(objEnv.ObjDb);
+        AddDevice(objEnv.ObjDb, objItaituba, ApItaituba);
+        objEnv.ObjCloud.Status = HttpStatusCode.InternalServerError;
 
-        await objAmb.Sync().SyncAsync();
-        Unit? objUnit = await objAmb.Locator().FindAsync(objAmb.ObjDb.Units, null, HostCompartilhado, ApItaituba);
+        await objEnv.Sync().SyncAsync();
+        Unit? objUnit = await objEnv.Locator().FindAsync(objEnv.ObjDb.Units, null, SharedHost, ApItaituba);
 
         Assert.Equal(objItaituba.Id, objUnit?.Id);
     }
@@ -480,41 +480,41 @@ public class UnidadePeloApTests
     // ---------------------------------------------------------------- portal (GET /settings e POST /authorize)
 
     [Fact]
-    public async Task Settings_MesmoEndereco_TemaDaLojaDoAp()
+    public async Task Settings_SameAddress_ApStoreTheme()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
         Company objRegional = CreateCompany(objDb, "regional");
-        Company objOutra = CreateCompany(objDb, "outra-rede");
-        Unit objItaituba = CreateCloudUnit(objDb, objRegional, "itaituba", ConsoleItaituba, HostCompartilhado);
-        Unit objLojaOutra = CreateCloudUnit(objDb, objOutra, "outra-loja", ConsoleCameta);
+        Company objOther = CreateCompany(objDb, "outra-rede");
+        Unit objItaituba = CreateCloudUnit(objDb, objRegional, "itaituba", ConsoleItaituba, SharedHost);
+        Unit objOtherStore = CreateCloudUnit(objDb, objOther, "outra-loja", ConsoleCameta);
         AddDevice(objDb, objItaituba, ApItaituba);
-        AddDevice(objDb, objLojaOutra, ApCameta);
+        AddDevice(objDb, objOtherStore, ApCameta);
         SettingsController objController = new SettingsController(objDb, new UnitLocator(objDb));
 
-        ActionResult<SettingsDto> objResult = await objController.Get(null, HostCompartilhado, ApCameta, CancellationToken.None);
+        ActionResult<SettingsDto> objResult = await objController.Get(null, SharedHost, ApCameta, CancellationToken.None);
 
         SettingsDto objDto = Assert.IsType<SettingsDto>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
         Assert.Equal("outra-loja", objDto.Unit);
     }
 
     [Fact]
-    public async Task Settings_ApDesconhecido_404()
+    public async Task Settings_UnknownAp_404()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        (Unit objItaituba, _) = CreateLojas(objDb);
+        (Unit objItaituba, _) = CreateStores(objDb);
         AddDevice(objDb, objItaituba, ApItaituba);
         SettingsController objController = new SettingsController(objDb, new UnitLocator(objDb));
 
-        ActionResult<SettingsDto> objResult = await objController.Get(null, HostCompartilhado, "aa:aa:aa:aa:aa:aa", CancellationToken.None);
+        ActionResult<SettingsDto> objResult = await objController.Get(null, SharedHost, "aa:aa:aa:aa:aa:aa", CancellationToken.None);
 
         Assert.IsType<NotFoundObjectResult>(objResult.Result);
     }
 
     [Fact]
-    public async Task Authorize_PeloAp_GravaNaLojaCerta_ELiberaNaControladoraDela()
+    public async Task Authorize_ByAp_SavesInRightStore_AndAllowsOnItsController()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        (Unit objItaituba, Unit objCameta) = CreateLojas(objDb);
+        (Unit objItaituba, Unit objCameta) = CreateStores(objDb);
         AddDevice(objDb, objItaituba, ApItaituba);
         AddDevice(objDb, objCameta, ApCameta);
         FakeUnifiClient objUnifi = new FakeUnifiClient();
@@ -523,26 +523,26 @@ public class UnidadePeloApTests
 
         ActionResult<AuthorizeResponse> objResult = await objController.Post(
             new AuthorizeRequest("Ana", "@ana", "(93) 98888-1234", "10/05/1990", true, null,
-                "aa:bb:cc:dd:ee:ff", ApCameta, "PIX REGIONAL", null, HostCompartilhado),
+                "aa:bb:cc:dd:ee:ff", ApCameta, "PIX REGIONAL", null, SharedHost),
             CancellationToken.None);
 
         Assert.IsType<OkObjectResult>(objResult.Result);
-        Assert.Equal(ConsoleCameta, objUnifi.ObjConfigRecebida?.ConsoleId);
+        Assert.Equal(ConsoleCameta, objUnifi.ObjReceivedConfig?.ConsoleId);
         Assert.Equal(objCameta.Id, objDb.Leads.Single().IDUnit);
     }
 
     [Fact]
-    public async Task Authorize_ItaitubaComoHoje_SemListaAinda_Libera()
+    public async Task Authorize_ItaitubaAsToday_NoListYet_Allows()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        (Unit objItaituba, _) = CreateLojas(objDb);
+        (Unit objItaituba, _) = CreateStores(objDb);
         FakeUnifiClient objUnifi = new FakeUnifiClient();
         AuthorizeController objController = new AuthorizeController(
             objDb, objUnifi, NullLogger<AuthorizeController>.Instance, new UnitLocator(objDb));
 
         ActionResult<AuthorizeResponse> objResult = await objController.Post(
             new AuthorizeRequest("Ana", "@ana", "(93) 98888-1234", "10/05/1990", true, null,
-                "aa:bb:cc:dd:ee:ff", ApItaituba, "PIX REGIONAL", null, HostCompartilhado),
+                "aa:bb:cc:dd:ee:ff", ApItaituba, "PIX REGIONAL", null, SharedHost),
             CancellationToken.None);
 
         Assert.IsType<OkObjectResult>(objResult.Result);
@@ -552,10 +552,10 @@ public class UnidadePeloApTests
     // ---------------------------------------------------------------- painel
 
     [Fact]
-    public async Task Units_ListaMostraQuantosApsCadaUnidadeTem()
+    public async Task Units_ListShowsHowManyApsEachUnitHas()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        (Unit objItaituba, Unit objCameta) = CreateLojas(objDb);
+        (Unit objItaituba, Unit objCameta) = CreateStores(objDb);
         AddDevice(objDb, objItaituba, ApItaituba);
         AddDevice(objDb, objItaituba, "8c:30:66:4e:9b:59");
         UnitsController objController = new UnitsController(
@@ -570,10 +570,10 @@ public class UnidadePeloApTests
     }
 
     [Fact]
-    public async Task Units_TrocarOConsole_LimpaOsApsAntigos()
+    public async Task Units_ChangeConsole_ClearsOldAps()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        (Unit objItaituba, _) = CreateLojas(objDb);
+        (Unit objItaituba, _) = CreateStores(objDb);
         AddDevice(objDb, objItaituba, ApItaituba);
         UnitsController objController = new UnitsController(
             objDb, TestHelpers.CreateEncryptor(), new FakeUnifiClient(), NullLogger<UnitsController>.Instance);
@@ -587,10 +587,10 @@ public class UnidadePeloApTests
     }
 
     [Fact]
-    public async Task Units_SalvarSemMexerNoConsole_MantemOsAps()
+    public async Task Units_SaveWithoutChangingConsole_KeepsAps()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        (Unit objItaituba, _) = CreateLojas(objDb);
+        (Unit objItaituba, _) = CreateStores(objDb);
         AddDevice(objDb, objItaituba, ApItaituba);
         UnitsController objController = new UnitsController(
             objDb, TestHelpers.CreateEncryptor(), new FakeUnifiClient(), NullLogger<UnitsController>.Instance);

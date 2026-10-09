@@ -77,20 +77,20 @@ public partial class UnifiCloudClient : IUnifiClient
         string sApiKey = ReadApiKey(objConfig);
         string sConsolePath = BuildConsolePath(objConfig);
         string sNormalizedMac = NormalizeMac(sMac);
-        Stopwatch objRelogio = Stopwatch.StartNew();
+        Stopwatch objClock = Stopwatch.StartNew();
 
         // Caminho rápido: uma ida à loja, direto pelo MAC.
-        string? sMotivoFalha = await TryAuthorizeClassicAsync(
+        string? sFailureReason = await TryAuthorizeClassicAsync(
             objHttpClient, sApiKey, sConsolePath, objConfig, sNormalizedMac, iAccessMinutes, objCancellationToken);
-        if (sMotivoFalha is null)
+        if (sFailureReason is null)
         {
             _objLogger.LogInformation(
-                "Autorização UniFi (nuvem) pelo caminho clássico em {Ms} ms.", objRelogio.ElapsedMilliseconds);
+                "Autorização UniFi (nuvem) pelo caminho clássico em {Ms} ms.", objClock.ElapsedMilliseconds);
             return;
         }
 
         _objLogger.LogWarning(
-            "API clássica da UniFi não autorizou ({Motivo}); tentando pela API oficial.", sMotivoFalha);
+            "API clássica da UniFi não autorizou ({Motivo}); tentando pela API oficial.", sFailureReason);
 
         // Plano B: API oficial — achar o ID do aparelho e autorizar (duas idas à loja).
         string sBasePath = sConsolePath + "/proxy/network/integration/v1";
@@ -115,7 +115,7 @@ public partial class UnifiCloudClient : IUnifiClient
         await EnsureSuccessAsync(objResponse, "autorizar o visitante", objCancellationToken);
 
         _objLogger.LogInformation(
-            "Autorização UniFi (nuvem) pelo caminho oficial em {Ms} ms.", objRelogio.ElapsedMilliseconds);
+            "Autorização UniFi (nuvem) pelo caminho oficial em {Ms} ms.", objClock.ElapsedMilliseconds);
     }
 
     /// <summary>
@@ -206,7 +206,7 @@ public partial class UnifiCloudClient : IUnifiClient
         HttpClient objHttpClient = _objHttpClientFactory.CreateClient(HttpClientName);
         List<CloudDevice> objDevices = [];
         string? sNext = null;
-        int iPaginas = 0;
+        int iPages = 0;
         do
         {
             string sUrl = "v1/devices?pageSize=500" + (sNext is null ? "" : "&nextToken=" + Uri.EscapeDataString(sNext));
@@ -226,10 +226,10 @@ public partial class UnifiCloudClient : IUnifiClient
                 throw new UnifiException("A nuvem da UniFi devolveu uma resposta inesperada.", objException);
             }
 
-            foreach (JsonNode? objGrupo in objPage?["data"]?.AsArray() ?? [])
+            foreach (JsonNode? objGroup in objPage?["data"]?.AsArray() ?? [])
             {
-                string sHostId = objGrupo?["hostId"]?.ToString() ?? "";
-                foreach (JsonNode? objDevice in objGrupo?["devices"]?.AsArray() ?? [])
+                string sHostId = objGroup?["hostId"]?.ToString() ?? "";
+                foreach (JsonNode? objDevice in objGroup?["devices"]?.AsArray() ?? [])
                 {
                     string sMac = MacAddress.Normalize(objDevice?["mac"]?.ToString());
                     if (sMac.Length == 0)
@@ -243,9 +243,9 @@ public partial class UnifiCloudClient : IUnifiClient
             }
 
             sNext = objPage?["nextToken"]?.ToString();
-            iPaginas++;
+            iPages++;
         }
-        while (!string.IsNullOrEmpty(sNext) && iPaginas < 20);
+        while (!string.IsNullOrEmpty(sNext) && iPages < 20);
 
         return objDevices;
     }
@@ -273,9 +273,9 @@ public partial class UnifiCloudClient : IUnifiClient
 
         if (objSites.Count > 1)
         {
-            string sOpcoes = string.Join(", ", objSites.Select(site => $"{site.Name} ({site.Id})"));
+            string sOptions = string.Join(", ", objSites.Select(site => $"{site.Name} ({site.Id})"));
             throw new UnifiException(
-                $"O console tem mais de um site; informe qual usar na unidade. Opções: {sOpcoes}.");
+                $"O console tem mais de um site; informe qual usar na unidade. Opções: {sOptions}.");
         }
 
         objConfig.SiteId = objSites[0].Id;
@@ -408,7 +408,7 @@ public partial class UnifiCloudClient : IUnifiClient
     /// todos estes foram observados no teste real com a controladora da Itaituba.
     /// </summary>
     private static async Task EnsureSuccessAsync(
-        HttpResponseMessage objResponse, string sAcao, CancellationToken objCancellationToken)
+        HttpResponseMessage objResponse, string sAction, CancellationToken objCancellationToken)
     {
         if (objResponse.IsSuccessStatusCode)
         {
@@ -428,7 +428,7 @@ public partial class UnifiCloudClient : IUnifiClient
                 "A rede da unidade não está configurada como rede de visitantes (Hotspot).",
             HttpStatusCode.TooManyRequests =>
                 "Limite de chamadas da nuvem UniFi atingido; tente de novo em instantes.",
-            _ => $"A nuvem da UniFi recusou {sAcao} (HTTP {(int)objResponse.StatusCode}).",
+            _ => $"A nuvem da UniFi recusou {sAction} (HTTP {(int)objResponse.StatusCode}).",
         };
 
         throw new UnifiException(sMessage);

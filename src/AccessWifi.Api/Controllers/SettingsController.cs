@@ -157,10 +157,10 @@ public partial class SettingsController : ControllerBase
             return objError!;
         }
 
-        string? sErro = ValidateColors(objRequest.Colors) ?? ValidateImage("logo", objRequest.Logo);
-        if (sErro is not null)
+        string? sError = ValidateColors(objRequest.Colors) ?? ValidateImage("logo", objRequest.Logo);
+        if (sError is not null)
         {
-            return BadRequest(new ErrorResponse(sErro));
+            return BadRequest(new ErrorResponse(sError));
         }
 
         Company objCompany = await _objDbContext.Companies.AsNoTracking()
@@ -171,15 +171,15 @@ public partial class SettingsController : ControllerBase
             .OrderBy(unit => unit.Name)
             .Select(unit => unit.Name)
             .FirstOrDefaultAsync(objCancellationToken) ?? "Unidade exemplo";
-        string sDdd = await _objDbContext.PortalSettings.AsNoTracking()
+        string sAreaCode = await _objDbContext.PortalSettings.AsNoTracking()
             .Where(settings => settings.IDCompany == objCompanyId)
-            .Select(settings => settings.Ddd)
+            .Select(settings => settings.AreaCode)
             .FirstOrDefaultAsync(objCancellationToken) ?? "";
-        DateOnly dtHoje = CompanyTimeZone.Today(CompanyTimeZone.Resolve(objCompany.TimeZone), DateTime.UtcNow);
+        DateOnly dtToday = CompanyTimeZone.Today(CompanyTimeZone.Resolve(objCompany.TimeZone), DateTime.UtcNow);
 
-        CampaignPdfData objDados = CampaignPdfSample.Build(
-            objCompany.Name, sUnitName, sDdd, objRequest.Logo, objRequest.Colors.ToEntity(), dtHoje);
-        return File(CampaignPdf.Build(objDados), "application/pdf", $"campanha-exemplo-{objCompany.Slug}.pdf");
+        CampaignPdfData objData = CampaignPdfSample.Build(
+            objCompany.Name, sUnitName, sAreaCode, objRequest.Logo, objRequest.Colors.ToEntity(), dtToday);
+        return File(CampaignPdf.Build(objData), "application/pdf", $"campanha-exemplo-{objCompany.Slug}.pdf");
     }
 
     /// <summary>
@@ -225,9 +225,9 @@ public partial class SettingsController : ControllerBase
             ? null
             : objRequest.RedirectUrl.Trim();
         // Nulo = manter (um painel aberto antes desta versão não apaga o DDD ao salvar).
-        if (objRequest.Ddd is not null)
+        if (objRequest.AreaCode is not null)
         {
-            objSettings.Ddd = DddRules.Normalize(objRequest.Ddd)!;
+            objSettings.AreaCode = AreaCodeRules.Normalize(objRequest.AreaCode)!;
         }
         objSettings.UpdatedAt = DateTime.UtcNow;
 
@@ -247,10 +247,10 @@ public partial class SettingsController : ControllerBase
             return null;
         }
 
-        bool bCompanyAtiva = await _objDbContext.Companies
+        bool bCompanyActive = await _objDbContext.Companies
             .AsNoTracking()
             .AnyAsync(company => company.Id == objUnit.IDCompany && company.Active, objCancellationToken);
-        return bCompanyAtiva ? objUnit : null;
+        return bCompanyActive ? objUnit : null;
     }
 
     /// <summary>Empresa do token; para o super admin, a do ?company=slug. Sem empresa, devolve o erro.</summary>
@@ -326,13 +326,13 @@ public partial class SettingsController : ControllerBase
 
     private static string? Validate(SettingsDto objRequest)
     {
-        string? sErro = ValidateColors(objRequest.Colors)
+        string? sError = ValidateColors(objRequest.Colors)
             ?? ValidateImage("logo", objRequest.Logo)
             ?? ValidateImage("favicon", objRequest.Favicon)
             ?? ValidateImage("banner", objRequest.Banner);
-        if (sErro is not null)
+        if (sError is not null)
         {
-            return sErro;
+            return sError;
         }
 
         if (string.IsNullOrWhiteSpace(objRequest.Ssid) || objRequest.Ssid.Trim().Length > 32)
@@ -347,6 +347,6 @@ public partial class SettingsController : ControllerBase
 
         // URL "Geral" da empresa: mesma regra da URL própria de cada unidade. O DDD também.
         return RedirectUrlRules.Validate(objRequest.RedirectUrl)
-            ?? DddRules.Validate(DddRules.Normalize(objRequest.Ddd));
+            ?? AreaCodeRules.Validate(AreaCodeRules.Normalize(objRequest.AreaCode));
     }
 }

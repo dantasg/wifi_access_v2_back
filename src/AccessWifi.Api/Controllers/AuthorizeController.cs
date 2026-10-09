@@ -59,7 +59,7 @@ public class AuthorizeController : ControllerBase
             return BadRequest(new AuthorizeResponse(false, Error: "MAC do cliente ausente."));
         }
 
-        if (!objRequest.Consentimento)
+        if (!objRequest.Consent)
         {
             return BadRequest(new AuthorizeResponse(false, Error: "É necessário aceitar os termos (LGPD)."));
         }
@@ -70,17 +70,17 @@ public class AuthorizeController : ControllerBase
         Lead? objLead = await _objDbContext.Leads
             .FirstOrDefaultAsync(
                 lead => lead.IDUnit == objUnit.Id && lead.Mac == objRequest.Mac, objCancellationToken);
-        bool bAparelhoNovo = objLead is null;
+        bool bNewDevice = objLead is null;
         if (objLead is null)
         {
             objLead = new Lead { IDUnit = objUnit.Id, Mac = objRequest.Mac };
             _objDbContext.Leads.Add(objLead);
         }
 
-        objLead.Nome = objRequest.Nome;
+        objLead.Name = objRequest.Name;
         objLead.Instagram = InstagramHandle.ProfileUrl(objRequest.Instagram);
-        objLead.Telefone = objRequest.Telefone;
-        objLead.Nascimento = objRequest.Nascimento;
+        objLead.Phone = objRequest.Phone;
+        objLead.BirthDate = objRequest.BirthDate;
         objLead.Ap = objRequest.Ap;
         objLead.Ssid = objRequest.Ssid;
         objLead.Timestamp = DateTime.UtcNow;
@@ -96,7 +96,7 @@ public class AuthorizeController : ControllerBase
 
         int iAccessMinutes = objCompanySettings?.AccessMinutes ?? DefaultAccessMinutes;
 
-        bool bUnifiFalhou = false;
+        bool bUnifiFailed = false;
         try
         {
             await _objUnifiClient.AuthorizeGuestAsync(
@@ -107,7 +107,7 @@ public class AuthorizeController : ControllerBase
             // Não logar dados pessoais — só a unidade e o motivo técnico da falha.
             _objLogger.LogError(
                 objException, "Falha ao autorizar guest na UniFi da unidade {Slug}.", objUnit.Slug);
-            bUnifiFalhou = true;
+            bUnifiFailed = true;
         }
 
         // No modo nuvem a primeira chamada descobre o SiteId da unidade e o grava na entidade;
@@ -116,66 +116,66 @@ public class AuthorizeController : ControllerBase
         await _objDbContext.SaveChangesAsync(objCancellationToken);
 
         // Base de clientes das campanhas (D2). Fica depois da UniFi para não atrasar a liberação.
-        ClienteRegistrado objCliente = await RegistrarClienteAsync(
-            objUnit, objRequest, bAparelhoNovo, objCancellationToken);
+        RegisteredCustomer objCustomer = await RegisterCustomerAsync(
+            objUnit, objRequest, bNewDevice, objCancellationToken);
 
         // Conexão do dashboard (PROPOSTA_DASHBOARD.md, D3): só a que a UniFi liberou.
-        if (!bUnifiFalhou)
+        if (!bUnifiFailed)
         {
-            await RegistrarConexaoAsync(objUnit, objRequest.Ap, objCliente, objCancellationToken);
+            await RegisterVisitAsync(objUnit, objRequest.Ap, objCustomer, objCancellationToken);
         }
 
-        if (bUnifiFalhou)
+        if (bUnifiFailed)
         {
             return StatusCode(
                 StatusCodes.Status502BadGateway,
                 new AuthorizeResponse(false, Error: "Falha ao autorizar na UniFi."));
         }
 
-        string sRedirect = EscolherRedirect(
+        string sRedirect = ChooseRedirect(
             objUnit.RedirectUrl, objCompanySettings?.RedirectUrl, objRequest.Url);
         return Ok(new AuthorizeResponse(true, Redirect: sRedirect));
     }
 
     /// <summary>O que a conexão do dashboard precisa saber do cliente desta visita.</summary>
-    private record ClienteRegistrado(
-        Guid? IDCustomer, bool NovoNaEmpresa, bool NovoNaUnidade, TimeZoneInfo Fuso, DateTime AtUtc);
+    private record RegisteredCustomer(
+        Guid? IDCustomer, bool NewInCompany, bool NewInUnit, TimeZoneInfo Zone, DateTime AtUtc);
 
     /// <summary>
     /// Atualiza o cliente da empresa (um por telefone) com esta conexão. É invisível para o visitante e
     /// nunca pode derrubar a liberação do Wi-Fi: qualquer falha aqui só fica no log.
     /// Sem cliente (telefone que não identifica ninguém, ou gravação que falhou), "novo" vale pelo aparelho.
     /// </summary>
-    private async Task<ClienteRegistrado> RegistrarClienteAsync(
-        Unit objUnit, AuthorizeRequest objRequest, bool bAparelhoNovo, CancellationToken objCancellationToken)
+    private async Task<RegisteredCustomer> RegisterCustomerAsync(
+        Unit objUnit, AuthorizeRequest objRequest, bool bNewDevice, CancellationToken objCancellationToken)
     {
         DateTime dtNowUtc = DateTime.UtcNow;
-        TimeZoneInfo objFuso = CompanyTimeZone.Resolve(null);
+        TimeZoneInfo objZone = CompanyTimeZone.Resolve(null);
         try
         {
             string? sTimeZone = await _objDbContext.Companies.AsNoTracking()
                 .Where(company => company.Id == objUnit.IDCompany)
                 .Select(company => company.TimeZone)
                 .FirstOrDefaultAsync(objCancellationToken);
-            objFuso = CompanyTimeZone.Resolve(sTimeZone);
+            objZone = CompanyTimeZone.Resolve(sTimeZone);
             Customer? objCustomer = await CustomerDirectory.RegisterVisitAsync(
-                _objDbContext, objUnit.IDCompany, objFuso, objUnit.Id,
-                objRequest.Nome, InstagramHandle.ProfileUrl(objRequest.Instagram), objRequest.Telefone, objRequest.Nascimento,
+                _objDbContext, objUnit.IDCompany, objZone, objUnit.Id,
+                objRequest.Name, InstagramHandle.ProfileUrl(objRequest.Instagram), objRequest.Phone, objRequest.BirthDate,
                 dtNowUtc, objCancellationToken);
 
             // "Novo" sai do que esta visita acabou de criar — depois do SaveChanges já não dá para saber.
-            bool bNovoNaEmpresa = objCustomer is null
-                ? bAparelhoNovo
+            bool bNewInCompany = objCustomer is null
+                ? bNewDevice
                 : _objDbContext.Entry(objCustomer).State == EntityState.Added;
-            bool bNovoNaUnidade = objCustomer is null
-                ? bAparelhoNovo
+            bool bNewInUnit = objCustomer is null
+                ? bNewDevice
                 : _objDbContext.ChangeTracker.Entries<CustomerUnit>().Any(entry =>
                     entry.State == EntityState.Added
                     && entry.Entity.IDCustomer == objCustomer.Id
                     && entry.Entity.IDUnit == objUnit.Id);
 
             await _objDbContext.SaveChangesAsync(objCancellationToken);
-            return new ClienteRegistrado(objCustomer?.Id, bNovoNaEmpresa, bNovoNaUnidade, objFuso, dtNowUtc);
+            return new RegisteredCustomer(objCustomer?.Id, bNewInCompany, bNewInUnit, objZone, dtNowUtc);
         }
         catch (Exception objException) when (objException is not OperationCanceledException)
         {
@@ -184,7 +184,7 @@ public class AuthorizeController : ControllerBase
             // contexto, para não voltar junto com a conexão.
             _objLogger.LogWarning(objException, "Cliente não atualizado na unidade {Slug}.", objUnit.Slug);
             _objDbContext.ChangeTracker.Clear();
-            return new ClienteRegistrado(null, bAparelhoNovo, bAparelhoNovo, objFuso, dtNowUtc);
+            return new RegisteredCustomer(null, bNewDevice, bNewDevice, objZone, dtNowUtc);
         }
     }
 
@@ -192,22 +192,22 @@ public class AuthorizeController : ControllerBase
     /// Registra a conexão liberada para o dashboard (PROPOSTA_DASHBOARD.md, D3). Gravação própria, depois do
     /// cliente: se falhar, o cliente já está salvo e o visitante segue para o redirecionamento — só fica no log.
     /// </summary>
-    private async Task RegistrarConexaoAsync(
-        Unit objUnit, string? sAp, ClienteRegistrado objCliente, CancellationToken objCancellationToken)
+    private async Task RegisterVisitAsync(
+        Unit objUnit, string? sAp, RegisteredCustomer objCustomer, CancellationToken objCancellationToken)
     {
         try
         {
             DateTime dtLocal = TimeZoneInfo.ConvertTimeFromUtc(
-                DateTime.SpecifyKind(objCliente.AtUtc, DateTimeKind.Utc), objCliente.Fuso);
+                DateTime.SpecifyKind(objCustomer.AtUtc, DateTimeKind.Utc), objCustomer.Zone);
             _objDbContext.Visits.Add(new Visit
             {
                 IDUnit = objUnit.Id,
-                IDCustomer = objCliente.IDCustomer,
-                At = objCliente.AtUtc,
+                IDCustomer = objCustomer.IDCustomer,
+                At = objCustomer.AtUtc,
                 LocalDate = DateOnly.FromDateTime(dtLocal),
                 LocalHour = dtLocal.Hour,
-                NewInCompany = objCliente.NovoNaEmpresa,
-                NewInUnit = objCliente.NovoNaUnidade,
+                NewInCompany = objCustomer.NewInCompany,
+                NewInUnit = objCustomer.NewInUnit,
                 Ap = MacAddress.Normalize(sAp),
             });
             await _objDbContext.SaveChangesAsync(objCancellationToken);
@@ -223,7 +223,7 @@ public class AuthorizeController : ControllerBase
     /// Para onde o visitante vai depois de liberado, na ordem: a URL da unidade (ex.: o Instagram
     /// da loja); senão a "Geral" da empresa; senão a URL que a UniFi enviou; por fim, o Google.
     /// </summary>
-    private static string EscolherRedirect(string? sUnitUrl, string? sCompanyUrl, string? sUnifiUrl)
+    private static string ChooseRedirect(string? sUnitUrl, string? sCompanyUrl, string? sUnifiUrl)
     {
         if (!string.IsNullOrWhiteSpace(sUnitUrl))
         {

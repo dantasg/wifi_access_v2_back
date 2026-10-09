@@ -10,70 +10,70 @@ namespace AccessWifi.Api.Features.Campaigns
 
         public static string Describe(string sOldName, CampaignConfig objOld, string sNewName, CampaignConfig objNew)
         {
-            List<string> objPartes = [];
+            List<string> objParts = [];
 
             if (sOldName != sNewName)
             {
-                objPartes.Add($"Nome: \"{sOldName}\" → \"{sNewName}\"");
+                objParts.Add($"Nome: \"{sOldName}\" → \"{sNewName}\"");
             }
             if (objOld.Channel != objNew.Channel)
             {
-                objPartes.Add($"Canal: {objOld.Channel} → {objNew.Channel}");
+                objParts.Add($"Canal: {objOld.Channel} → {objNew.Channel}");
             }
             if (objOld.SendTime != objNew.SendTime)
             {
-                objPartes.Add($"Horário: {objOld.SendTime} → {objNew.SendTime}");
+                objParts.Add($"Horário: {objOld.SendTime} → {objNew.SendTime}");
             }
             if (objOld.Message != objNew.Message)
             {
-                objPartes.Add("Mensagem alterada");
+                objParts.Add("Mensagem alterada");
             }
 
             CampaignScheduleConfig? objOldSchedule = objOld.Schedule;
             CampaignScheduleConfig? objNewSchedule = objNew.Schedule;
             if (objOldSchedule?.Recurrence != objNewSchedule?.Recurrence)
             {
-                objPartes.Add($"Repetição: {Recorrencia(objOldSchedule?.Recurrence)} → {Recorrencia(objNewSchedule?.Recurrence)}");
+                objParts.Add($"Repetição: {RecurrenceText(objOldSchedule?.Recurrence)} → {RecurrenceText(objNewSchedule?.Recurrence)}");
             }
             if (objOldSchedule?.StartDate != objNewSchedule?.StartDate)
             {
-                objPartes.Add($"Início: {Data(objOldSchedule?.StartDate)} → {Data(objNewSchedule?.StartDate)}");
+                objParts.Add($"Início: {Data(objOldSchedule?.StartDate)} → {Data(objNewSchedule?.StartDate)}");
             }
             if (objOldSchedule?.EndDate != objNewSchedule?.EndDate)
             {
-                objPartes.Add($"Fim: {Data(objOldSchedule?.EndDate)} → {Data(objNewSchedule?.EndDate)}");
+                objParts.Add($"Fim: {Data(objOldSchedule?.EndDate)} → {Data(objNewSchedule?.EndDate)}");
             }
             if (Json(objOldSchedule?.DaysOfWeek) != Json(objNewSchedule?.DaysOfWeek))
             {
-                objPartes.Add("Dias da semana alterados");
+                objParts.Add("Dias da semana alterados");
             }
             if (Json(objOld.Filters) != Json(objNew.Filters))
             {
-                objPartes.Add("Filtros alterados");
+                objParts.Add("Filtros alterados");
             }
             if (objOld.ResendAfterDays != objNew.ResendAfterDays)
             {
-                objPartes.Add($"Não repetir para quem recebeu nos últimos: {Dias(objOld.ResendAfterDays)} → {Dias(objNew.ResendAfterDays)}");
+                objParts.Add($"Não repetir para quem recebeu nos últimos: {DaysText(objOld.ResendAfterDays)} → {DaysText(objNew.ResendAfterDays)}");
             }
             if (objOld.AbsenceDays != objNew.AbsenceDays)
             {
-                objPartes.Add($"Dias sem voltar: {Dias(objOld.AbsenceDays)} → {Dias(objNew.AbsenceDays)}");
+                objParts.Add($"Dias sem voltar: {DaysText(objOld.AbsenceDays)} → {DaysText(objNew.AbsenceDays)}");
             }
             if (objOld.VisitMilestone != objNew.VisitMilestone)
             {
-                objPartes.Add($"A cada quantas visitas: {objOld.VisitMilestone?.ToString() ?? "—"} → {objNew.VisitMilestone?.ToString() ?? "—"}");
+                objParts.Add($"A cada quantas visitas: {objOld.VisitMilestone?.ToString() ?? "—"} → {objNew.VisitMilestone?.ToString() ?? "—"}");
             }
 
-            return string.Join("; ", objPartes);
+            return string.Join("; ", objParts);
         }
 
         private static string Json<T>(T objValue) => JsonSerializer.Serialize(objValue, s_objJson);
 
         private static string Data(DateOnly? dtValue) => dtValue?.ToString("dd/MM/yyyy") ?? "—";
 
-        private static string Dias(int? iValue) => iValue is int iDias ? $"{iDias} dias" : "—";
+        private static string DaysText(int? iValue) => iValue is int iDays ? $"{iDays} dias" : "—";
 
-        private static string Recorrencia(string? sValue) => sValue switch
+        private static string RecurrenceText(string? sValue) => sValue switch
         {
             CampaignRecurrence.Once => "uma vez",
             CampaignRecurrence.Daily => "diária",

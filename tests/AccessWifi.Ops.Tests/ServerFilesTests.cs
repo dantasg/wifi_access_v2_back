@@ -6,7 +6,7 @@ namespace AccessWifi.Ops.Tests;
 /// A versão em C# lê os mesmos arquivos que a primeira versão (Python) deixou no servidor: trocar o programa não
 /// pode exigir configurar tudo de novo nem perder o histórico da conferência.
 /// </summary>
-public class ArquivosDoServidorTests
+public class ServerFilesTests
 {
     // Cópia do /var/lib/accesswifi-ops/estado.json gravado pela versão em Python em 05/10/2026.
     private const string StateFromPython = """
@@ -22,7 +22,7 @@ public class ArquivosDoServidorTests
         """;
 
     [Fact]
-    public void Estado_GravadoPeloPython_EhLidoInteiro()
+    public void State_SavedByPython_IsReadInFull()
     {
         OpsState objState = OpsState.Parse(StateFromPython);
 
@@ -35,7 +35,7 @@ public class ArquivosDoServidorTests
     }
 
     [Fact]
-    public void Estado_GravaComOsMesmosNomesDeChave()
+    public void State_SavesWithSameKeyNames()
     {
         OpsState objState = OpsState.Parse(StateFromPython);
 
@@ -50,7 +50,7 @@ public class ArquivosDoServidorTests
     }
 
     [Fact]
-    public void Estado_Corrompido_ComecaDoZero()
+    public void State_Corrupted_StartsFromScratch()
     {
         OpsState objState = OpsState.Parse("{ isto não é json");
 
@@ -59,7 +59,7 @@ public class ArquivosDoServidorTests
     }
 
     [Fact]
-    public void OpsEnv_LeSenhaComIgual_ComentariosEFimDeLinhaDoWindows()
+    public void OpsEnv_ReadsPasswordWithEquals_CommentsAndWindowsLineEndings()
     {
         string sText = "# Rotinas de proteção do AccessWifi\r\n"
             + "TELEGRAM_TOKEN=123456:ABC-def\r\n"
@@ -78,7 +78,7 @@ public class ArquivosDoServidorTests
     }
 
     [Fact]
-    public void OpsEnv_GravaELeDeVolta_EVazioNaoVaiProArquivo()
+    public void OpsEnv_WritesAndReadsBack_AndEmptyIsNotWritten()
     {
         Dictionary<string, string> dicValues = new Dictionary<string, string>
         {
@@ -96,7 +96,7 @@ public class ArquivosDoServidorTests
     }
 
     [Fact]
-    public void OpsEnv_ValorComQuebraDeLinha_ERecusado()
+    public void OpsEnv_ValueWithLineBreak_IsRejected()
     {
         Dictionary<string, string> dicValues = new Dictionary<string, string> { ["X"] = "um\ndois" };
 
@@ -104,7 +104,7 @@ public class ArquivosDoServidorTests
     }
 
     [Fact]
-    public void OpsSettings_RemetenteENomePadrao()
+    public void OpsSettings_DefaultSenderAndName()
     {
         OpsSettings objSettings = new OpsSettings(new Dictionary<string, string>
         {

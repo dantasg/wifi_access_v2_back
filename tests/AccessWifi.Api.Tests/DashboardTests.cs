@@ -21,7 +21,7 @@ public class DashboardTests
 {
     private static readonly TimeZoneInfo s_objBelem = CompanyTimeZone.Resolve("America/Belem");
 
-    private sealed class Cenario
+    private sealed class Scenario
     {
         public required Company Company { get; init; }
         public required Unit Itaituba { get; init; }
@@ -29,55 +29,55 @@ public class DashboardTests
     }
 
     /// <summary>Meio-dia de Belém do dia informado, em UTC.</summary>
-    private static DateTime Dia(int iMes, int iDia, int iHora = 12) =>
-        TimeZoneInfo.ConvertTimeToUtc(new DateTime(2026, iMes, iDia, iHora, 0, 0, DateTimeKind.Unspecified), s_objBelem);
+    private static DateTime DayAt(int iMonth, int iDay, int iHour = 12) =>
+        TimeZoneInfo.ConvertTimeToUtc(new DateTime(2026, iMonth, iDay, iHour, 0, 0, DateTimeKind.Unspecified), s_objBelem);
 
-    private static Cenario Montar(AppDbContext objDb)
+    private static Scenario BuildScenario(AppDbContext objDb)
     {
         Company objCompany = new Company { Name = "Lojas Regional", Slug = "regional" };
-        Company objOutra = new Company { Name = "Outra Rede", Slug = "outra" };
+        Company objOther = new Company { Name = "Outra Rede", Slug = "outra" };
         Unit objItaituba = new Unit { IDCompany = objCompany.Id, Name = "Itaituba", Slug = "itaituba" };
         Unit objCastanhal = new Unit { IDCompany = objCompany.Id, Name = "Castanhal", Slug = "castanhal" };
-        Unit objDaOutra = new Unit { IDCompany = objOutra.Id, Name = "Loja da outra", Slug = "loja-outra" };
-        objDb.Companies.AddRange(objCompany, objOutra);
-        objDb.Units.AddRange(objItaituba, objCastanhal, objDaOutra);
+        Unit objOtherUnit = new Unit { IDCompany = objOther.Id, Name = "Loja da outra", Slug = "loja-outra" };
+        objDb.Companies.AddRange(objCompany, objOther);
+        objDb.Units.AddRange(objItaituba, objCastanhal, objOtherUnit);
 
-        Customer objC1 = Cliente(objCompany, "93000000001", Dia(9, 25), Dia(10, 5), 3, new DateOnly(1990, 5, 10), "@c1");
-        Customer objC2 = Cliente(objCompany, "93000000002", Dia(10, 3), Dia(10, 7), 2, new DateOnly(2000, 1, 1), "");
-        Customer objC3 = Cliente(objCompany, "93000000003", Dia(10, 4), Dia(10, 4), 1, null, "");
-        Customer objC4 = Cliente(objCompany, "93000000004", Dia(8, 1), Dia(10, 6), 6, new DateOnly(1960, 3, 3), "@c4");
-        Customer objDeOutra = Cliente(objOutra, "93000000009", Dia(10, 2), Dia(10, 2), 1, null, "@x");
-        objDb.Customers.AddRange(objC1, objC2, objC3, objC4, objDeOutra);
+        Customer objC1 = MakeCustomer(objCompany, "93000000001", DayAt(9, 25), DayAt(10, 5), 3, new DateOnly(1990, 5, 10), "@c1");
+        Customer objC2 = MakeCustomer(objCompany, "93000000002", DayAt(10, 3), DayAt(10, 7), 2, new DateOnly(2000, 1, 1), "");
+        Customer objC3 = MakeCustomer(objCompany, "93000000003", DayAt(10, 4), DayAt(10, 4), 1, null, "");
+        Customer objC4 = MakeCustomer(objCompany, "93000000004", DayAt(8, 1), DayAt(10, 6), 6, new DateOnly(1960, 3, 3), "@c4");
+        Customer objOtherCustomer = MakeCustomer(objOther, "93000000009", DayAt(10, 2), DayAt(10, 2), 1, null, "@x");
+        objDb.Customers.AddRange(objC1, objC2, objC3, objC4, objOtherCustomer);
 
         objDb.CustomerUnits.AddRange(
-            Link(objC1, objItaituba, Dia(9, 25), Dia(10, 5)),
-            Link(objC2, objItaituba, Dia(10, 3), Dia(10, 7)),
-            Link(objC3, objCastanhal, Dia(10, 4), Dia(10, 4)),
-            Link(objC4, objItaituba, Dia(8, 1), Dia(8, 1)),
-            Link(objC4, objCastanhal, Dia(10, 6), Dia(10, 6)),
-            Link(objDeOutra, objDaOutra, Dia(10, 2), Dia(10, 2)));
+            Link(objC1, objItaituba, DayAt(9, 25), DayAt(10, 5)),
+            Link(objC2, objItaituba, DayAt(10, 3), DayAt(10, 7)),
+            Link(objC3, objCastanhal, DayAt(10, 4), DayAt(10, 4)),
+            Link(objC4, objItaituba, DayAt(8, 1), DayAt(8, 1)),
+            Link(objC4, objCastanhal, DayAt(10, 6), DayAt(10, 6)),
+            Link(objOtherCustomer, objOtherUnit, DayAt(10, 2), DayAt(10, 2)));
 
         objDb.Visits.AddRange(
-            Conexao(objItaituba, objC1, 9, 25, 9, bNovo: true, sAp: "8c:30:66:4e:9b:58"),
-            Conexao(objItaituba, objC1, 10, 2, 9, sAp: "8c:30:66:4e:9b:58"),
-            Conexao(objItaituba, null, 10, 2, 15, sAp: "8c:30:66:4e:9b:58"),
-            Conexao(objItaituba, objC2, 10, 3, 15, bNovo: true, sAp: "8c:30:66:4e:9b:58"),
-            Conexao(objCastanhal, objC3, 10, 4, 18, bNovo: true, sAp: "9c:05:d6:73:bb:20"),
-            Conexao(objItaituba, objC1, 10, 5, 9, sAp: "8c:30:66:4e:9b:58"),
-            Conexao(objCastanhal, objC4, 10, 6, 18, bNovo: true, sAp: "9c:05:d6:73:bb:20"),
-            Conexao(objItaituba, objC2, 10, 7, 15, sAp: ""),
-            Conexao(objDaOutra, objDeOutra, 10, 2, 10, bNovo: true, sAp: ""));
+            MakeVisit(objItaituba, objC1, 9, 25, 9, bNew: true, sAp: "8c:30:66:4e:9b:58"),
+            MakeVisit(objItaituba, objC1, 10, 2, 9, sAp: "8c:30:66:4e:9b:58"),
+            MakeVisit(objItaituba, null, 10, 2, 15, sAp: "8c:30:66:4e:9b:58"),
+            MakeVisit(objItaituba, objC2, 10, 3, 15, bNew: true, sAp: "8c:30:66:4e:9b:58"),
+            MakeVisit(objCastanhal, objC3, 10, 4, 18, bNew: true, sAp: "9c:05:d6:73:bb:20"),
+            MakeVisit(objItaituba, objC1, 10, 5, 9, sAp: "8c:30:66:4e:9b:58"),
+            MakeVisit(objCastanhal, objC4, 10, 6, 18, bNew: true, sAp: "9c:05:d6:73:bb:20"),
+            MakeVisit(objItaituba, objC2, 10, 7, 15, sAp: ""),
+            MakeVisit(objOtherUnit, objOtherCustomer, 10, 2, 10, bNew: true, sAp: ""));
 
         objDb.UnitDevices.Add(new UnitDevice
         {
             IDUnit = objCastanhal.Id, Mac = "9c:05:d6:73:bb:20", Name = "UK Ultra", Model = "UK Ultra", SyncedAt = DateTime.UtcNow,
         });
         objDb.SaveChanges();
-        return new Cenario { Company = objCompany, Itaituba = objItaituba, Castanhal = objCastanhal };
+        return new Scenario { Company = objCompany, Itaituba = objItaituba, Castanhal = objCastanhal };
     }
 
-    private static Customer Cliente(
-        Company objCompany, string sPhone, DateTime dtPrimeira, DateTime dtUltima, int iVisitas, DateOnly? dtNascimento,
+    private static Customer MakeCustomer(
+        Company objCompany, string sPhone, DateTime dtFirst, DateTime dtLast, int iVisits, DateOnly? dtBirth,
         string sInstagram) =>
         new Customer
         {
@@ -85,32 +85,32 @@ public class DashboardTests
             Phone = sPhone,
             Name = "Cliente",
             Instagram = sInstagram,
-            BirthDate = dtNascimento,
-            FirstVisitAt = dtPrimeira,
-            FirstVisitDate = CompanyTimeZone.Today(s_objBelem, dtPrimeira),
-            LastVisitAt = dtUltima,
-            LastVisitDate = CompanyTimeZone.Today(s_objBelem, dtUltima),
-            VisitCount = iVisitas,
+            BirthDate = dtBirth,
+            FirstVisitAt = dtFirst,
+            FirstVisitDate = CompanyTimeZone.Today(s_objBelem, dtFirst),
+            LastVisitAt = dtLast,
+            LastVisitDate = CompanyTimeZone.Today(s_objBelem, dtLast),
+            VisitCount = iVisits,
         };
 
-    private static CustomerUnit Link(Customer objCustomer, Unit objUnit, DateTime dtPrimeira, DateTime dtUltima) =>
-        new CustomerUnit { IDCustomer = objCustomer.Id, IDUnit = objUnit.Id, FirstVisitAt = dtPrimeira, LastVisitAt = dtUltima };
+    private static CustomerUnit Link(Customer objCustomer, Unit objUnit, DateTime dtFirst, DateTime dtLast) =>
+        new CustomerUnit { IDCustomer = objCustomer.Id, IDUnit = objUnit.Id, FirstVisitAt = dtFirst, LastVisitAt = dtLast };
 
-    private static Visit Conexao(
-        Unit objUnit, Customer? objCustomer, int iMes, int iDia, int iHora, bool bNovo = false, string sAp = "") =>
+    private static Visit MakeVisit(
+        Unit objUnit, Customer? objCustomer, int iMonth, int iDay, int iHour, bool bNew = false, string sAp = "") =>
         new Visit
         {
             IDUnit = objUnit.Id,
             IDCustomer = objCustomer?.Id,
-            At = Dia(iMes, iDia, iHora),
-            LocalDate = new DateOnly(2026, iMes, iDia),
-            LocalHour = iHora,
-            NewInCompany = bNovo,
-            NewInUnit = bNovo,
+            At = DayAt(iMonth, iDay, iHour),
+            LocalDate = new DateOnly(2026, iMonth, iDay),
+            LocalHour = iHour,
+            NewInCompany = bNew,
+            NewInUnit = bNew,
             Ap = sAp,
         };
 
-    private static async Task<DashboardDto> PedirAsync(
+    private static async Task<DashboardDto> FetchAsync(
         DashboardController objController, string? sCompany = null, string? sUnit = null,
         string? sFrom = "2026-10-01", string? sTo = "2026-10-10")
     {
@@ -121,14 +121,14 @@ public class DashboardTests
     // ---------------------------------------------------------------- visão empresa
 
     [Fact]
-    public async Task VisaoEmpresa_CartoesEComparacao()
+    public async Task CompanyView_CardsAndComparison()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        Cenario objCenario = Montar(objDb);
+        Scenario objScenario = BuildScenario(objDb);
         DashboardController objController = new DashboardController(objDb);
-        TestHelpers.SetCompanyUser(objController, objDb, objCenario.Company.Id);
+        TestHelpers.SetCompanyUser(objController, objDb, objScenario.Company.Id);
 
-        DashboardDto objDash = await PedirAsync(objController);
+        DashboardDto objDash = await FetchAsync(objController);
 
         Assert.Null(objDash.Unit);
         Assert.Equal(new DashboardPeriodDto(new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 10),
@@ -143,14 +143,14 @@ public class DashboardTests
     }
 
     [Fact]
-    public async Task VisaoEmpresa_PorDia_Hora_DiaDaSemana()
+    public async Task CompanyView_ByDay_Hour_Weekday()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        Cenario objCenario = Montar(objDb);
+        Scenario objScenario = BuildScenario(objDb);
         DashboardController objController = new DashboardController(objDb);
-        TestHelpers.SetCompanyUser(objController, objDb, objCenario.Company.Id);
+        TestHelpers.SetCompanyUser(objController, objDb, objScenario.Company.Id);
 
-        DashboardDto objDash = await PedirAsync(objController);
+        DashboardDto objDash = await FetchAsync(objController);
 
         Assert.Equal(10, objDash.Daily.Count);
         Assert.Equal(new DashboardDayDto(new DateOnly(2026, 10, 2), 2, 0, 1), objDash.Daily[1]);
@@ -169,14 +169,14 @@ public class DashboardTests
     }
 
     [Fact]
-    public async Task VisaoEmpresa_TabelaPorUnidade()
+    public async Task CompanyView_TableByUnit()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        Cenario objCenario = Montar(objDb);
+        Scenario objScenario = BuildScenario(objDb);
         DashboardController objController = new DashboardController(objDb);
-        TestHelpers.SetCompanyUser(objController, objDb, objCenario.Company.Id);
+        TestHelpers.SetCompanyUser(objController, objDb, objScenario.Company.Id);
 
-        DashboardDto objDash = await PedirAsync(objController);
+        DashboardDto objDash = await FetchAsync(objController);
 
         Assert.Empty(objDash.AccessPoints);
         Assert.Equal(["itaituba", "castanhal"], objDash.Units.Select(unit => unit.Slug));
@@ -190,14 +190,14 @@ public class DashboardTests
     // ---------------------------------------------------------------- visão unidade
 
     [Fact]
-    public async Task VisaoUnidade_SoAUnidade_ComPontosDeAcesso()
+    public async Task UnitView_OnlyTheUnit_WithAccessPoints()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        Cenario objCenario = Montar(objDb);
+        Scenario objScenario = BuildScenario(objDb);
         DashboardController objController = new DashboardController(objDb);
-        TestHelpers.SetCompanyUser(objController, objDb, objCenario.Company.Id);
+        TestHelpers.SetCompanyUser(objController, objDb, objScenario.Company.Id);
 
-        DashboardDto objDash = await PedirAsync(objController, sUnit: "castanhal");
+        DashboardDto objDash = await FetchAsync(objController, sUnit: "castanhal");
 
         Assert.Equal("castanhal", objDash.Unit?.Slug);
         Assert.Equal(2, objDash.Kpis.Connections.Current);
@@ -210,14 +210,14 @@ public class DashboardTests
     }
 
     [Fact]
-    public async Task VisaoUnidade_ApSemNome_EConexaoSemAp()
+    public async Task UnitView_ApWithoutName_AndVisitWithoutAp()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        Cenario objCenario = Montar(objDb);
+        Scenario objScenario = BuildScenario(objDb);
         DashboardController objController = new DashboardController(objDb);
-        TestHelpers.SetCompanyUser(objController, objDb, objCenario.Company.Id);
+        TestHelpers.SetCompanyUser(objController, objDb, objScenario.Company.Id);
 
-        DashboardDto objDash = await PedirAsync(objController, sUnit: "itaituba");
+        DashboardDto objDash = await FetchAsync(objController, sUnit: "itaituba");
 
         Assert.Equal(
             [("8c:30:66:4e:9b:58", "Ponto de acesso não identificado", 4), ("", "Sem ponto de acesso informado", 1)],
@@ -227,47 +227,47 @@ public class DashboardTests
     // ---------------------------------------------------------------- acesso
 
     [Fact]
-    public async Task UsuarioDeUnidade_SoVeAsUnidadesDele()
+    public async Task UnitUser_SeesOnlyOwnUnits()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        Cenario objCenario = Montar(objDb);
+        Scenario objScenario = BuildScenario(objDb);
         DashboardController objController = new DashboardController(objDb);
-        TestHelpers.SetCompanyUser(objController, objDb, objCenario.Company.Id, "gerente-castanhal", objCenario.Castanhal.Id);
+        TestHelpers.SetCompanyUser(objController, objDb, objScenario.Company.Id, "gerente-castanhal", objScenario.Castanhal.Id);
 
-        DashboardDto objDash = await PedirAsync(objController);
+        DashboardDto objDash = await FetchAsync(objController);
         Assert.Equal(["castanhal"], objDash.Units.Select(unit => unit.Slug));
         Assert.Equal(2, objDash.Kpis.Connections.Current);
         Assert.Equal(2, objDash.Kpis.CustomerBase);
 
-        ActionResult<DashboardDto> objOutra = await objController.Get(null, "itaituba", "2026-10-01", "2026-10-10", CancellationToken.None);
-        Assert.IsType<NotFoundObjectResult>(objOutra.Result);
+        ActionResult<DashboardDto> objOther = await objController.Get(null, "itaituba", "2026-10-01", "2026-10-10", CancellationToken.None);
+        Assert.IsType<NotFoundObjectResult>(objOther.Result);
     }
 
     [Fact]
-    public async Task AdminDaEmpresa_NaoEscolheOutraEmpresa()
+    public async Task CompanyAdmin_CannotPickAnotherCompany()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        Cenario objCenario = Montar(objDb);
+        Scenario objScenario = BuildScenario(objDb);
         DashboardController objController = new DashboardController(objDb);
-        TestHelpers.SetCompanyUser(objController, objDb, objCenario.Company.Id);
+        TestHelpers.SetCompanyUser(objController, objDb, objScenario.Company.Id);
 
-        DashboardDto objDash = await PedirAsync(objController, sCompany: "outra");
+        DashboardDto objDash = await FetchAsync(objController, sCompany: "outra");
 
         Assert.Equal("regional", objDash.Company.Slug);
     }
 
     [Fact]
-    public async Task SuperAdmin_PrecisaDaEmpresa()
+    public async Task SuperAdmin_NeedsCompany()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        Montar(objDb);
+        BuildScenario(objDb);
         DashboardController objController = new DashboardController(objDb);
         TestHelpers.SetUser(objController, null, "root");
 
-        ActionResult<DashboardDto> objSem = await objController.Get(null, null, null, null, CancellationToken.None);
-        Assert.IsType<BadRequestObjectResult>(objSem.Result);
+        ActionResult<DashboardDto> objWithout = await objController.Get(null, null, null, null, CancellationToken.None);
+        Assert.IsType<BadRequestObjectResult>(objWithout.Result);
 
-        DashboardDto objDash = await PedirAsync(objController, sCompany: "outra");
+        DashboardDto objDash = await FetchAsync(objController, sCompany: "outra");
         Assert.Equal(1, objDash.Kpis.Connections.Current);
         Assert.Equal(["loja-outra"], objDash.Units.Select(unit => unit.Slug));
     }
@@ -275,14 +275,14 @@ public class DashboardTests
     // ---------------------------------------------------------------- clientes
 
     [Fact]
-    public async Task FaixaEtaria_Frequencia_Instagram()
+    public async Task AgeBand_Frequency_Instagram()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        Cenario objCenario = Montar(objDb);
+        Scenario objScenario = BuildScenario(objDb);
         DashboardController objController = new DashboardController(objDb);
-        TestHelpers.SetCompanyUser(objController, objDb, objCenario.Company.Id);
+        TestHelpers.SetCompanyUser(objController, objDb, objScenario.Company.Id);
 
-        DashboardDto objDash = await PedirAsync(objController);
+        DashboardDto objDash = await FetchAsync(objController);
 
         // C2 (2000) 25–26 anos; C1 (1990) 35–36; C4 (1960) 60+; C3 sem nascimento.
         Assert.Equal([0, 0, 1, 1, 0, 1], objDash.AgeBands.Select(band => band.Count));
@@ -293,66 +293,66 @@ public class DashboardTests
     }
 
     [Fact]
-    public async Task Aniversariantes_DoMesCorrente()
+    public async Task Birthdays_OfCurrentMonth()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        Cenario objCenario = Montar(objDb);
-        DateOnly dtHoje = CompanyTimeZone.Today(s_objBelem, DateTime.UtcNow);
-        Customer objAniversariante = objDb.Customers.Single(customer => customer.Phone == "93000000003");
-        objAniversariante.BirthDate = new DateOnly(1995, dtHoje.Month, 1);
+        Scenario objScenario = BuildScenario(objDb);
+        DateOnly dtToday = CompanyTimeZone.Today(s_objBelem, DateTime.UtcNow);
+        Customer objBirthdayCustomer = objDb.Customers.Single(customer => customer.Phone == "93000000003");
+        objBirthdayCustomer.BirthDate = new DateOnly(1995, dtToday.Month, 1);
         objDb.SaveChanges();
         DashboardController objController = new DashboardController(objDb);
-        TestHelpers.SetCompanyUser(objController, objDb, objCenario.Company.Id);
+        TestHelpers.SetCompanyUser(objController, objDb, objScenario.Company.Id);
 
-        DashboardDto objDash = await PedirAsync(objController);
+        DashboardDto objDash = await FetchAsync(objController);
 
         Assert.True(objDash.Extras.BirthdaysThisMonth >= 1);
         Assert.Equal(
-            objDb.Customers.Count(customer => customer.IDCompany == objCenario.Company.Id
-                && customer.BirthDate != null && customer.BirthDate.Value.Month == dtHoje.Month),
+            objDb.Customers.Count(customer => customer.IDCompany == objScenario.Company.Id
+                && customer.BirthDate != null && customer.BirthDate.Value.Month == dtToday.Month),
             objDash.Extras.BirthdaysThisMonth);
     }
 
     [Fact]
-    public async Task Campanhas_SoClientesDaVisao_ESemSimulacao()
+    public async Task Campaigns_OnlyViewCustomers_AndNoSimulation()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        Cenario objCenario = Montar(objDb);
+        Scenario objScenario = BuildScenario(objDb);
         Customer objC1 = objDb.Customers.Single(customer => customer.Phone == "93000000001");
         Customer objC3 = objDb.Customers.Single(customer => customer.Phone == "93000000003");
-        CampaignRun objRun = new CampaignRun { IDCompany = objCenario.Company.Id, LocalDate = new DateOnly(2026, 10, 5) };
-        CampaignRun objSimulada = new CampaignRun { IDCompany = objCenario.Company.Id, LocalDate = new DateOnly(2026, 10, 6), Simulation = true };
-        objDb.CampaignRuns.AddRange(objRun, objSimulada);
+        CampaignRun objRun = new CampaignRun { IDCompany = objScenario.Company.Id, LocalDate = new DateOnly(2026, 10, 5) };
+        CampaignRun objSimulated = new CampaignRun { IDCompany = objScenario.Company.Id, LocalDate = new DateOnly(2026, 10, 6), Simulation = true };
+        objDb.CampaignRuns.AddRange(objRun, objSimulated);
         objDb.CampaignRecipients.AddRange(
-            new CampaignRecipient { IDRun = objRun.Id, IDCustomer = objC1.Id, IDUnit = objCenario.Itaituba.Id, Status = CampaignRecipientStatus.Sent },
-            new CampaignRecipient { IDRun = objRun.Id, IDCustomer = objC3.Id, IDUnit = objCenario.Castanhal.Id, Status = CampaignRecipientStatus.Failed },
-            new CampaignRecipient { IDRun = objSimulada.Id, IDCustomer = objC1.Id, IDUnit = objCenario.Itaituba.Id, Status = CampaignRecipientStatus.Sent });
+            new CampaignRecipient { IDRun = objRun.Id, IDCustomer = objC1.Id, IDUnit = objScenario.Itaituba.Id, Status = CampaignRecipientStatus.Sent },
+            new CampaignRecipient { IDRun = objRun.Id, IDCustomer = objC3.Id, IDUnit = objScenario.Castanhal.Id, Status = CampaignRecipientStatus.Failed },
+            new CampaignRecipient { IDRun = objSimulated.Id, IDCustomer = objC1.Id, IDUnit = objScenario.Itaituba.Id, Status = CampaignRecipientStatus.Sent });
         objDb.SaveChanges();
         DashboardController objController = new DashboardController(objDb);
-        TestHelpers.SetCompanyUser(objController, objDb, objCenario.Company.Id);
+        TestHelpers.SetCompanyUser(objController, objDb, objScenario.Company.Id);
 
-        DashboardDto objEmpresa = await PedirAsync(objController);
-        DashboardDto objItaituba = await PedirAsync(objController, sUnit: "itaituba");
+        DashboardDto objCompany = await FetchAsync(objController);
+        DashboardDto objItaituba = await FetchAsync(objController, sUnit: "itaituba");
 
-        Assert.Equal((1, 1, 1), (objEmpresa.Extras.CampaignRuns, objEmpresa.Extras.CampaignSent, objEmpresa.Extras.CampaignFailed));
+        Assert.Equal((1, 1, 1), (objCompany.Extras.CampaignRuns, objCompany.Extras.CampaignSent, objCompany.Extras.CampaignFailed));
         Assert.Equal((1, 1, 0), (objItaituba.Extras.CampaignRuns, objItaituba.Extras.CampaignSent, objItaituba.Extras.CampaignFailed));
     }
 
     // ---------------------------------------------------------------- período
 
     [Fact]
-    public async Task SemDatas_UltimosTrintaDiasAteHoje()
+    public async Task NoDates_LastThirtyDaysUntilToday()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        Cenario objCenario = Montar(objDb);
+        Scenario objScenario = BuildScenario(objDb);
         DashboardController objController = new DashboardController(objDb);
-        TestHelpers.SetCompanyUser(objController, objDb, objCenario.Company.Id);
+        TestHelpers.SetCompanyUser(objController, objDb, objScenario.Company.Id);
 
-        DashboardDto objDash = await PedirAsync(objController, sFrom: null, sTo: null);
+        DashboardDto objDash = await FetchAsync(objController, sFrom: null, sTo: null);
 
-        DateOnly dtHoje = CompanyTimeZone.Today(s_objBelem, DateTime.UtcNow);
-        Assert.Equal(dtHoje, objDash.Period.To);
-        Assert.Equal(dtHoje.AddDays(-29), objDash.Period.From);
+        DateOnly dtToday = CompanyTimeZone.Today(s_objBelem, DateTime.UtcNow);
+        Assert.Equal(dtToday, objDash.Period.To);
+        Assert.Equal(dtToday.AddDays(-29), objDash.Period.From);
         Assert.Equal(30, objDash.Daily.Count);
     }
 
@@ -361,21 +361,21 @@ public class DashboardTests
     [InlineData("10/01/2026", "2026-10-10", "Data inicial inválida")]
     [InlineData("2026-10-01", "ontem", "Data final inválida")]
     [InlineData("2024-01-01", "2026-10-10", "até 2 anos")]
-    public async Task PeriodoInvalido_400(string sFrom, string sTo, string sTrecho)
+    public async Task InvalidPeriod_400(string sFrom, string sTo, string sSnippet)
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        Cenario objCenario = Montar(objDb);
+        Scenario objScenario = BuildScenario(objDb);
         DashboardController objController = new DashboardController(objDb);
-        TestHelpers.SetCompanyUser(objController, objDb, objCenario.Company.Id);
+        TestHelpers.SetCompanyUser(objController, objDb, objScenario.Company.Id);
 
         ActionResult<DashboardDto> objResult = await objController.Get(null, null, sFrom, sTo, CancellationToken.None);
 
-        ErrorResponse objErro = Assert.IsType<ErrorResponse>(Assert.IsType<BadRequestObjectResult>(objResult.Result).Value);
-        Assert.Contains(sTrecho, objErro.Error);
+        ErrorResponse objError = Assert.IsType<ErrorResponse>(Assert.IsType<BadRequestObjectResult>(objResult.Result).Value);
+        Assert.Contains(sSnippet, objError.Error);
     }
 
     [Fact]
-    public async Task SemNenhumaConexao_ZerosSemQuebrar()
+    public async Task NoVisitsAtAll_ZerosWithoutBreaking()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
         Company objCompany = new Company { Name = "Nova", Slug = "nova" };
@@ -385,7 +385,7 @@ public class DashboardTests
         DashboardController objController = new DashboardController(objDb);
         TestHelpers.SetCompanyUser(objController, objDb, objCompany.Id);
 
-        DashboardDto objDash = await PedirAsync(objController);
+        DashboardDto objDash = await FetchAsync(objController);
 
         Assert.Null(objDash.VisitsSince);
         Assert.Equal(0, objDash.Kpis.Connections.Current);

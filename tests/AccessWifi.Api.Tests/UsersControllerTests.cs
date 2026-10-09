@@ -40,7 +40,7 @@ public class UsersControllerTests
     }
 
     [Fact]
-    public async Task Update_DesativaAdminDeEmpresa_EDevolveActiveFalse()
+    public async Task Update_DisablesCompanyAdmin_AndReturnsActiveFalse()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateUser(objDbContext, "root");
@@ -58,17 +58,17 @@ public class UsersControllerTests
     }
 
     [Fact]
-    public async Task Update_Desativar_RevogaAsSessoesAbertasDoUsuario()
+    public async Task Update_Disabling_RevokesUserOpenSessions()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateUser(objDbContext, "root");
         Company objCompany = CreateCompany(objDbContext);
         AdminUser objAdmin = CreateUser(objDbContext, "gerente", objCompany.Id);
-        AdminUser objOutro = CreateUser(objDbContext, "outro", objCompany.Id);
+        AdminUser objOther = CreateUser(objDbContext, "outro", objCompany.Id);
         objDbContext.RefreshTokens.AddRange(
             new RefreshToken { IDUser = objAdmin.Id, TokenHash = "a1", ExpiresAt = DateTime.UtcNow.AddDays(1) },
             new RefreshToken { IDUser = objAdmin.Id, TokenHash = "a2", ExpiresAt = DateTime.UtcNow.AddDays(1) },
-            new RefreshToken { IDUser = objOutro.Id, TokenHash = "b1", ExpiresAt = DateTime.UtcNow.AddDays(1) });
+            new RefreshToken { IDUser = objOther.Id, TokenHash = "b1", ExpiresAt = DateTime.UtcNow.AddDays(1) });
         objDbContext.SaveChanges();
         UsersController objController = CreateController(objDbContext);
 
@@ -78,11 +78,11 @@ public class UsersControllerTests
             objDbContext.RefreshTokens.Where(token => token.IDUser == objAdmin.Id),
             objToken => Assert.NotNull(objToken.RevokedAt));
         // Sessões de outros usuários não são afetadas.
-        Assert.Null(objDbContext.RefreshTokens.Single(token => token.IDUser == objOutro.Id).RevokedAt);
+        Assert.Null(objDbContext.RefreshTokens.Single(token => token.IDUser == objOther.Id).RevokedAt);
     }
 
     [Fact]
-    public async Task Update_Reativar_VoltaAFicarAtivo()
+    public async Task Update_Reactivate_BecomesActiveAgain()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateUser(objDbContext, "root");
@@ -97,7 +97,7 @@ public class UsersControllerTests
     }
 
     [Fact]
-    public async Task Update_UsuarioInexistente_Retorna404()
+    public async Task Update_UnknownUser_Returns404()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         UsersController objController = CreateController(objDbContext);
@@ -110,7 +110,7 @@ public class UsersControllerTests
     }
 
     [Fact]
-    public async Task Update_DesativarOProprioUsuario_Retorna400()
+    public async Task Update_DisablingOwnUser_Returns400()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         AdminUser objRoot = CreateUser(objDbContext, "root");
@@ -128,7 +128,7 @@ public class UsersControllerTests
     }
 
     [Fact]
-    public async Task Update_DesativarOUltimoSuperAdminAtivo_Retorna400()
+    public async Task Update_DisablingLastActiveSuperAdmin_Returns400()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         AdminUser objRoot = CreateUser(objDbContext, "root");
@@ -145,7 +145,7 @@ public class UsersControllerTests
     }
 
     [Fact]
-    public async Task Update_DesativarSuperAdminComOutroAtivo_Permite()
+    public async Task Update_DisablingSuperAdminWithAnotherActive_Allows()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateUser(objDbContext, "root");
@@ -160,7 +160,7 @@ public class UsersControllerTests
     }
 
     [Fact]
-    public async Task GetAll_DevolveOCampoActive()
+    public async Task GetAll_ReturnsActiveField()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateUser(objDbContext, "root");

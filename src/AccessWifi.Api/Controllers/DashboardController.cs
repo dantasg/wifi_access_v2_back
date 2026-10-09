@@ -66,11 +66,11 @@ public class DashboardController : ControllerBase
         }
 
         DateTime dtNowUtc = DateTime.UtcNow;
-        DateOnly dtHoje = CompanyTimeZone.Today(CompanyTimeZone.Resolve(objCompany.TimeZone), dtNowUtc);
-        (DateOnly dtFrom, DateOnly dtTo, string? sErro) = LerPeriodo(sFrom, sTo, dtHoje);
-        if (sErro is not null)
+        DateOnly dtToday = CompanyTimeZone.Today(CompanyTimeZone.Resolve(objCompany.TimeZone), dtNowUtc);
+        (DateOnly dtFrom, DateOnly dtTo, string? sError) = ReadPeriod(sFrom, sTo, dtToday);
+        if (sError is not null)
         {
-            return BadRequest(new ErrorResponse(sErro));
+            return BadRequest(new ErrorResponse(sError));
         }
 
         // Unidades que o usuário pode ver (usuário de unidade: só as dele).
@@ -80,8 +80,8 @@ public class DashboardController : ControllerBase
             .OrderBy(unit => unit.Name)
             .ToListAsync(objCancellationToken);
 
-        bool bVisaoUnidade = !string.IsNullOrWhiteSpace(sUnitSlug);
-        if (bVisaoUnidade)
+        bool bUnitView = !string.IsNullOrWhiteSpace(sUnitSlug);
+        if (bUnitView)
         {
             Unit? objUnit = objUnits.FirstOrDefault(unit => unit.Slug == sUnitSlug!.Trim());
             if (objUnit is null)
@@ -92,13 +92,13 @@ public class DashboardController : ControllerBase
         }
 
         DashboardDto objDashboard = await new DashboardBuilder(_objDbContext).BuildAsync(
-            objCompany, objUnits, bVisaoUnidade, dtFrom, dtTo, dtNowUtc, objCancellationToken);
+            objCompany, objUnits, bUnitView, dtFrom, dtTo, dtNowUtc, objCancellationToken);
         return Ok(objDashboard);
     }
 
-    private static (DateOnly From, DateOnly To, string? Erro) LerPeriodo(string? sFrom, string? sTo, DateOnly dtHoje)
+    private static (DateOnly From, DateOnly To, string? Error) ReadPeriod(string? sFrom, string? sTo, DateOnly dtToday)
     {
-        DateOnly dtTo = dtHoje;
+        DateOnly dtTo = dtToday;
         if (!string.IsNullOrWhiteSpace(sTo) && !TryParse(sTo, out dtTo))
         {
             return (default, default, "Data final inválida (use aaaa-mm-dd).");

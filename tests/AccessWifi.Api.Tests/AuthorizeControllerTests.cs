@@ -14,22 +14,22 @@ public class AuthorizeControllerTests
     /// <summary>Dublê da controladora: registra a chamada ou simula falha.</summary>
     private class FakeUnifiClient : IUnifiClient
     {
-        public CompanyUnifi? ObjConfigRecebida { get; private set; }
-        public string? SMacAutorizado { get; private set; }
-        public int? IMinutosRecebidos { get; private set; }
-        public bool Falhar { get; set; }
+        public CompanyUnifi? ObjReceivedConfig { get; private set; }
+        public string? SAuthorizedMac { get; private set; }
+        public int? IReceivedMinutes { get; private set; }
+        public bool Fail { get; set; }
 
         public Task AuthorizeGuestAsync(
             CompanyUnifi objConfig, string sMac, int iAccessMinutes,
             CancellationToken objCancellationToken = default)
         {
-            if (Falhar)
+            if (Fail)
             {
                 throw new UnifiException("Simulação de falha.");
             }
-            ObjConfigRecebida = objConfig;
-            SMacAutorizado = sMac;
-            IMinutosRecebidos = iAccessMinutes;
+            ObjReceivedConfig = objConfig;
+            SAuthorizedMac = sMac;
+            IReceivedMinutes = iAccessMinutes;
             return Task.CompletedTask;
         }
 
@@ -58,14 +58,14 @@ public class AuthorizeControllerTests
     }
 
     private static AuthorizeRequest CreateRequest(
-        string? sUnit = "exemplo-matriz", string? sMac = "AA:BB:CC:DD:EE:FF", bool consentimento = true)
+        string? sUnit = "exemplo-matriz", string? sMac = "AA:BB:CC:DD:EE:FF", bool consent = true)
     {
         return new AuthorizeRequest(
-            Nome: "Ana Beatriz Souza",
+            Name: "Ana Beatriz Souza",
             Instagram: "@anabsouza",
-            Telefone: "(91) 98888-1234",
-            Nascimento: "12/03/1998",
-            Consentimento: consentimento,
+            Phone: "(91) 98888-1234",
+            BirthDate: "12/03/1998",
+            Consent: consent,
             Unit: sUnit,
             Mac: sMac,
             Ap: "11:22:33:44:55:66",
@@ -80,7 +80,7 @@ public class AuthorizeControllerTests
     }
 
     [Fact]
-    public async Task Post_SemUnidade_Retorna400()
+    public async Task Post_NoUnit_Returns400()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         AuthorizeController objController = CreateController(objDbContext, new FakeUnifiClient());
@@ -94,7 +94,7 @@ public class AuthorizeControllerTests
     }
 
     [Fact]
-    public async Task Post_UnidadeInexistente_Retorna400()
+    public async Task Post_UnknownUnit_Returns400()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateUnit(objDbContext);
@@ -110,7 +110,7 @@ public class AuthorizeControllerTests
     }
 
     [Fact]
-    public async Task Post_UnidadeInativa_Retorna400()
+    public async Task Post_InactiveUnit_Returns400()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Unit objUnit = CreateUnit(objDbContext);
@@ -126,7 +126,7 @@ public class AuthorizeControllerTests
     }
 
     [Fact]
-    public async Task Post_SemMac_Retorna400ComMensagem()
+    public async Task Post_NoMac_Returns400WithMessage()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateUnit(objDbContext);
@@ -142,14 +142,14 @@ public class AuthorizeControllerTests
     }
 
     [Fact]
-    public async Task Post_SemConsentimento_Retorna400ComMensagemLgpd()
+    public async Task Post_NoConsent_Returns400WithLgpdMessage()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateUnit(objDbContext);
         AuthorizeController objController = CreateController(objDbContext, new FakeUnifiClient());
 
         ActionResult<AuthorizeResponse> objResult =
-            await objController.Post(CreateRequest(consentimento: false), CancellationToken.None);
+            await objController.Post(CreateRequest(consent: false), CancellationToken.None);
 
         BadRequestObjectResult objBadRequest = Assert.IsType<BadRequestObjectResult>(objResult.Result);
         AuthorizeResponse objResponse = Assert.IsType<AuthorizeResponse>(objBadRequest.Value);
@@ -158,7 +158,7 @@ public class AuthorizeControllerTests
     }
 
     [Fact]
-    public async Task Post_ComDadosValidos_GravaLeadComIDUnitEChamaUnifiDaUnidade()
+    public async Task Post_ValidData_SavesLeadWithUnitIdAndCallsUnitUnifi()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Unit objUnit = CreateUnit(objDbContext);
@@ -173,14 +173,14 @@ public class AuthorizeControllerTests
         Assert.True(objResponse.Authorized);
         Assert.Equal("https://www.exemplo.com.br", objResponse.Redirect);
 
-        Assert.Equal("AA:BB:CC:DD:EE:FF", objUnifiClient.SMacAutorizado);
-        Assert.Same(objUnit.Unifi, objUnifiClient.ObjConfigRecebida);
+        Assert.Equal("AA:BB:CC:DD:EE:FF", objUnifiClient.SAuthorizedMac);
+        Assert.Same(objUnit.Unifi, objUnifiClient.ObjReceivedConfig);
         Assert.Single(objDbContext.Leads);
         Assert.Equal(objUnit.Id, objDbContext.Leads.Single().IDUnit);
     }
 
     [Fact]
-    public async Task Post_ComSettingsGravadas_RepassaOAccessMinutesDaEmpresa()
+    public async Task Post_WithSavedSettings_PassesCompanyAccessMinutes()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Unit objUnit = CreateUnit(objDbContext);
@@ -195,11 +195,11 @@ public class AuthorizeControllerTests
 
         await objController.Post(CreateRequest(), CancellationToken.None);
 
-        Assert.Equal(90, objUnifiClient.IMinutosRecebidos);
+        Assert.Equal(90, objUnifiClient.IReceivedMinutes);
     }
 
     [Fact]
-    public async Task Post_MesmoMacNaMesmaUnidade_AtualizaOLeadEmVezDeDuplicar()
+    public async Task Post_SameMacSameUnit_UpdatesLeadInsteadOfDuplicating()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateUnit(objDbContext);
@@ -207,15 +207,15 @@ public class AuthorizeControllerTests
 
         await objController.Post(CreateRequest(), CancellationToken.None);
         // Mesmo aparelho (mesmo MAC) volta com o nome atualizado.
-        AuthorizeRequest objSegundoCadastro = CreateRequest() with { Nome = "Ana B. Souza (novo)" };
-        await objController.Post(objSegundoCadastro, CancellationToken.None);
+        AuthorizeRequest objSecondSignup = CreateRequest() with { Name = "Ana B. Souza (novo)" };
+        await objController.Post(objSecondSignup, CancellationToken.None);
 
         Lead objLead = Assert.Single(objDbContext.Leads);
-        Assert.Equal("Ana B. Souza (novo)", objLead.Nome);
+        Assert.Equal("Ana B. Souza (novo)", objLead.Name);
     }
 
     [Fact]
-    public async Task Post_MacsDiferentesNaMesmaUnidade_GeramLeadsSeparados()
+    public async Task Post_DifferentMacsSameUnit_CreateSeparateLeads()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateUnit(objDbContext);
@@ -228,7 +228,7 @@ public class AuthorizeControllerTests
     }
 
     [Fact]
-    public async Task Post_ComRedirectUrlDaEmpresa_RedirecionaParaEla()
+    public async Task Post_WithCompanyRedirectUrl_RedirectsToIt()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Unit objUnit = CreateUnit(objDbContext);
@@ -250,7 +250,7 @@ public class AuthorizeControllerTests
     }
 
     [Fact]
-    public async Task Post_UnidadeComUrlPropria_VenceAGeralDaEmpresa()
+    public async Task Post_UnitWithOwnUrl_BeatsCompanyGeneral()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Unit objUnit = CreateUnit(objDbContext);
@@ -272,7 +272,7 @@ public class AuthorizeControllerTests
     }
 
     [Fact]
-    public async Task Post_UnidadeComUrlPropriaESemGeral_UsaADaUnidade()
+    public async Task Post_UnitWithOwnUrlAndNoGeneral_UsesUnits()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Unit objUnit = CreateUnit(objDbContext);
@@ -290,7 +290,7 @@ public class AuthorizeControllerTests
     }
 
     [Fact]
-    public async Task Post_SemNenhumaUrl_VaiParaOGoogle()
+    public async Task Post_NoUrlAtAll_GoesToGoogle()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateUnit(objDbContext);
@@ -305,7 +305,7 @@ public class AuthorizeControllerTests
     }
 
     [Fact]
-    public async Task Post_SemRedirectUrl_UsaAUrlDoRequest()
+    public async Task Post_NoRedirectUrl_UsesRequestUrl()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateUnit(objDbContext);
@@ -320,7 +320,7 @@ public class AuthorizeControllerTests
     }
 
     [Fact]
-    public async Task Post_SemSettings_UsaODefaultDe1440Minutos()
+    public async Task Post_NoSettings_UsesDefault1440Minutes()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateUnit(objDbContext);
@@ -329,11 +329,11 @@ public class AuthorizeControllerTests
 
         await objController.Post(CreateRequest(), CancellationToken.None);
 
-        Assert.Equal(1440, objUnifiClient.IMinutosRecebidos);
+        Assert.Equal(1440, objUnifiClient.IReceivedMinutes);
     }
 
     [Fact]
-    public async Task Post_RegistraOClienteDaEmpresaPeloTelefone_SemMudarAResposta()
+    public async Task Post_RegistersCompanyCustomerByPhone_WithoutChangingResponse()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Unit objUnit = CreateUnit(objDbContext);
@@ -351,7 +351,7 @@ public class AuthorizeControllerTests
     }
 
     [Fact]
-    public async Task Post_GravaOLinkDoPerfilNoLeadENoCliente()
+    public async Task Post_SavesProfileLinkOnLeadAndCustomer()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateUnit(objDbContext);
@@ -365,7 +365,7 @@ public class AuthorizeControllerTests
     }
 
     [Fact]
-    public async Task Post_InstagramForaDoFormato_GravaVazioELiberaMesmoAssim()
+    public async Task Post_InvalidInstagram_SavesEmptyAndAllowsAnyway()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateUnit(objDbContext);
@@ -376,17 +376,17 @@ public class AuthorizeControllerTests
             CreateRequest() with { Instagram = "biell6555@gmail.com" }, CancellationToken.None);
 
         Assert.IsType<OkObjectResult>(objResult.Result);
-        Assert.Equal("AA:BB:CC:DD:EE:FF", objUnifi.SMacAutorizado);
+        Assert.Equal("AA:BB:CC:DD:EE:FF", objUnifi.SAuthorizedMac);
         Assert.Equal("", Assert.Single(objDbContext.Leads).Instagram);
     }
 
     [Fact]
-    public async Task Post_FalhaNaUnifi_Retorna502MasMantemOLead()
+    public async Task Post_UnifiFailure_Returns502ButKeepsLead()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateUnit(objDbContext);
         AuthorizeController objController =
-            CreateController(objDbContext, new FakeUnifiClient { Falhar = true });
+            CreateController(objDbContext, new FakeUnifiClient { Fail = true });
 
         ActionResult<AuthorizeResponse> objResult =
             await objController.Post(CreateRequest(), CancellationToken.None);

@@ -31,18 +31,18 @@ namespace Models.Campaigns
     /// </summary>
     public static class CampaignPdf
     {
-        private static readonly string[] s_arrDias =
+        private static readonly string[] s_arrDays =
             ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"];
 
-        private static readonly string[] s_arrDiasCurtos = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+        private static readonly string[] s_arrShortDays = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
 
         /// <summary>"segunda-feira, 12/10/2026" (nomes fixos em português: o servidor roda sem cultura instalada).</summary>
         public static string LongDate(DateOnly dtDate) =>
-            $"{s_arrDias[(int)dtDate.DayOfWeek]}, {dtDate.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)}";
+            $"{s_arrDays[(int)dtDate.DayOfWeek]}, {dtDate.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)}";
 
         /// <summary>"sex, 16/10".</summary>
         public static string ShortDate(DateOnly dtDate) =>
-            $"{s_arrDiasCurtos[(int)dtDate.DayOfWeek]}, {dtDate.ToString("dd/MM", CultureInfo.InvariantCulture)}";
+            $"{s_arrShortDays[(int)dtDate.DayOfWeek]}, {dtDate.ToString("dd/MM", CultureInfo.InvariantCulture)}";
 
         /// <summary>Título da coluna de informação, conforme o tipo. Vazio = sem coluna.</summary>
         public static string InfoHeader(string sKind) => sKind switch
@@ -56,14 +56,14 @@ namespace Models.Campaigns
 
         public static byte[] Build(CampaignPdfData objData)
         {
-            Palette objCores = Palette.From(objData.Colors);
+            Palette objColors = Palette.From(objData.Colors);
             PdfTheme.Configure();
             Logo objLogo = Logo.Read(objData.LogoDataUrl);
-            string sMensagem = CampaignContact.WithoutEmoji(
+            string sMessage = CampaignContact.WithoutEmoji(
                 CampaignMessage.RenderShared(objData.MessageTemplate, objData.CompanyName, objData.UnitName),
-                out bool bTinhaEmoji);
-            string sTituloInfo = InfoHeader(objData.Kind);
-            bool bComInfo = sTituloInfo.Length > 0 && objData.Rows.Any(row => row.Info.Length > 0);
+                out bool bHadEmoji);
+            string sInfoTitle = InfoHeader(objData.Kind);
+            bool bWithInfo = sInfoTitle.Length > 0 && objData.Rows.Any(row => row.Info.Length > 0);
 
             return Document.Create(objDocument => objDocument.Page(objPage =>
             {
@@ -71,139 +71,139 @@ namespace Models.Campaigns
                 objPage.MarginHorizontal(36);
                 objPage.MarginVertical(32);
                 objPage.PageColor(Colors.White);
-                objPage.DefaultTextStyle(style => style.FontSize(10).FontColor(objCores.Ink));
+                objPage.DefaultTextStyle(style => style.FontSize(10).FontColor(objColors.Ink));
 
                 // ---------------------------------------------------------- Cabeçalho (toda página)
-                Header(objPage, objLogo, objCores, objData.CompanyName, "PDF de campanha",
+                Header(objPage, objLogo, objColors, objData.CompanyName, "PDF de campanha",
                     $"{objData.CompanyName} · {objData.UnitName}");
 
                 // ---------------------------------------------------------------- Conteúdo
-                objPage.Content().Column(objColuna =>
+                objPage.Content().Column(objColumn =>
                 {
-                    objColuna.Spacing(14);
+                    objColumn.Spacing(14);
 
-                    objColuna.Item().Column(objTitulo =>
+                    objColumn.Item().Column(objTitle =>
                     {
-                        objTitulo.Item().Text(objData.CampaignName).FontSize(18).Bold().FontColor(objCores.Ink);
+                        objTitle.Item().Text(objData.CampaignName).FontSize(18).Bold().FontColor(objColors.Ink);
                         if (!string.Equals(objData.CampaignName, CampaignKind.Label(objData.Kind), StringComparison.Ordinal))
                         {
-                            objTitulo.Item().Text($"Campanha de {CampaignKind.Label(objData.Kind).ToLowerInvariant()}").FontColor(objCores.Muted);
+                            objTitle.Item().Text($"Campanha de {CampaignKind.Label(objData.Kind).ToLowerInvariant()}").FontColor(objColors.Muted);
                         }
                     });
 
-                    objColuna.Item().Row(objRow =>
+                    objColumn.Item().Row(objRow =>
                     {
-                        Field(objRow.RelativeItem(), "Unidade", objData.UnitName, objCores);
-                        Field(objRow.RelativeItem(), "Data", LongDate(objData.LocalDate), objCores);
-                        Field(objRow.RelativeItem(), "Clientes", objData.Rows.Count.ToString(), objCores);
+                        Field(objRow.RelativeItem(), "Unidade", objData.UnitName, objColors);
+                        Field(objRow.RelativeItem(), "Data", LongDate(objData.LocalDate), objColors);
+                        Field(objRow.RelativeItem(), "Clientes", objData.Rows.Count.ToString(), objColors);
                     });
 
                     if (objData.Kind == CampaignKind.Birthday)
                     {
-                        (DateOnly dtInicio, DateOnly dtFim) = CampaignCalendar.BirthdayRange(objData.LocalDate);
-                        objColuna.Item().Text(objTexto =>
+                        (DateOnly dtStart, DateOnly dtEnd) = CampaignCalendar.BirthdayRange(objData.LocalDate);
+                        objColumn.Item().Text(objText =>
                         {
-                            objTexto.Span("Aniversariantes de ").FontColor(objCores.Muted);
-                            objTexto.Span($"{ShortDate(dtInicio)} a {ShortDate(dtFim)}").SemiBold();
-                            objTexto.Span(". Quem faz aniversário hoje está marcado como ").FontColor(objCores.Muted);
-                            objTexto.Span("Hoje").Bold().FontColor(objCores.BrandDark);
-                            objTexto.Span(".").FontColor(objCores.Muted);
+                            objText.Span("Aniversariantes de ").FontColor(objColors.Muted);
+                            objText.Span($"{ShortDate(dtStart)} a {ShortDate(dtEnd)}").SemiBold();
+                            objText.Span(". Quem faz aniversário hoje está marcado como ").FontColor(objColors.Muted);
+                            objText.Span("Hoje").Bold().FontColor(objColors.BrandDark);
+                            objText.Span(".").FontColor(objColors.Muted);
                         });
                     }
 
                     // A mensagem, como a empresa escreveu na tela de campanha.
-                    objColuna.Item().Background(objCores.Surface).Border(1).BorderColor(objCores.Line).CornerRadius(8)
-                        .Padding(14).Column(objCaixa =>
+                    objColumn.Item().Background(objColors.Surface).Border(1).BorderColor(objColors.Line).CornerRadius(8)
+                        .Padding(14).Column(objBox =>
                         {
-                            objCaixa.Spacing(6);
-                            objCaixa.Item().Text("Mensagem para enviar").FontSize(12).Bold().FontColor(objCores.BrandDark);
-                            objCaixa.Item().Text(sMensagem).FontSize(12).FontColor(objCores.Ink);
-                            if (sMensagem.Contains('{'))
+                            objBox.Spacing(6);
+                            objBox.Item().Text("Mensagem para enviar").FontSize(12).Bold().FontColor(objColors.BrandDark);
+                            objBox.Item().Text(sMessage).FontSize(12).FontColor(objColors.Ink);
+                            if (sMessage.Contains('{'))
                             {
-                                objCaixa.Item().Text(
+                                objBox.Item().Text(
                                     "O que está entre chaves muda para cada cliente: no link do WhatsApp já vai preenchido.")
-                                    .FontSize(9).FontColor(objCores.Muted);
+                                    .FontSize(9).FontColor(objColors.Muted);
                             }
-                            if (bTinhaEmoji)
+                            if (bHadEmoji)
                             {
-                                objCaixa.Item().Text(
+                                objBox.Item().Text(
                                     "Os emojis da mensagem não aparecem neste PDF, mas vão junto no link do WhatsApp.")
-                                    .FontSize(9).FontColor(objCores.Muted);
+                                    .FontSize(9).FontColor(objColors.Muted);
                             }
                         });
 
-                    objColuna.Item().Column(objPassos =>
+                    objColumn.Item().Column(objSteps =>
                     {
-                        objPassos.Spacing(2);
-                        objPassos.Item().Text("Como fazer").Bold().FontColor(objCores.BrandDark);
-                        objPassos.Item().Text("1. Clique no WhatsApp do cliente: a conversa abre com a mensagem pronta, já com o nome dele.");
-                        objPassos.Item().Text("2. Confira o texto e envie.");
-                        objPassos.Item().Text("3. Se o cliente informou o Instagram, o @ também é um link para o perfil dele.");
+                        objSteps.Spacing(2);
+                        objSteps.Item().Text("Como fazer").Bold().FontColor(objColors.BrandDark);
+                        objSteps.Item().Text("1. Clique no WhatsApp do cliente: a conversa abre com a mensagem pronta, já com o nome dele.");
+                        objSteps.Item().Text("2. Confira o texto e envie.");
+                        objSteps.Item().Text("3. Se o cliente informou o Instagram, o @ também é um link para o perfil dele.");
                     });
 
-                    objColuna.Item().Table(objTabela =>
+                    objColumn.Item().Table(objTable =>
                     {
-                        objTabela.ColumnsDefinition(objColunas =>
+                        objTable.ColumnsDefinition(objColumns =>
                         {
-                            objColunas.ConstantColumn(24);
-                            objColunas.RelativeColumn(2.7f);
-                            objColunas.RelativeColumn(2.1f);
-                            objColunas.RelativeColumn(2f);
-                            if (bComInfo)
+                            objColumns.ConstantColumn(24);
+                            objColumns.RelativeColumn(2.7f);
+                            objColumns.RelativeColumn(2.1f);
+                            objColumns.RelativeColumn(2f);
+                            if (bWithInfo)
                             {
                                 // Cabe "Hoje · seg, 12/10 · 28 anos" numa linha.
-                                objColunas.RelativeColumn(2.8f);
+                                objColumns.RelativeColumn(2.8f);
                             }
                         });
 
-                        objTabela.Header(objCabecalho =>
+                        objTable.Header(objHeader =>
                         {
-                            ColumnTitle(objCabecalho.Cell(), "#", objCores);
-                            ColumnTitle(objCabecalho.Cell(), "Cliente", objCores);
-                            ColumnTitle(objCabecalho.Cell(), "WhatsApp", objCores);
-                            ColumnTitle(objCabecalho.Cell(), "Instagram", objCores);
-                            if (bComInfo)
+                            ColumnTitle(objHeader.Cell(), "#", objColors);
+                            ColumnTitle(objHeader.Cell(), "Cliente", objColors);
+                            ColumnTitle(objHeader.Cell(), "WhatsApp", objColors);
+                            ColumnTitle(objHeader.Cell(), "Instagram", objColors);
+                            if (bWithInfo)
                             {
-                                ColumnTitle(objCabecalho.Cell(), sTituloInfo, objCores);
+                                ColumnTitle(objHeader.Cell(), sInfoTitle, objColors);
                             }
                         });
 
-                        int iLinha = 0;
-                        foreach (CampaignPdfRow objCliente in objData.Rows)
+                        int iLine = 0;
+                        foreach (CampaignPdfRow objCustomer in objData.Rows)
                         {
-                            iLinha++;
-                            Cell(objTabela.Cell(), objCores).Text(iLinha.ToString()).FontColor(objCores.Muted);
-                            Cell(objTabela.Cell(), objCores).Text(objCliente.Name).SemiBold();
-                            Cell(objTabela.Cell(), objCores)
-                                .Hyperlink(CampaignContact.WhatsAppUrl(objCliente.Phone, objCliente.Message))
-                                .Text(CampaignContact.FormatPhone(objCliente.Phone)).FontColor(objCores.Link).Underline();
+                            iLine++;
+                            Cell(objTable.Cell(), objColors).Text(iLine.ToString()).FontColor(objColors.Muted);
+                            Cell(objTable.Cell(), objColors).Text(objCustomer.Name).SemiBold();
+                            Cell(objTable.Cell(), objColors)
+                                .Hyperlink(CampaignContact.WhatsAppUrl(objCustomer.Phone, objCustomer.Message))
+                                .Text(CampaignContact.FormatPhone(objCustomer.Phone)).FontColor(objColors.Link).Underline();
 
-                            IContainer objInstagram = Cell(objTabela.Cell(), objCores);
-                            string sPerfil = InstagramHandle.ProfileUrl(objCliente.Instagram);
-                            if (sPerfil.Length > 0)
+                            IContainer objInstagram = Cell(objTable.Cell(), objColors);
+                            string sProfile = InstagramHandle.ProfileUrl(objCustomer.Instagram);
+                            if (sProfile.Length > 0)
                             {
-                                objInstagram.Hyperlink(sPerfil)
-                                    .Text("@" + InstagramHandle.Normalize(objCliente.Instagram)).FontColor(objCores.Link).Underline();
+                                objInstagram.Hyperlink(sProfile)
+                                    .Text("@" + InstagramHandle.Normalize(objCustomer.Instagram)).FontColor(objColors.Link).Underline();
                             }
-                            else if (objCliente.Instagram.Length > 0)
+                            else if (objCustomer.Instagram.Length > 0)
                             {
                                 // Fora do formato do Instagram (dado antigo): mostra como veio, sem link.
-                                objInstagram.Text(objCliente.Instagram);
+                                objInstagram.Text(objCustomer.Instagram);
                             }
                             else
                             {
-                                objInstagram.Text("—").FontColor(objCores.Muted);
+                                objInstagram.Text("—").FontColor(objColors.Muted);
                             }
 
-                            if (bComInfo)
+                            if (bWithInfo)
                             {
-                                Cell(objTabela.Cell(), objCores).Text(objTexto =>
+                                Cell(objTable.Cell(), objColors).Text(objText =>
                                 {
-                                    if (objCliente.IsToday)
+                                    if (objCustomer.IsToday)
                                     {
-                                        objTexto.Span("Hoje · ").Bold().FontColor(objCores.BrandDark);
+                                        objText.Span("Hoje · ").Bold().FontColor(objColors.BrandDark);
                                     }
-                                    objTexto.Span(objCliente.Info);
+                                    objText.Span(objCustomer.Info);
                                 });
                             }
                         }
@@ -211,7 +211,7 @@ namespace Models.Campaigns
                 });
 
                 // ------------------------------------------------------------------ Rodapé
-                Footer(objPage, objCores);
+                Footer(objPage, objColors);
             })).GeneratePdf();
         }
     }

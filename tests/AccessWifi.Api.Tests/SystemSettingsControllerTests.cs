@@ -29,14 +29,14 @@ public class SystemSettingsControllerTests
     private static T Ok<T>(ActionResult<T> objResult) =>
         Assert.IsType<T>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
 
-    private static string Erro<T>(ActionResult<T> objResult) =>
+    private static string ErrorMessage<T>(ActionResult<T> objResult) =>
         Assert.IsType<ErrorResponse>(Assert.IsType<BadRequestObjectResult>(objResult.Result).Value).Error;
 
-    private static string ValorNoBanco(AppDbContext objDbContext, string sKey) =>
+    private static string StoredValue(AppDbContext objDbContext, string sKey) =>
         objDbContext.Configurations.Single(config => config.IDConfiguration == sKey).Value;
 
     [Fact]
-    public async Task Get_SemNadaConfigurado_DevolveOsPadroesESemSenha()
+    public async Task Get_NothingConfigured_ReturnsDefaultsWithoutPassword()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
 
@@ -49,7 +49,7 @@ public class SystemSettingsControllerTests
     }
 
     [Fact]
-    public async Task Update_GuardaASenhaCifrada_ENuncaDevolveEla()
+    public async Task Update_StoresPasswordEncrypted_AndNeverReturnsIt()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         SystemSettingsController objController = CreateController(objDbContext);
@@ -59,29 +59,29 @@ public class SystemSettingsControllerTests
         Assert.True(objSmtp.HasPassword);
         Assert.Equal("smtp.gmail.com", objSmtp.Host);
         Assert.Equal("Lojas Regional", objSmtp.FromName);
-        string sGuardada = ValorNoBanco(objDbContext, ConfigurationKeys.SmtpPassword);
-        Assert.StartsWith("enc:", sGuardada);
-        Assert.DoesNotContain("segredo123", sGuardada);
+        string sStored = StoredValue(objDbContext, ConfigurationKeys.SmtpPassword);
+        Assert.StartsWith("enc:", sStored);
+        Assert.DoesNotContain("segredo123", sStored);
         // O DTO não tem campo de senha: nem por engano ela volta para a tela.
         Assert.DoesNotContain(typeof(SmtpSettingsDto).GetProperties(), objProp => objProp.Name.Contains("Password") && objProp.PropertyType == typeof(string));
     }
 
     [Fact]
-    public async Task Update_SenhaNula_MantemAAtual_EGmailTiraOsEspacosDaSenhaDeApp()
+    public async Task Update_NullPassword_KeepsCurrent_AndGmailStripsAppPasswordSpaces()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         SystemSettingsController objController = CreateController(objDbContext);
         await objController.Update(Gmail("abcd efgh ijkl mnop"), CancellationToken.None);
-        string sAntes = ValorNoBanco(objDbContext, ConfigurationKeys.SmtpPassword);
+        string sBefore = StoredValue(objDbContext, ConfigurationKeys.SmtpPassword);
 
         SmtpSettingsDto objSmtp = Ok(await objController.Update(
             Gmail(null) with { Smtp = Gmail(null).Smtp with { FromName = "Regional Avisos" } }, CancellationToken.None)).Smtp;
 
         Assert.True(objSmtp.HasPassword);
         Assert.Equal("Regional Avisos", objSmtp.FromName);
-        Assert.Equal(sAntes, ValorNoBanco(objDbContext, ConfigurationKeys.SmtpPassword));
-        SmtpOptions objLida = await new ConfigurationReader(objDbContext, TestHelpers.CreateEncryptor()).GetSmtpAsync();
-        Assert.Equal("abcdefghijklmnop", objLida.Password);
+        Assert.Equal(sBefore, StoredValue(objDbContext, ConfigurationKeys.SmtpPassword));
+        SmtpOptions objRead = await new ConfigurationReader(objDbContext, TestHelpers.CreateEncryptor()).GetSmtpAsync();
+        Assert.Equal("abcdefghijklmnop", objRead.Password);
     }
 
     [Theory]
@@ -91,7 +91,7 @@ public class SystemSettingsControllerTests
     [InlineData("smtp.gmail.com", 0, "a@b.com", "Porta inválida")]
     [InlineData("smtp.gmail.com", 587, "", "remetente")]
     [InlineData("smtp.gmail.com", 587, "sem-arroba", "remetente")]
-    public async Task Update_DadosInvalidos_Recusa_ENaoGrava(string sHost, int iPort, string sFrom, string sTrecho)
+    public async Task Update_InvalidData_Rejects_AndDoesNotSave(string sHost, int iPort, string sFrom, string sSnippet)
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
 
@@ -99,12 +99,12 @@ public class SystemSettingsControllerTests
             new UpdateSystemSettingsRequest(new SmtpSettingsRequest(sHost, iPort, "u", "p", sFrom, null, true)),
             CancellationToken.None);
 
-        Assert.Contains(sTrecho, Erro(objResult));
+        Assert.Contains(sSnippet, ErrorMessage(objResult));
         Assert.Empty(objDbContext.Configurations);
     }
 
     [Fact]
-    public async Task Update_ServidorVazio_DesligaOEnvio_SemExigirRemetente()
+    public async Task Update_EmptyServer_DisablesSending_WithoutRequiringSender()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
 
@@ -117,7 +117,7 @@ public class SystemSettingsControllerTests
     }
 
     [Fact]
-    public async Task TesteDeEnvio_Funcionou_OuFalhouComOMotivo()
+    public async Task SendTest_Worked_OrFailedWithReason()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         FakeEmailSender objSender = new FakeEmailSender();
@@ -125,13 +125,13 @@ public class SystemSettingsControllerTests
 
         SmtpTestResponse objOk = Ok(await objController.TestSmtp(new SmtpTestRequest(" gerente@regional.com.br "), CancellationToken.None));
         Assert.True(objOk.Success);
-        Assert.Equal("gerente@regional.com.br", Assert.Single(objSender.Enviados).To);
+        Assert.Equal("gerente@regional.com.br", Assert.Single(objSender.Sent).To);
 
-        objSender.FalharVezes = 1;
-        SmtpTestResponse objFalha = Ok(await objController.TestSmtp(new SmtpTestRequest("gerente@regional.com.br"), CancellationToken.None));
-        Assert.False(objFalha.Success);
-        Assert.Contains("SMTP fora do ar", objFalha.Message);
+        objSender.FailTimes = 1;
+        SmtpTestResponse objFailure = Ok(await objController.TestSmtp(new SmtpTestRequest("gerente@regional.com.br"), CancellationToken.None));
+        Assert.False(objFailure.Success);
+        Assert.Contains("SMTP fora do ar", objFailure.Message);
 
-        Assert.Contains("e-mail válido", Erro(await objController.TestSmtp(new SmtpTestRequest("nao-e-email"), CancellationToken.None)));
+        Assert.Contains("e-mail válido", ErrorMessage(await objController.TestSmtp(new SmtpTestRequest("nao-e-email"), CancellationToken.None)));
     }
 }

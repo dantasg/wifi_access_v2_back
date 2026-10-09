@@ -101,7 +101,7 @@ namespace AccessWifiService.Campaigns
                 .Select(kind => (kind.IDCompany, kind.Kind))
                 .ToHashSet();
 
-            int iCriadas = 0;
+            int iCreated = 0;
             // Na mesma volta, a de maior prioridade escolhe os destinatários primeiro (D11).
             foreach (Campaign objCampaign in objDue
                 .OrderBy(campaign => CampaignKind.Priority(campaign.Kind))
@@ -128,20 +128,20 @@ namespace AccessWifiService.Campaigns
 
                 TimeZoneInfo objZone = CompanyTimeZone.Resolve(objZones.GetValueOrDefault(objCampaign.IDCompany));
                 CampaignConfig objConfig = CampaignConfig.FromJson(objCampaign.ConfigJson);
-                DateOnly dtHoje = CompanyTimeZone.Today(objZone, dtNowUtc);
+                DateOnly dtToday = CompanyTimeZone.Today(objZone, dtNowUtc);
 
                 // Cada volta anda um horário da agenda; o limite só protege contra laço infinito.
                 for (int iGuard = 0; iGuard < 1000 && objCampaign.NextRunAt is DateTime dtOccurrence
                     && dtOccurrence <= dtNowUtc; iGuard++)
                 {
-                    DateOnly dtDia = CompanyTimeZone.Today(objZone, dtOccurrence);
-                    bool bPerdida = dtDia < dtHoje;
+                    DateOnly dtDay = CompanyTimeZone.Today(objZone, dtOccurrence);
+                    bool bMissed = dtDay < dtToday;
                     // Uma execução por campanha por dia (D1): mudar o horário para mais tarde no mesmo
                     // dia, depois de já ter disparado, não dispara de novo.
-                    bool bJaExiste = await _objDbContext.CampaignRuns.AnyAsync(
-                        run => run.IDCampaign == objCampaign.Id && run.LocalDate == dtDia,
+                    bool bAlreadyExists = await _objDbContext.CampaignRuns.AnyAsync(
+                        run => run.IDCampaign == objCampaign.Id && run.LocalDate == dtDay,
                         objCancellationToken);
-                    if (!bJaExiste)
+                    if (!bAlreadyExists)
                     {
                         _objDbContext.CampaignRuns.Add(new CampaignRun
                         {
@@ -150,16 +150,16 @@ namespace AccessWifiService.Campaigns
                             IDCampaignVersion = objVersion.Id,
                             VersionNumber = objVersion.Number,
                             ScheduledFor = dtOccurrence,
-                            LocalDate = dtDia,
-                            Status = bPerdida ? CampaignRunStatus.Missed : CampaignRunStatus.Selecting,
+                            LocalDate = dtDay,
+                            Status = bMissed ? CampaignRunStatus.Missed : CampaignRunStatus.Selecting,
                             Simulation = false,
                             CreatedAt = dtNowUtc,
-                            FinishedAt = bPerdida ? dtNowUtc : null,
-                            Error = bPerdida ? "O serviço estava fora do ar no horário e o dia já virou." : null,
+                            FinishedAt = bMissed ? dtNowUtc : null,
+                            Error = bMissed ? "O serviço estava fora do ar no horário e o dia já virou." : null,
                         });
-                        iCriadas++;
+                        iCreated++;
                     }
-                    if (!bPerdida)
+                    if (!bMissed)
                     {
                         objCampaign.LastRunAt = dtOccurrence;
                     }
@@ -174,7 +174,7 @@ namespace AccessWifiService.Campaigns
             }
 
             await _objDbContext.SaveChangesAsync(objCancellationToken);
-            return iCriadas;
+            return iCreated;
         }
 
         // ---------------------------------------------------------------- Seleção
@@ -239,14 +239,14 @@ namespace AccessWifiService.Campaigns
                 .ToListAsync(objCancellationToken);
 
             // Retomada: quem já está nesta execução não entra de novo.
-            HashSet<Guid> objJaNaExecucao = (await _objDbContext.CampaignRecipients.AsNoTracking()
+            HashSet<Guid> objAlreadyInRun = (await _objDbContext.CampaignRecipients.AsNoTracking()
                     .Where(recipient => recipient.IDRun == objRunId)
                     .Select(recipient => recipient.IDCustomer)
                     .ToListAsync(objCancellationToken))
                 .ToHashSet();
 
             // D11: no máximo uma mensagem por cliente por dia, somando as campanhas da empresa.
-            var objHojeOutras = await (
+            var objOtherToday = await (
                 from recipient in _objDbContext.CampaignRecipients.AsNoTracking()
                 join run in _objDbContext.CampaignRuns.AsNoTracking() on recipient.IDRun equals run.Id
                 join campaign in _objDbContext.Campaigns.AsNoTracking() on run.IDCampaign equals campaign.Id
@@ -254,31 +254,31 @@ namespace AccessWifiService.Campaigns
                     && run.Id != objRunId && s_arrDelivered.Contains(recipient.Status)
                 select new { recipient.Id, recipient.IDCustomer, recipient.Status, RunId = run.Id, campaign.Kind, campaign.Name })
                 .ToListAsync(objCancellationToken);
-            var objOutraPorCliente = objHojeOutras
+            var objOtherByCustomer = objOtherToday
                 .GroupBy(item => item.IDCustomer)
                 .ToDictionary(group => group.Key, group => group.First());
 
-            int iPrioridade = CampaignKind.Priority(objCampaign.Kind);
-            int? iMarco = objCampaign.Kind == CampaignKind.FrequentCustomer ? objConfig.VisitMilestone ?? 5 : null;
-            int iBloco = Math.Max(1, _objOptions.SelectionChunkSize);
+            int iPriority = CampaignKind.Priority(objCampaign.Kind);
+            int? iMilestone = objCampaign.Kind == CampaignKind.FrequentCustomer ? objConfig.VisitMilestone ?? 5 : null;
+            int iBatch = Math.Max(1, _objOptions.SelectionChunkSize);
 
-            List<CampaignRecipient> objBloco = new(iBloco);
-            int iIgnoradosNoBloco = 0;
+            List<CampaignRecipient> objBatch = new(iBatch);
+            int iIgnoredInBatch = 0;
             foreach (AudienceMember objMember in objAudience)
             {
-                if (objJaNaExecucao.Contains(objMember.Id))
+                if (objAlreadyInRun.Contains(objMember.Id))
                 {
                     continue;
                 }
 
-                int? iMarcoDoCliente = iMarco is int iStep ? objMember.VisitCount / iStep * iStep : null;
-                (string sInfo, DateOnly? dtEvento, int? iIdade) = Detalhar(
-                    objCampaign.Kind, objMember, objRun.LocalDate, iMarcoDoCliente);
-                string sMensagem = CampaignMessage.Render(objConfig.Message, new CampaignMessageData(
+                int? iCustomerMilestone = iMilestone is int iStep ? objMember.VisitCount / iStep * iStep : null;
+                (string sInfo, DateOnly? dtEvent, int? iAge) = Detail(
+                    objCampaign.Kind, objMember, objRun.LocalDate, iCustomerMilestone);
+                string sMessage = CampaignMessage.Render(objConfig.Message, new CampaignMessageData(
                     objMember.Name,
                     objCompany.Name,
                     objMember.IDLastUnit is Guid objUnitId ? objUnitNames.GetValueOrDefault(objUnitId, "") : "",
-                    iIdade,
+                    iAge,
                     CampaignMessage.FullYearsBetween(objMember.FirstVisitDate, objRun.LocalDate)));
 
                 CampaignRecipient objRecipient = new CampaignRecipient
@@ -290,43 +290,43 @@ namespace AccessWifiService.Campaigns
                     Phone = objMember.Phone,
                     Name = objMember.Name,
                     Instagram = InstagramHandle.Normalize(objMember.Instagram),
-                    Message = sMensagem.Length <= 4000 ? sMensagem : sMensagem[..4000],
+                    Message = sMessage.Length <= 4000 ? sMessage : sMessage[..4000],
                     Info = sInfo,
-                    EventDate = dtEvento,
+                    EventDate = dtEvent,
                     Status = CampaignRecipientStatus.Pending,
-                    Milestone = iMarcoDoCliente,
+                    Milestone = iCustomerMilestone,
                     CreatedAt = dtNowUtc,
                 };
 
-                if (objOutraPorCliente.TryGetValue(objMember.Id, out var objOutra))
+                if (objOtherByCustomer.TryGetValue(objMember.Id, out var objOther))
                 {
-                    bool bOutraMenosImportante = CampaignKind.Priority(objOutra.Kind) > iPrioridade;
-                    if (objOutra.Status == CampaignRecipientStatus.Pending && bOutraMenosImportante)
+                    bool bOtherLessImportant = CampaignKind.Priority(objOther.Kind) > iPriority;
+                    if (objOther.Status == CampaignRecipientStatus.Pending && bOtherLessImportant)
                     {
                         // A outra ainda não saiu e é menos importante: esta ocupa o lugar dela.
-                        await SubstituirAsync(objOutra.Id, objOutra.RunId, objCampaign.Name, dtNowUtc, objCancellationToken);
+                        await ReplaceAsync(objOther.Id, objOther.RunId, objCampaign.Name, dtNowUtc, objCancellationToken);
                     }
                     else
                     {
                         objRecipient.Status = CampaignRecipientStatus.Ignored;
-                        objRecipient.Reason = $"Limite do dia: já recebe \"{objOutra.Name}\" hoje.";
+                        objRecipient.Reason = $"Limite do dia: já recebe \"{objOther.Name}\" hoje.";
                         objRecipient.ProcessedAt = dtNowUtc;
-                        iIgnoradosNoBloco++;
+                        iIgnoredInBatch++;
                     }
                 }
 
-                objBloco.Add(objRecipient);
-                if (objBloco.Count >= iBloco)
+                objBatch.Add(objRecipient);
+                if (objBatch.Count >= iBatch)
                 {
-                    if (!await GravarBlocoAsync(objRunId, objBloco, iIgnoradosNoBloco, objCancellationToken))
+                    if (!await SaveBatchAsync(objRunId, objBatch, iIgnoredInBatch, objCancellationToken))
                     {
                         return; // cancelada no meio da seleção
                     }
-                    iIgnoradosNoBloco = 0;
+                    iIgnoredInBatch = 0;
                 }
             }
 
-            if (!await GravarBlocoAsync(objRunId, objBloco, iIgnoradosNoBloco, objCancellationToken))
+            if (!await SaveBatchAsync(objRunId, objBatch, iIgnoredInBatch, objCancellationToken))
             {
                 return;
             }
@@ -334,9 +334,9 @@ namespace AccessWifiService.Campaigns
             objRun = await _objDbContext.CampaignRuns.FirstAsync(run => run.Id == objRunId, objCancellationToken);
             if (objRun.Status == CampaignRunStatus.Selecting)
             {
-                bool bHaPendentes = objRun.TotalCount > objRun.IgnoredCount;
-                objRun.Status = bHaPendentes ? CampaignRunStatus.Running : CampaignRunStatus.Completed;
-                objRun.FinishedAt = bHaPendentes ? null : dtNowUtc;
+                bool bHasPending = objRun.TotalCount > objRun.IgnoredCount;
+                objRun.Status = bHasPending ? CampaignRunStatus.Running : CampaignRunStatus.Completed;
+                objRun.FinishedAt = bHasPending ? null : dtNowUtc;
                 await _objDbContext.SaveChangesAsync(objCancellationToken);
             }
             _objLogger.LogInformation(
@@ -348,32 +348,32 @@ namespace AccessWifiService.Campaigns
         /// A coluna de informação do PDF e, no aniversário, o dia da semana em que o cliente faz anos e a
         /// idade que completa nele (a lista de segunda já traz quem faz anos na sexta).
         /// </summary>
-        private static (string Info, DateOnly? EventDate, int? Age) Detalhar(
-            string sKind, AudienceMember objMember, DateOnly dtDia, int? iMarco)
+        private static (string Info, DateOnly? EventDate, int? Age) Detail(
+            string sKind, AudienceMember objMember, DateOnly dtDay, int? iMilestone)
         {
-            int? iIdade = CampaignMessage.AgeOn(objMember.BirthDate, dtDia);
+            int? iAge = CampaignMessage.AgeOn(objMember.BirthDate, dtDay);
             switch (sKind)
             {
-                case CampaignKind.Birthday when objMember.BirthDate is DateOnly dtNascimento:
-                    DateOnly dtAniversario = CampaignCalendar.BirthdayInRange(dtNascimento, dtDia) ?? dtDia;
-                    int iAnos = CampaignMessage.FullYearsBetween(dtNascimento, dtAniversario);
-                    return ($"{CampaignPdf.ShortDate(dtAniversario)} · {iAnos} anos", dtAniversario, iAnos);
+                case CampaignKind.Birthday when objMember.BirthDate is DateOnly dtBirth:
+                    DateOnly dtBirthday = CampaignCalendar.BirthdayInRange(dtBirth, dtDay) ?? dtDay;
+                    int iYears = CampaignMessage.FullYearsBetween(dtBirth, dtBirthday);
+                    return ($"{CampaignPdf.ShortDate(dtBirthday)} · {iYears} anos", dtBirthday, iYears);
                 case CampaignKind.SignupAnniversary:
-                    int iCadastro = CampaignMessage.FullYearsBetween(objMember.FirstVisitDate, dtDia);
-                    return (iCadastro == 1 ? "1 ano de cadastro" : $"{iCadastro} anos de cadastro", null, iIdade);
-                case CampaignKind.FrequentCustomer when iMarco is int iVisitas:
-                    return ($"{iVisitas}ª visita", null, iIdade);
+                    int iSignup = CampaignMessage.FullYearsBetween(objMember.FirstVisitDate, dtDay);
+                    return (iSignup == 1 ? "1 ano de cadastro" : $"{iSignup} anos de cadastro", null, iAge);
+                case CampaignKind.FrequentCustomer when iMilestone is int iVisits:
+                    return ($"{iVisits}ª visita", null, iAge);
                 case CampaignKind.WeMissYou:
                     return ($"Última visita em {objMember.LastVisitDate.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)}",
-                        null, iIdade);
+                        null, iAge);
                 default:
-                    return ("", null, iIdade);
+                    return ("", null, iAge);
             }
         }
 
         /// <summary>Grava um bloco da seleção e soma no total. Devolve false se a execução foi cancelada.</summary>
-        private async Task<bool> GravarBlocoAsync(
-            Guid objRunId, List<CampaignRecipient> objBloco, int iIgnorados, CancellationToken objCancellationToken)
+        private async Task<bool> SaveBatchAsync(
+            Guid objRunId, List<CampaignRecipient> objBatch, int iIgnored, CancellationToken objCancellationToken)
         {
             CampaignRun objRun = await _objDbContext.CampaignRuns.FirstAsync(run => run.Id == objRunId, objCancellationToken);
             if (objRun.Status != CampaignRunStatus.Selecting)
@@ -381,34 +381,34 @@ namespace AccessWifiService.Campaigns
                 return false;
             }
 
-            _objDbContext.CampaignRecipients.AddRange(objBloco);
-            objRun.TotalCount += objBloco.Count;
-            objRun.IgnoredCount += iIgnorados;
+            _objDbContext.CampaignRecipients.AddRange(objBatch);
+            objRun.TotalCount += objBatch.Count;
+            objRun.IgnoredCount += iIgnored;
             // Salva mesmo com o bloco vazio: leva junto as substituições feitas em outras execuções.
             await _objDbContext.SaveChangesAsync(objCancellationToken);
 
-            objBloco.Clear();
+            objBatch.Clear();
             // Sem isso o rastreamento cresce a cada bloco e uma seleção grande fica cada vez mais lenta.
             _objDbContext.ChangeTracker.Clear();
             return true;
         }
 
-        private async Task SubstituirAsync(
-            long lRecipientId, Guid objOutraRunId, string sCampanha, DateTime dtNowUtc, CancellationToken objCancellationToken)
+        private async Task ReplaceAsync(
+            long lRecipientId, Guid objOtherRunId, string sCampaign, DateTime dtNowUtc, CancellationToken objCancellationToken)
         {
-            CampaignRecipient? objOutro = await _objDbContext.CampaignRecipients
+            CampaignRecipient? objOther = await _objDbContext.CampaignRecipients
                 .FirstOrDefaultAsync(recipient => recipient.Id == lRecipientId, objCancellationToken);
-            if (objOutro is null || objOutro.Status != CampaignRecipientStatus.Pending)
+            if (objOther is null || objOther.Status != CampaignRecipientStatus.Pending)
             {
                 return;
             }
-            objOutro.Status = CampaignRecipientStatus.Ignored;
-            objOutro.Reason = $"Substituída por \"{sCampanha}\" (limite de 1 mensagem por dia).";
-            objOutro.ProcessedAt = dtNowUtc;
+            objOther.Status = CampaignRecipientStatus.Ignored;
+            objOther.Reason = $"Substituída por \"{sCampaign}\" (limite de 1 mensagem por dia).";
+            objOther.ProcessedAt = dtNowUtc;
 
-            CampaignRun objOutraRun = await _objDbContext.CampaignRuns
-                .FirstAsync(run => run.Id == objOutraRunId, objCancellationToken);
-            objOutraRun.IgnoredCount++;
+            CampaignRun objOtherRun = await _objDbContext.CampaignRuns
+                .FirstAsync(run => run.Id == objOtherRunId, objCancellationToken);
+            objOtherRun.IgnoredCount++;
             // Grava junto com o próximo bloco desta seleção.
         }
 
@@ -431,59 +431,59 @@ namespace AccessWifiService.Campaigns
 
             Campaign objCampaign = await _objDbContext.Campaigns.AsNoTracking()
                 .FirstAsync(campaign => campaign.Id == objRun.IDCampaign, objCancellationToken);
-            await CriarEntregasAsync(objRun, objCampaign, dtNowUtc, objCancellationToken);
+            await CreateDeliveriesAsync(objRun, objCampaign, dtNowUtc, objCancellationToken);
 
-            List<CampaignDelivery> objVencidas = await _objDbContext.CampaignDeliveries
+            List<CampaignDelivery> objExpired = await _objDbContext.CampaignDeliveries
                 .Where(delivery => delivery.IDRun == objRunId && delivery.Status == CampaignDeliveryStatus.Pending
                     && (delivery.NextAttemptAt == null || delivery.NextAttemptAt <= dtNowUtc))
                 .OrderBy(delivery => delivery.UnitName)
                 .ToListAsync(objCancellationToken);
 
-            int iClientes = 0;
-            foreach (CampaignDelivery objDelivery in objVencidas)
+            int iCustomers = 0;
+            foreach (CampaignDelivery objDelivery in objExpired)
             {
                 // Pausada ou cancelada pela tela no meio dos envios: para aqui.
                 string sStatus = await _objDbContext.CampaignRuns.AsNoTracking()
                     .Where(run => run.Id == objRunId).Select(run => run.Status).FirstAsync(objCancellationToken);
                 if (sStatus != CampaignRunStatus.Running)
                 {
-                    return iClientes;
+                    return iCustomers;
                 }
-                iClientes += await EnviarAsync(objRun, objCampaign, objDelivery, dtNowUtc, objCancellationToken);
+                iCustomers += await SendDeliveriesAsync(objRun, objCampaign, objDelivery, dtNowUtc, objCancellationToken);
             }
 
-            bool bHaPendentes = await _objDbContext.CampaignRecipients.AnyAsync(
+            bool bHasPending = await _objDbContext.CampaignRecipients.AnyAsync(
                 recipient => recipient.IDRun == objRunId && recipient.Status == CampaignRecipientStatus.Pending,
                 objCancellationToken);
-            string sAgora = await _objDbContext.CampaignRuns.AsNoTracking()
+            string sNow = await _objDbContext.CampaignRuns.AsNoTracking()
                 .Where(run => run.Id == objRunId).Select(run => run.Status).FirstAsync(objCancellationToken);
-            if (!bHaPendentes && sAgora == CampaignRunStatus.Running)
+            if (!bHasPending && sNow == CampaignRunStatus.Running)
             {
                 objRun.Status = CampaignRunStatus.Completed;
                 objRun.FinishedAt = dtNowUtc;
                 await _objDbContext.SaveChangesAsync(objCancellationToken);
             }
-            return iClientes;
+            return iCustomers;
         }
 
         /// <summary>
         /// Uma entrega por unidade que tem cliente pendente. Unidade sem e-mail (ou cliente sem unidade):
         /// a entrega já nasce como falha, com o motivo, e os clientes dela também.
         /// </summary>
-        private async Task CriarEntregasAsync(
+        private async Task CreateDeliveriesAsync(
             CampaignRun objRun, Campaign objCampaign, DateTime dtNowUtc, CancellationToken objCancellationToken)
         {
-            var objGrupos = await _objDbContext.CampaignRecipients.AsNoTracking()
+            var objGroups = await _objDbContext.CampaignRecipients.AsNoTracking()
                 .Where(recipient => recipient.IDRun == objRun.Id && recipient.Status == CampaignRecipientStatus.Pending)
                 .GroupBy(recipient => recipient.IDUnit)
                 .Select(group => new { IDUnit = group.Key, Total = group.Count() })
                 .ToListAsync(objCancellationToken);
-            if (objGrupos.Count == 0)
+            if (objGroups.Count == 0)
             {
                 return;
             }
 
-            List<Guid?> objJaTem = await _objDbContext.CampaignDeliveries.AsNoTracking()
+            List<Guid?> objAlreadyHas = await _objDbContext.CampaignDeliveries.AsNoTracking()
                 .Where(delivery => delivery.IDRun == objRun.Id)
                 .Select(delivery => delivery.IDUnit)
                 .ToListAsync(objCancellationToken);
@@ -491,35 +491,35 @@ namespace AccessWifiService.Campaigns
                 .Where(unit => unit.IDCompany == objRun.IDCompany)
                 .ToDictionaryAsync(unit => unit.Id, objCancellationToken);
 
-            foreach (var objGrupo in objGrupos.Where(group => !objJaTem.Contains(group.IDUnit)))
+            foreach (var objGroup in objGroups.Where(group => !objAlreadyHas.Contains(group.IDUnit)))
             {
-                Unit? objUnit = objGrupo.IDUnit is Guid objUnitId ? objUnits.GetValueOrDefault(objUnitId) : null;
+                Unit? objUnit = objGroup.IDUnit is Guid objUnitId ? objUnits.GetValueOrDefault(objUnitId) : null;
                 string sEmail = objUnit?.Email.Trim() ?? "";
                 CampaignDelivery objDelivery = new CampaignDelivery
                 {
                     IDRun = objRun.Id,
-                    IDUnit = objGrupo.IDUnit,
+                    IDUnit = objGroup.IDUnit,
                     UnitName = objUnit?.Name ?? "Sem unidade",
                     Email = sEmail,
-                    RecipientCount = objGrupo.Total,
+                    RecipientCount = objGroup.Total,
                     FileName = CampaignDeliveryDocument.FileName(objCampaign.Kind, objUnit?.Slug ?? "", objRun.LocalDate),
                     CreatedAt = dtNowUtc,
                     NextAttemptAt = dtNowUtc,
                 };
 
-                string? sSemDestino = objUnit is null
+                string? sNoDestination = objUnit is null
                     ? "Clientes sem unidade: não há para quem mandar."
                     : sEmail.Length == 0
                         ? $"A unidade {objUnit.Name} não tem e-mail cadastrado (Unidades → editar → e-mail)."
                         : null;
-                if (sSemDestino is not null)
+                if (sNoDestination is not null)
                 {
                     objDelivery.Status = CampaignDeliveryStatus.Failed;
-                    objDelivery.Error = sSemDestino;
+                    objDelivery.Error = sNoDestination;
                     objDelivery.NextAttemptAt = null;
-                    objRun.FailedCount += await MarcarClientesAsync(
-                        objRun.Id, objGrupo.IDUnit, CampaignRecipientStatus.Failed, sSemDestino, dtNowUtc, objCancellationToken);
-                    _objLogger.LogWarning("Campanha {Campanha}: {Motivo}", objCampaign.Name, sSemDestino);
+                    objRun.FailedCount += await MarkCustomersAsync(
+                        objRun.Id, objGroup.IDUnit, CampaignRecipientStatus.Failed, sNoDestination, dtNowUtc, objCancellationToken);
+                    _objLogger.LogWarning("Campanha {Campanha}: {Motivo}", objCampaign.Name, sNoDestination);
                 }
                 _objDbContext.CampaignDeliveries.Add(objDelivery);
             }
@@ -528,13 +528,13 @@ namespace AccessWifiService.Campaigns
         }
 
         /// <summary>Monta o PDF da unidade e manda o e-mail. Devolve quantos clientes foram (0 se falhou).</summary>
-        private async Task<int> EnviarAsync(
+        private async Task<int> SendDeliveriesAsync(
             CampaignRun objRun, Campaign objCampaign, CampaignDelivery objDelivery, DateTime dtNowUtc,
             CancellationToken objCancellationToken)
         {
-            CampaignPdfData objDados = await CampaignDeliveryDocument.LoadAsync(
+            CampaignPdfData objData = await CampaignDeliveryDocument.LoadAsync(
                 _objDbContext, objRun, objDelivery.IDUnit, s_arrPending, objCancellationToken);
-            if (objDados.Rows.Count == 0)
+            if (objData.Rows.Count == 0)
             {
                 // Os clientes saíram desta execução antes do envio (ex.: outra campanha ocupou o dia).
                 objDelivery.Status = CampaignDeliveryStatus.Cancelled;
@@ -544,29 +544,29 @@ namespace AccessWifiService.Campaigns
                 return 0;
             }
 
-            string? sErro = null;
-            string sAssunto = Assunto(objDados);
-            string sCorpo = Corpo(objDados);
+            string? sError = null;
+            string sSubject = Subject(objData);
+            string sBody = Body(objData);
             try
             {
-                byte[] arrPdf = CampaignPdf.Build(objDados);
+                byte[] arrPdf = CampaignPdf.Build(objData);
                 await _objEmailSender.SendAsync(
-                    objDelivery.Email, sAssunto, sCorpo, arrPdf, objDelivery.FileName, objCancellationToken);
+                    objDelivery.Email, sSubject, sBody, arrPdf, objDelivery.FileName, objCancellationToken);
             }
             catch (Exception objException) when (objException is not OperationCanceledException)
             {
-                sErro = objException.Message;
+                sError = objException.Message;
             }
 
             objDelivery.Attempts++;
-            objDelivery.RecipientCount = objDados.Rows.Count;
-            if (sErro is null)
+            objDelivery.RecipientCount = objData.Rows.Count;
+            if (sError is null)
             {
                 objDelivery.Status = CampaignDeliveryStatus.Sent;
                 objDelivery.SentAt = dtNowUtc;
                 objDelivery.Error = null;
                 objDelivery.NextAttemptAt = null;
-                objRun.SentCount += await MarcarClientesAsync(
+                objRun.SentCount += await MarkCustomersAsync(
                     objRun.Id, objDelivery.IDUnit, CampaignRecipientStatus.Sent, null, dtNowUtc, objCancellationToken);
                 // Correio eletrônico: o e-mail como saiu (o PDF é remontado da execução, se pedirem).
                 _objDbContext.SentEmails.Add(new SentEmail
@@ -576,8 +576,8 @@ namespace AccessWifiService.Campaigns
                     UnitName = objDelivery.UnitName,
                     Kind = SentEmailKind.Campaign,
                     ToEmail = objDelivery.Email,
-                    Subject = sAssunto,
-                    Body = sCorpo,
+                    Subject = sSubject,
+                    Body = sBody,
                     AttachmentName = objDelivery.FileName,
                     SentAt = dtNowUtc,
                     IDCampaignRun = objRun.Id,
@@ -585,79 +585,79 @@ namespace AccessWifiService.Campaigns
                 await _objDbContext.SaveChangesAsync(objCancellationToken);
                 _objLogger.LogInformation(
                     "Campanha {Campanha}: PDF com {Total} cliente(s) enviado para {Email} (unidade {Unidade}).",
-                    objCampaign.Name, objDados.Rows.Count, objDelivery.Email, objDelivery.UnitName);
-                return objDados.Rows.Count;
+                    objCampaign.Name, objData.Rows.Count, objDelivery.Email, objDelivery.UnitName);
+                return objData.Rows.Count;
             }
 
-            objDelivery.Error = sErro.Length <= 500 ? sErro : sErro[..500];
-            int iMaximo = Math.Max(1, _objOptions.EmailMaxAttempts);
-            if (objDelivery.Attempts >= iMaximo)
+            objDelivery.Error = sError.Length <= 500 ? sError : sError[..500];
+            int iMax = Math.Max(1, _objOptions.EmailMaxAttempts);
+            if (objDelivery.Attempts >= iMax)
             {
                 objDelivery.Status = CampaignDeliveryStatus.Failed;
                 objDelivery.NextAttemptAt = null;
-                string sMotivo = $"O e-mail para {objDelivery.Email} não saiu ({objDelivery.Attempts} tentativas): {sErro}";
-                objRun.FailedCount += await MarcarClientesAsync(
-                    objRun.Id, objDelivery.IDUnit, CampaignRecipientStatus.Failed, sMotivo, dtNowUtc, objCancellationToken);
+                string sReason = $"O e-mail para {objDelivery.Email} não saiu ({objDelivery.Attempts} tentativas): {sError}";
+                objRun.FailedCount += await MarkCustomersAsync(
+                    objRun.Id, objDelivery.IDUnit, CampaignRecipientStatus.Failed, sReason, dtNowUtc, objCancellationToken);
                 _objLogger.LogError(
                     "Campanha {Campanha}: e-mail da unidade {Unidade} para {Email} desistido após {Tentativas} tentativas: {Erro}",
-                    objCampaign.Name, objDelivery.UnitName, objDelivery.Email, objDelivery.Attempts, sErro);
+                    objCampaign.Name, objDelivery.UnitName, objDelivery.Email, objDelivery.Attempts, sError);
             }
             else
             {
                 objDelivery.NextAttemptAt = dtNowUtc.AddMinutes(Math.Max(1, _objOptions.EmailRetryMinutes));
                 _objLogger.LogWarning(
                     "Campanha {Campanha}: e-mail da unidade {Unidade} para {Email} falhou (tentativa {Tentativa} de {Maximo}), tenta de novo às {Proxima:HH:mm} UTC: {Erro}",
-                    objCampaign.Name, objDelivery.UnitName, objDelivery.Email, objDelivery.Attempts, iMaximo,
-                    objDelivery.NextAttemptAt, sErro);
+                    objCampaign.Name, objDelivery.UnitName, objDelivery.Email, objDelivery.Attempts, iMax,
+                    objDelivery.NextAttemptAt, sError);
             }
             await _objDbContext.SaveChangesAsync(objCancellationToken);
             return 0;
         }
 
         /// <summary>Muda o status dos clientes pendentes de uma unidade na execução. Devolve quantos.</summary>
-        private async Task<int> MarcarClientesAsync(
-            Guid objRunId, Guid? objUnitId, string sStatus, string? sMotivo, DateTime dtNowUtc,
+        private async Task<int> MarkCustomersAsync(
+            Guid objRunId, Guid? objUnitId, string sStatus, string? sReason, DateTime dtNowUtc,
             CancellationToken objCancellationToken)
         {
-            List<CampaignRecipient> objClientes = await _objDbContext.CampaignRecipients
+            List<CampaignRecipient> objCustomers = await _objDbContext.CampaignRecipients
                 .Where(recipient => recipient.IDRun == objRunId && recipient.IDUnit == objUnitId
                     && recipient.Status == CampaignRecipientStatus.Pending)
                 .ToListAsync(objCancellationToken);
-            string? sCurto = sMotivo is { Length: > 300 } ? sMotivo[..300] : sMotivo;
-            foreach (CampaignRecipient objCliente in objClientes)
+            string? sShort = sReason is { Length: > 300 } ? sReason[..300] : sReason;
+            foreach (CampaignRecipient objCustomer in objCustomers)
             {
-                objCliente.Status = sStatus;
-                objCliente.Reason = sCurto;
-                objCliente.ProcessedAt = dtNowUtc;
+                objCustomer.Status = sStatus;
+                objCustomer.Reason = sShort;
+                objCustomer.ProcessedAt = dtNowUtc;
             }
-            return objClientes.Count;
+            return objCustomers.Count;
         }
 
-        private static string Assunto(CampaignPdfData objDados) =>
-            $"Campanha {objDados.CampaignName} — {objDados.UnitName} — " +
-            $"{objDados.LocalDate.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)} ({ClientesTexto(objDados.Rows.Count)})";
+        private static string Subject(CampaignPdfData objData) =>
+            $"Campanha {objData.CampaignName} — {objData.UnitName} — " +
+            $"{objData.LocalDate.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)} ({CustomersText(objData.Rows.Count)})";
 
-        private static string Corpo(CampaignPdfData objDados)
+        private static string Body(CampaignPdfData objData)
         {
-            StringBuilder objCorpo = new StringBuilder();
-            objCorpo.Append($"Olá, equipe da unidade {objDados.UnitName}!\r\n\r\n");
-            objCorpo.Append($"Segue em anexo o PDF da campanha \"{objDados.CampaignName}\" com {ClientesTexto(objDados.Rows.Count)} ");
-            objCorpo.Append($"para vocês entrarem em contato hoje ({CampaignPdf.LongDate(objDados.LocalDate)}).\r\n");
-            if (objDados.Kind == CampaignKind.Birthday)
+            StringBuilder objBody = new StringBuilder();
+            objBody.Append($"Olá, equipe da unidade {objData.UnitName}!\r\n\r\n");
+            objBody.Append($"Segue em anexo o PDF da campanha \"{objData.CampaignName}\" com {CustomersText(objData.Rows.Count)} ");
+            objBody.Append($"para vocês entrarem em contato hoje ({CampaignPdf.LongDate(objData.LocalDate)}).\r\n");
+            if (objData.Kind == CampaignKind.Birthday)
             {
-                (DateOnly dtInicio, DateOnly dtFim) = CampaignCalendar.BirthdayRange(objDados.LocalDate);
-                objCorpo.Append($"São os aniversariantes de {CampaignPdf.ShortDate(dtInicio)} a {CampaignPdf.ShortDate(dtFim)}.\r\n");
+                (DateOnly dtStart, DateOnly dtEnd) = CampaignCalendar.BirthdayRange(objData.LocalDate);
+                objBody.Append($"São os aniversariantes de {CampaignPdf.ShortDate(dtStart)} a {CampaignPdf.ShortDate(dtEnd)}.\r\n");
             }
-            objCorpo.Append("\r\nMensagem para enviar:\r\n");
-            objCorpo.Append(CampaignMessage.RenderShared(objDados.MessageTemplate, objDados.CompanyName, objDados.UnitName)
+            objBody.Append("\r\nMensagem para enviar:\r\n");
+            objBody.Append(CampaignMessage.RenderShared(objData.MessageTemplate, objData.CompanyName, objData.UnitName)
                 .Replace("\r\n", "\n").Replace("\n", "\r\n"));
-            objCorpo.Append("\r\n\r\nNo PDF, clique no WhatsApp de cada cliente: a conversa abre com a mensagem pronta, ");
-            objCorpo.Append("já com o nome dele. É só conferir e enviar.\r\n\r\n");
-            objCorpo.Append("Mensagem automática do AccessWifi.");
-            return objCorpo.ToString();
+            objBody.Append("\r\n\r\nNo PDF, clique no WhatsApp de cada cliente: a conversa abre com a mensagem pronta, ");
+            objBody.Append("já com o nome dele. É só conferir e enviar.\r\n\r\n");
+            objBody.Append("Mensagem automática do AccessWifi.");
+            return objBody.ToString();
         }
 
-        private static string ClientesTexto(int iTotal) => iTotal == 1 ? "1 cliente" : $"{iTotal} clientes";
+        private static string CustomersText(int iTotal) => iTotal == 1 ? "1 cliente" : $"{iTotal} clientes";
 
         /// <summary>Execuções canceladas: os pendentes viram "cancelado" (em blocos), e os e-mails que não saíram também.</summary>
         private async Task FinalizeCancelledRunsAsync(DateTime dtNowUtc, CancellationToken objCancellationToken)
@@ -676,32 +676,32 @@ namespace AccessWifiService.Campaigns
                 while (true)
                 {
                     _objDbContext.ChangeTracker.Clear();
-                    List<CampaignRecipient> objBloco = await _objDbContext.CampaignRecipients
+                    List<CampaignRecipient> objBatch = await _objDbContext.CampaignRecipients
                         .Where(recipient => recipient.IDRun == objRunId && recipient.Status == CampaignRecipientStatus.Pending)
                         .OrderBy(recipient => recipient.Id)
                         .Take(1000)
                         .ToListAsync(objCancellationToken);
-                    if (objBloco.Count == 0)
+                    if (objBatch.Count == 0)
                     {
                         break;
                     }
 
-                    foreach (CampaignRecipient objRecipient in objBloco)
+                    foreach (CampaignRecipient objRecipient in objBatch)
                     {
                         objRecipient.Status = CampaignRecipientStatus.Cancelled;
                         objRecipient.Reason = "Execução cancelada.";
                         objRecipient.ProcessedAt = dtNowUtc;
                     }
                     CampaignRun objRun = await _objDbContext.CampaignRuns.FirstAsync(run => run.Id == objRunId, objCancellationToken);
-                    objRun.CancelledCount += objBloco.Count;
+                    objRun.CancelledCount += objBatch.Count;
                     objRun.FinishedAt ??= dtNowUtc;
                     await _objDbContext.SaveChangesAsync(objCancellationToken);
                 }
 
-                List<CampaignDelivery> objNaoSairam = await _objDbContext.CampaignDeliveries
+                List<CampaignDelivery> objNotSent = await _objDbContext.CampaignDeliveries
                     .Where(delivery => delivery.IDRun == objRunId && delivery.Status == CampaignDeliveryStatus.Pending)
                     .ToListAsync(objCancellationToken);
-                foreach (CampaignDelivery objDelivery in objNaoSairam)
+                foreach (CampaignDelivery objDelivery in objNotSent)
                 {
                     objDelivery.Status = CampaignDeliveryStatus.Cancelled;
                     objDelivery.NextAttemptAt = null;

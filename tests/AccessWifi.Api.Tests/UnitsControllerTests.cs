@@ -33,8 +33,8 @@ public class UnitsControllerTests
     /// <summary>Dublê só para a rota de teste de conexão: devolve sucesso ou lança o erro pedido.</summary>
     private class FakeUnifiClient : IUnifiClient
     {
-        public UnifiException? ObjErro { get; set; }
-        public string? SSiteIdDescoberto { get; set; }
+        public UnifiException? ObjError { get; set; }
+        public string? SDiscoveredSiteId { get; set; }
 
         public Task AuthorizeGuestAsync(
             CompanyUnifi objConfig, string sMac, int iAccessMinutes,
@@ -43,13 +43,13 @@ public class UnitsControllerTests
         public Task<string> TestConnectionAsync(
             CompanyUnifi objConfig, CancellationToken objCancellationToken = default)
         {
-            if (ObjErro is not null)
+            if (ObjError is not null)
             {
-                throw ObjErro;
+                throw ObjError;
             }
-            if (SSiteIdDescoberto is not null)
+            if (SDiscoveredSiteId is not null)
             {
-                objConfig.SiteId = SSiteIdDescoberto;
+                objConfig.SiteId = SDiscoveredSiteId;
             }
             return Task.FromResult("Console respondeu pela nuvem.");
         }
@@ -71,7 +71,7 @@ public class UnitsControllerTests
     }
 
     [Fact]
-    public async Task Create_ComDadosValidos_CriaESemExporASenhaUnifi()
+    public async Task Create_ValidData_CreatesWithoutExposingUnifiPassword()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
@@ -94,7 +94,7 @@ public class UnitsControllerTests
     }
 
     [Fact]
-    public async Task Create_EmpresaInexistente_Retorna400()
+    public async Task Create_UnknownCompany_Returns400()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         UnitsController objController = CreateController(objDbContext);
@@ -108,7 +108,7 @@ public class UnitsControllerTests
     }
 
     [Fact]
-    public async Task Create_SlugDuplicadoGlobalmente_Retorna400()
+    public async Task Create_SlugDuplicatedGlobally_Returns400()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompanyA = CreateCompany(objDbContext, "exemplo");
@@ -125,7 +125,7 @@ public class UnitsControllerTests
     }
 
     [Fact]
-    public async Task Create_SlugInvalido_Retorna400()
+    public async Task Create_InvalidSlug_Returns400()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
@@ -139,7 +139,7 @@ public class UnitsControllerTests
     }
 
     [Fact]
-    public async Task Update_SenhaUnifiNula_MantemASenhaAtual()
+    public async Task Update_NullUnifiPassword_KeepsCurrentPassword()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
@@ -170,7 +170,7 @@ public class UnitsControllerTests
     }
 
     [Fact]
-    public async Task Create_ComUrlDeRedirecionamento_GravaSemEspacos()
+    public async Task Create_WithRedirectUrl_SavesTrimmed()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
@@ -186,7 +186,7 @@ public class UnitsControllerTests
     }
 
     [Fact]
-    public async Task Create_SemUrlDeRedirecionamento_FicaVaziaEUsaAGeral()
+    public async Task Create_NoRedirectUrl_StaysEmptyAndUsesGeneral()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
@@ -198,7 +198,7 @@ public class UnitsControllerTests
     }
 
     [Fact]
-    public async Task Update_UrlDeRedirecionamentoNula_MantemAAtual()
+    public async Task Update_NullRedirectUrl_KeepsCurrent()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
@@ -219,7 +219,7 @@ public class UnitsControllerTests
     }
 
     [Fact]
-    public async Task Update_UrlDeRedirecionamentoVazia_VoltaAUsarAGeral()
+    public async Task Update_EmptyRedirectUrl_FallsBackToGeneral()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
@@ -240,7 +240,7 @@ public class UnitsControllerTests
     }
 
     [Fact]
-    public async Task Update_UrlDeRedirecionamentoInvalida_Retorna400ENaoGrava()
+    public async Task Update_InvalidRedirectUrl_Returns400AndDoesNotSave()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
@@ -260,25 +260,25 @@ public class UnitsControllerTests
     }
 
     [Fact]
-    public async Task Email_CriaComEmail_NuloMantem_VazioLimpa()
+    public async Task Email_CreatesWithEmail_NullKeeps_EmptyClears()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
         UnitsController objController = CreateController(objDbContext);
 
-        UnitDto objCriada = Assert.IsType<UnitDto>(Assert.IsType<OkObjectResult>((await objController.Create(
+        UnitDto objCreated = Assert.IsType<UnitDto>(Assert.IsType<OkObjectResult>((await objController.Create(
             CreateRequest(objCompany.Id) with { Email = "  gerente@loja.com.br  " }, CancellationToken.None)).Result).Value);
-        Assert.Equal("gerente@loja.com.br", objCriada.Email);
+        Assert.Equal("gerente@loja.com.br", objCreated.Email);
 
-        await objController.Update(objCriada.Id, new UpdateUnitRequest("Matriz", true, null), CancellationToken.None);
+        await objController.Update(objCreated.Id, new UpdateUnitRequest("Matriz", true, null), CancellationToken.None);
         Assert.Equal("gerente@loja.com.br", objDbContext.Units.AsNoTracking().Single().Email);
 
-        await objController.Update(objCriada.Id, new UpdateUnitRequest("Matriz", true, null, Email: ""), CancellationToken.None);
+        await objController.Update(objCreated.Id, new UpdateUnitRequest("Matriz", true, null, Email: ""), CancellationToken.None);
         Assert.Equal("", objDbContext.Units.AsNoTracking().Single().Email);
     }
 
     [Fact]
-    public async Task Email_Invalido_Retorna400ENaoGrava()
+    public async Task Email_Invalid_Returns400AndDoesNotSave()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
@@ -295,7 +295,7 @@ public class UnitsControllerTests
     }
 
     [Fact]
-    public async Task GetAll_SuperAdminComFiltroDeEmpresa_SoTrazAsUnidadesDaEmpresa()
+    public async Task GetAll_SuperAdminWithCompanyFilter_ReturnsOnlyThatCompanyUnits()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompanyA = CreateCompany(objDbContext, "exemplo");
@@ -315,7 +315,7 @@ public class UnitsControllerTests
     }
 
     [Fact]
-    public async Task GetAll_AdminDeEmpresa_SoVeAsUnidadesDaPropriaEmpresaIgnorandoFiltro()
+    public async Task GetAll_CompanyAdmin_SeesOnlyOwnCompanyUnitsIgnoringFilter()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompanyA = CreateCompany(objDbContext, "exemplo");
@@ -353,7 +353,7 @@ public class UnitsControllerTests
     }
 
     [Fact]
-    public async Task Create_ModoNuvem_GuardaAChaveCifradaESemExporNaLeitura()
+    public async Task Create_CloudMode_StoresKeyEncryptedAndNeverExposesIt()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
@@ -377,7 +377,7 @@ public class UnitsControllerTests
     }
 
     [Fact]
-    public async Task Create_SemInformarOModo_ContinuaLocal()
+    public async Task Create_NoModeGiven_StaysLocal()
     {
         // As unidades que já existem (e qualquer front antigo) não podem virar nuvem por acidente.
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
@@ -390,7 +390,7 @@ public class UnitsControllerTests
     }
 
     [Fact]
-    public async Task Update_ChaveDeApiNula_MantemAAtual()
+    public async Task Update_NullApiKey_KeepsCurrent()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
@@ -411,7 +411,7 @@ public class UnitsControllerTests
     }
 
     [Fact]
-    public async Task Update_TrocandoDeConsole_DescartaOSiteGuardado()
+    public async Task Update_ChangingConsole_DiscardsStoredSite()
     {
         // O site é um UUID de dentro do console: guardar o do console anterior daria erro mudo.
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
@@ -435,13 +435,13 @@ public class UnitsControllerTests
     }
 
     [Fact]
-    public async Task TestUnifi_Sucesso_GuardaOSiteDescobertoNaUnidade()
+    public async Task TestUnifi_Success_StoresDiscoveredSiteOnUnit()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
         FakeUnifiClient objFake = new FakeUnifiClient
         {
-            SSiteIdDescoberto = "88f7af54-98f8-306a-a1c7-c9349722b1f6",
+            SDiscoveredSiteId = "88f7af54-98f8-306a-a1c7-c9349722b1f6",
         };
         UnitsController objController = CreateController(objDbContext, objFake);
         await objController.Create(
@@ -461,14 +461,14 @@ public class UnitsControllerTests
     }
 
     [Fact]
-    public async Task TestUnifi_ConfiguracaoErrada_Retorna200ComOMotivo()
+    public async Task TestUnifi_WrongConfiguration_Returns200WithReason()
     {
         // Configuração errada é resultado do teste, não erro da requisição: o painel mostra a causa.
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
         FakeUnifiClient objFake = new FakeUnifiClient
         {
-            ObjErro = new UnifiException("Chave de API da nuvem UniFi inválida ou revogada."),
+            ObjError = new UnifiException("Chave de API da nuvem UniFi inválida ou revogada."),
         };
         UnitsController objController = CreateController(objDbContext, objFake);
         await objController.Create(
@@ -485,7 +485,7 @@ public class UnitsControllerTests
     }
 
     [Fact]
-    public async Task TestUnifi_UnidadeInexistente_Retorna404()
+    public async Task TestUnifi_UnknownUnit_Returns404()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         UnitsController objController = CreateController(objDbContext);
@@ -500,32 +500,32 @@ public class UnitsControllerTests
     // ---- DDD da loja (exemplo de telefone no portal) ----
 
     [Fact]
-    public async Task Create_ComDdd_GravaSoOsDigitos()
+    public async Task Create_WithAreaCode_SavesOnlyDigits()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
         UnitsController objController = CreateController(objDbContext);
 
         ActionResult<UnitDto> objResult = await objController.Create(
-            CreateRequest(objCompany.Id) with { Ddd = " (91) " }, CancellationToken.None);
+            CreateRequest(objCompany.Id) with { AreaCode = " (91) " }, CancellationToken.None);
 
         UnitDto objDto = Assert.IsType<UnitDto>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
-        Assert.Equal("91", objDto.Ddd);
-        Assert.Equal("91", objDbContext.Units.Single().Ddd);
+        Assert.Equal("91", objDto.AreaCode);
+        Assert.Equal("91", objDbContext.Units.Single().AreaCode);
     }
 
     [Theory]
     [InlineData("20")] // não existe
     [InlineData("9")]
     [InlineData("911")]
-    public async Task Create_DddInexistente_Retorna400(string sDdd)
+    public async Task Create_UnknownAreaCode_Returns400(string sAreaCode)
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
         UnitsController objController = CreateController(objDbContext);
 
         ActionResult<UnitDto> objResult = await objController.Create(
-            CreateRequest(objCompany.Id) with { Ddd = sDdd }, CancellationToken.None);
+            CreateRequest(objCompany.Id) with { AreaCode = sAreaCode }, CancellationToken.None);
 
         BadRequestObjectResult objBadRequest = Assert.IsType<BadRequestObjectResult>(objResult.Result);
         Assert.Contains("DDD", Assert.IsType<ErrorResponse>(objBadRequest.Value).Error);
@@ -533,19 +533,19 @@ public class UnitsControllerTests
     }
 
     [Fact]
-    public async Task Update_DddNuloMantemEVazioVoltaAUsarODaEmpresa()
+    public async Task Update_NullAreaCodeKeepsAndEmptyFallsBackToCompanys()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
-        Unit objUnit = new Unit { IDCompany = objCompany.Id, Name = "Matriz", Slug = "exemplo-matriz", Ddd = "93" };
+        Unit objUnit = new Unit { IDCompany = objCompany.Id, Name = "Matriz", Slug = "exemplo-matriz", AreaCode = "93" };
         objDbContext.Units.Add(objUnit);
         objDbContext.SaveChanges();
         UnitsController objController = CreateController(objDbContext);
 
         await objController.Update(objUnit.Id, new UpdateUnitRequest("Matriz", true, null), CancellationToken.None);
-        Assert.Equal("93", objDbContext.Units.Single().Ddd);
+        Assert.Equal("93", objDbContext.Units.Single().AreaCode);
 
-        await objController.Update(objUnit.Id, new UpdateUnitRequest("Matriz", true, null, Ddd: ""), CancellationToken.None);
-        Assert.Equal("", objDbContext.Units.Single().Ddd);
+        await objController.Update(objUnit.Id, new UpdateUnitRequest("Matriz", true, null, AreaCode: ""), CancellationToken.None);
+        Assert.Equal("", objDbContext.Units.Single().AreaCode);
     }
 }

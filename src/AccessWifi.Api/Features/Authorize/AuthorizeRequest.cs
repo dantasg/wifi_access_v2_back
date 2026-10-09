@@ -1,11 +1,15 @@
+using System.Text.Json.Serialization;
+
 namespace AccessWifi.Api.Features.Authorize
 {
+    /// <summary>Pedido do portal. Também aceita os nomes antigos dos campos (<see cref="AuthorizeRequestJsonConverter"/>).</summary>
+    [JsonConverter(typeof(AuthorizeRequestJsonConverter))]
     public record AuthorizeRequest(
-        string Nome,
+        string Name,
         string Instagram,
-        string Telefone,
-        string Nascimento,
-        bool Consentimento,
+        string Phone,
+        string BirthDate,
+        bool Consent,
         string? Unit,
         string? Mac,
         string? Ap,

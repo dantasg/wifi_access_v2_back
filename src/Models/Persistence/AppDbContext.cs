@@ -65,7 +65,7 @@ namespace Models.Persistence
                 // Mesmo limite da URL "Geral" da empresa (PortalSettings.RedirectUrl).
                 objUnit.Property(unit => unit.RedirectUrl).HasMaxLength(2048);
                 objUnit.Property(unit => unit.Email).HasMaxLength(200);
-                objUnit.Property(unit => unit.Ddd).HasMaxLength(2);
+                objUnit.Property(unit => unit.AreaCode).HasMaxLength(2);
                 objUnit.Property(unit => unit.DevicesSyncError).HasMaxLength(300);
                 objUnit.HasOne<Company>()
                     .WithMany()
@@ -175,10 +175,10 @@ namespace Models.Persistence
 
             objModelBuilder.Entity<Lead>(objLead =>
             {
-                objLead.Property(lead => lead.Nome).HasMaxLength(200);
+                objLead.Property(lead => lead.Name).HasMaxLength(200);
                 objLead.Property(lead => lead.Instagram).HasMaxLength(100);
-                objLead.Property(lead => lead.Telefone).HasMaxLength(20);
-                objLead.Property(lead => lead.Nascimento).HasMaxLength(10);
+                objLead.Property(lead => lead.Phone).HasMaxLength(20);
+                objLead.Property(lead => lead.BirthDate).HasMaxLength(10);
                 objLead.Property(lead => lead.Mac).HasMaxLength(17);
                 objLead.Property(lead => lead.Ap).HasMaxLength(17);
                 objLead.Property(lead => lead.Ssid).HasMaxLength(32);
@@ -195,7 +195,7 @@ namespace Models.Persistence
             {
                 objSettings.Property(settings => settings.Ssid).HasMaxLength(32);
                 objSettings.Property(settings => settings.RedirectUrl).HasMaxLength(2048);
-                objSettings.Property(settings => settings.Ddd).HasMaxLength(2);
+                objSettings.Property(settings => settings.AreaCode).HasMaxLength(2);
                 objSettings.HasIndex(settings => settings.IDCompany).IsUnique();
                 objSettings.HasOne<Company>()
                     .WithMany()

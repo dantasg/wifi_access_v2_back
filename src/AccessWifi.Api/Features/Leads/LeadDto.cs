@@ -5,10 +5,10 @@ namespace AccessWifi.Api.Features.Leads
     public record LeadDto(
         DateTime Timestamp,
         DateTime CreatedAt,
-        string Nome,
+        string Name,
         string Instagram,
-        string Telefone,
-        string Nascimento,
+        string Phone,
+        string BirthDate,
         string? Mac,
         string? Ap,
         string? Ssid,

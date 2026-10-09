@@ -12,16 +12,16 @@ namespace AccessWifi.Api.Tests;
 /// Registro de cada conexão liberada para o dashboard (PROPOSTA_DASHBOARD.md, D3). Nada disso pode mudar o
 /// que o visitante vê: a resposta e o redirecionamento continuam iguais, e o cliente continua sendo gravado.
 /// </summary>
-public class ConexoesDoPortalTests
+public class PortalVisitsTests
 {
     private class FakeUnifiClient : IUnifiClient
     {
-        public bool Falhar { get; set; }
+        public bool Fail { get; set; }
 
         public Task AuthorizeGuestAsync(
             CompanyUnifi objConfig, string sMac, int iAccessMinutes, CancellationToken objCancellationToken = default)
         {
-            if (Falhar)
+            if (Fail)
             {
                 throw new UnifiException("Simulação de falha.");
             }
@@ -32,7 +32,7 @@ public class ConexoesDoPortalTests
             Task.FromResult("ok");
     }
 
-    private static (Unit Itaituba, Unit Castanhal) CreateLojas(AppDbContext objDb)
+    private static (Unit Itaituba, Unit Castanhal) CreateStores(AppDbContext objDb)
     {
         Company objCompany = new Company { Name = "Lojas Regional", Slug = "regional" };
         objDb.Companies.Add(objCompany);
@@ -43,33 +43,33 @@ public class ConexoesDoPortalTests
         return (objItaituba, objCastanhal);
     }
 
-    private static AuthorizeRequest Pedido(
-        string sUnit, string sMac = "aa:bb:cc:dd:ee:01", string sTelefone = "(93) 98888-1234",
+    private static AuthorizeRequest MakeRequest(
+        string sUnit, string sMac = "aa:bb:cc:dd:ee:01", string sPhone = "(93) 98888-1234",
         string? sAp = "8C-30-66-4E-9B-58") =>
         new AuthorizeRequest(
-            Nome: "Ana Teste", Instagram: "@ana", Telefone: sTelefone, Nascimento: "10/05/1990",
-            Consentimento: true, Unit: sUnit, Mac: sMac, Ap: sAp, Ssid: "PIX REGIONAL",
+            Name: "Ana Teste", Instagram: "@ana", Phone: sPhone, BirthDate: "10/05/1990",
+            Consent: true, Unit: sUnit, Mac: sMac, Ap: sAp, Ssid: "PIX REGIONAL",
             Url: "http://www.msftconnecttest.com/redirect");
 
-    private static async Task<ActionResult<AuthorizeResponse>> ConectarAsync(
-        AppDbContext objDb, AuthorizeRequest objPedido, bool bFalhar = false)
+    private static async Task<ActionResult<AuthorizeResponse>> ConnectAsync(
+        AppDbContext objDb, AuthorizeRequest objRequest, bool bFail = false)
     {
         AuthorizeController objController = new AuthorizeController(
-            objDb, new FakeUnifiClient { Falhar = bFalhar }, NullLogger<AuthorizeController>.Instance);
-        return await objController.Post(objPedido, CancellationToken.None);
+            objDb, new FakeUnifiClient { Fail = bFail }, NullLogger<AuthorizeController>.Instance);
+        return await objController.Post(objRequest, CancellationToken.None);
     }
 
     [Fact]
-    public async Task PrimeiraConexao_GravaUmaConexaoNova_NoFusoDaEmpresa()
+    public async Task FirstVisit_SavesNewVisit_InCompanyTimeZone()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        (Unit objItaituba, _) = CreateLojas(objDb);
+        (Unit objItaituba, _) = CreateStores(objDb);
 
-        ActionResult<AuthorizeResponse> objResult = await ConectarAsync(objDb, Pedido("itaituba"));
+        ActionResult<AuthorizeResponse> objResult = await ConnectAsync(objDb, MakeRequest("itaituba"));
 
-        AuthorizeResponse objResposta = Assert.IsType<AuthorizeResponse>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
-        Assert.True(objResposta.Authorized);
-        Assert.Equal("http://www.msftconnecttest.com/redirect", objResposta.Redirect);
+        AuthorizeResponse objResponse = Assert.IsType<AuthorizeResponse>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
+        Assert.True(objResponse.Authorized);
+        Assert.Equal("http://www.msftconnecttest.com/redirect", objResponse.Redirect);
 
         Visit objVisit = Assert.Single(objDb.Visits);
         Customer objCustomer = Assert.Single(objDb.Customers);
@@ -86,13 +86,13 @@ public class ConexoesDoPortalTests
     }
 
     [Fact]
-    public async Task Voltou_NaMesmaLoja_NaoEhNovo()
+    public async Task Returned_SameStore_IsNotNew()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        CreateLojas(objDb);
+        CreateStores(objDb);
 
-        await ConectarAsync(objDb, Pedido("itaituba"));
-        await ConectarAsync(objDb, Pedido("itaituba"));
+        await ConnectAsync(objDb, MakeRequest("itaituba"));
+        await ConnectAsync(objDb, MakeRequest("itaituba"));
 
         List<Visit> objVisits = objDb.Visits.OrderBy(visit => visit.Id).ToList();
         Assert.Equal(2, objVisits.Count);
@@ -102,27 +102,27 @@ public class ConexoesDoPortalTests
     }
 
     [Fact]
-    public async Task OutraLojaDaEmpresa_NovoNaUnidade_MasNaoNaEmpresa()
+    public async Task OtherStoreOfCompany_NewInUnit_ButNotInCompany()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        (_, Unit objCastanhal) = CreateLojas(objDb);
+        (_, Unit objCastanhal) = CreateStores(objDb);
 
-        await ConectarAsync(objDb, Pedido("itaituba"));
-        await ConectarAsync(objDb, Pedido("castanhal", sMac: "aa:bb:cc:dd:ee:02"));
+        await ConnectAsync(objDb, MakeRequest("itaituba"));
+        await ConnectAsync(objDb, MakeRequest("castanhal", sMac: "aa:bb:cc:dd:ee:02"));
 
-        Visit objNaCastanhal = objDb.Visits.Single(visit => visit.IDUnit == objCastanhal.Id);
-        Assert.False(objNaCastanhal.NewInCompany);
-        Assert.True(objNaCastanhal.NewInUnit);
+        Visit objInCastanhal = objDb.Visits.Single(visit => visit.IDUnit == objCastanhal.Id);
+        Assert.False(objInCastanhal.NewInCompany);
+        Assert.True(objInCastanhal.NewInUnit);
         Assert.Single(objDb.Customers);
     }
 
     [Fact]
-    public async Task UnifiRecusou_NaoContaConexao_MasOClienteContinuaGravado()
+    public async Task UnifiRejected_DoesNotCountVisit_ButCustomerStaysSaved()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        CreateLojas(objDb);
+        CreateStores(objDb);
 
-        ActionResult<AuthorizeResponse> objResult = await ConectarAsync(objDb, Pedido("itaituba"), bFalhar: true);
+        ActionResult<AuthorizeResponse> objResult = await ConnectAsync(objDb, MakeRequest("itaituba"), bFail: true);
 
         Assert.Equal(502, Assert.IsType<ObjectResult>(objResult.Result).StatusCode);
         Assert.Empty(objDb.Visits);
@@ -130,13 +130,13 @@ public class ConexoesDoPortalTests
     }
 
     [Fact]
-    public async Task TelefoneQueNaoIdentifica_ContaPeloAparelho()
+    public async Task UnidentifiablePhone_CountsByDevice()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        CreateLojas(objDb);
+        CreateStores(objDb);
 
-        await ConectarAsync(objDb, Pedido("itaituba", sTelefone: "123"));
-        await ConectarAsync(objDb, Pedido("itaituba", sTelefone: "123"));
+        await ConnectAsync(objDb, MakeRequest("itaituba", sPhone: "123"));
+        await ConnectAsync(objDb, MakeRequest("itaituba", sPhone: "123"));
 
         List<Visit> objVisits = objDb.Visits.OrderBy(visit => visit.Id).ToList();
         Assert.Equal(2, objVisits.Count);
@@ -150,12 +150,12 @@ public class ConexoesDoPortalTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("nao-e-mac")]
-    public async Task ApAusenteOuInvalido_GravaVazio(string? sAp)
+    public async Task ApMissingOrInvalid_SavesEmpty(string? sAp)
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
-        CreateLojas(objDb);
+        CreateStores(objDb);
 
-        await ConectarAsync(objDb, Pedido("itaituba", sAp: sAp));
+        await ConnectAsync(objDb, MakeRequest("itaituba", sAp: sAp));
 
         Assert.Equal("", Assert.Single(objDb.Visits).Ap);
     }

@@ -57,18 +57,18 @@ public class UnitLocator
         }
 
         string sMac = MacAddress.Normalize(sAp);
-        List<Guid> objPeloAp = [];
+        List<Guid> objByAp = [];
         if (sMac.Length > 0)
         {
-            objPeloAp = await UnitsWithDeviceAsync(sMac, objCancellationToken);
-            if (objPeloAp.Count == 0 && await LiveLookupAsync(sMac, objCancellationToken))
+            objByAp = await UnitsWithDeviceAsync(sMac, objCancellationToken);
+            if (objByAp.Count == 0 && await LiveLookupAsync(sMac, objCancellationToken))
             {
-                objPeloAp = await UnitsWithDeviceAsync(sMac, objCancellationToken);
+                objByAp = await UnitsWithDeviceAsync(sMac, objCancellationToken);
             }
 
-            if (objPeloAp.Count == 1)
+            if (objByAp.Count == 1)
             {
-                Guid objUnitId = objPeloAp[0];
+                Guid objUnitId = objByAp[0];
                 Unit? objUnit = await objUnits.FirstOrDefaultAsync(unit => unit.Id == objUnitId, objCancellationToken);
                 if (objUnit is not null)
                 {
@@ -83,24 +83,24 @@ public class UnitLocator
         {
             return null;
         }
-        Unit? objDoEndereco = await objUnits.FirstOrDefaultAsync(unit => unit.PortalHost == sHost, objCancellationToken);
-        if (objDoEndereco is null || sMac.Length == 0)
+        Unit? objFromAddress = await objUnits.FirstOrDefaultAsync(unit => unit.PortalHost == sHost, objCancellationToken);
+        if (objFromAddress is null || sMac.Length == 0)
         {
-            return objDoEndereco;
+            return objFromAddress;
         }
 
         // O mesmo AP em mais de uma unidade: só aceita se a do endereço for uma delas.
-        if (objPeloAp.Count > 1)
+        if (objByAp.Count > 1)
         {
-            return objPeloAp.Contains(objDoEndereco.Id) ? objDoEndereco : null;
+            return objByAp.Contains(objFromAddress.Id) ? objFromAddress : null;
         }
 
         // AP que nenhuma unidade tem: o endereço só vale enquanto a unidade dele não tem a lista de aparelhos.
-        bool bTemLista = await _objDbContext.UnitDevices
-            .AnyAsync(device => device.IDUnit == objDoEndereco.Id, objCancellationToken);
-        if (!bTemLista)
+        bool bHasList = await _objDbContext.UnitDevices
+            .AnyAsync(device => device.IDUnit == objFromAddress.Id, objCancellationToken);
+        if (!bHasList)
         {
-            return objDoEndereco;
+            return objFromAddress;
         }
 
         _objLogger?.LogWarning(
@@ -138,9 +138,9 @@ public class UnitLocator
             try
             {
                 // Outro visitante pode ter acabado de ler a nuvem enquanto este esperava.
-                bool bJaGravado = await _objDbContext.UnitDevices.AsNoTracking()
+                bool bAlreadySaved = await _objDbContext.UnitDevices.AsNoTracking()
                     .AnyAsync(device => device.Mac == sMac, objTimeout.Token);
-                if (!bJaGravado && !_objCache.TryGetValue(LastLiveKey, out _))
+                if (!bAlreadySaved && !_objCache.TryGetValue(LastLiveKey, out _))
                 {
                     _objCache.Set(LastLiveKey, true, s_tsLiveInterval);
                     // Escopo próprio: uma leitura cortada no meio não deixa nada pendente no banco desta requisição.
@@ -159,12 +159,12 @@ public class UnitLocator
                 objException, "Leitura dos aparelhos na nuvem da UniFi falhou ao procurar o ponto de acesso {Mac}.", sMac);
         }
 
-        bool bAchou = await _objDbContext.UnitDevices.AsNoTracking()
+        bool bFound = await _objDbContext.UnitDevices.AsNoTracking()
             .AnyAsync(device => device.Mac == sMac, objCancellationToken);
-        if (!bAchou)
+        if (!bFound)
         {
             _objCache.Set(sCacheKey, true, s_tsUnknownCache);
         }
-        return bAchou;
+        return bFound;
     }
 }

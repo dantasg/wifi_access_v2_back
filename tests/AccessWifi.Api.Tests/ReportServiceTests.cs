@@ -36,21 +36,21 @@ public class ReportServiceTests
         objDbContext.Leads.Add(new Lead
         {
             IDUnit = objUnitId,
-            Nome = "Fulano",
+            Name = "Fulano",
             CreatedAt = dtCreatedAt,
             Timestamp = dtCreatedAt,
         });
         objDbContext.SaveChanges();
     }
 
-    private static int LinhasDoCsv(byte[]? arrCsv) =>
+    private static int CsvLineCount(byte[]? arrCsv) =>
         System.Text.Encoding.UTF8.GetString(arrCsv!).Split('\n', StringSplitOptions.RemoveEmptyEntries).Length;
 
     private static ReportService CreateService(AppDbContext objDbContext, FakeEmailSender objSender) =>
         new ReportService(objDbContext, objSender, NullLogger<ReportService>.Instance);
 
     [Fact]
-    public void PreviousMonthRangeUtc_PrimeiroDeAgosto_DevolveJulhoCompleto()
+    public void PreviousMonthRangeUtc_AugustFirst_ReturnsWholeJuly()
     {
         (DateTime dtStart, DateTime dtEnd) =
             ReportSchedule.PreviousMonthRangeUtc(new DateTime(2026, 8, 1));
@@ -60,7 +60,7 @@ public class ReportServiceTests
     }
 
     [Fact]
-    public void PreviousMonthRangeUtc_Janeiro_VoltaParaDezembroDoAnoAnterior()
+    public void PreviousMonthRangeUtc_January_GoesBackToPreviousDecember()
     {
         (DateTime dtStart, DateTime dtEnd) =
             ReportSchedule.PreviousMonthRangeUtc(new DateTime(2026, 1, 10));
@@ -70,15 +70,15 @@ public class ReportServiceTests
     }
 
     [Fact]
-    public async Task SendDueReports_CadaUnidadeComEmailRecebeSoOsCadastrosDela()
+    public async Task SendDueReports_EachUnitWithEmailGetsOnlyItsSignups()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objRegional = AddCompany(objDbContext, "regional", iSendDay: 1);
         Unit objItaituba = AddUnit(objDbContext, objRegional.Id, "itaituba", "gerente.itb@regional.com.br");
         Unit objSantarem = AddUnit(objDbContext, objRegional.Id, "santarem", "gerente.stm@regional.com.br");
-        Unit objSemEmail = AddUnit(objDbContext, objRegional.Id, "altamira");
-        Company objOutroDia = AddCompany(objDbContext, "outra", iSendDay: 15);
-        AddUnit(objDbContext, objOutroDia.Id, "outra-loja", "z@z.com");
+        Unit objWithoutEmail = AddUnit(objDbContext, objRegional.Id, "altamira");
+        Company objOtherDay = AddCompany(objDbContext, "outra", iSendDay: 15);
+        AddUnit(objDbContext, objOtherDay.Id, "outra-loja", "z@z.com");
 
         // Itaituba: 2 em julho + 1 em junho e 1 em agosto (fora). Santarém: 1 em julho. Altamira: 1 (sem e-mail).
         AddLead(objDbContext, objItaituba.Id, new DateTime(2026, 7, 5, 12, 0, 0, DateTimeKind.Utc));
@@ -86,22 +86,22 @@ public class ReportServiceTests
         AddLead(objDbContext, objItaituba.Id, new DateTime(2026, 6, 30, 12, 0, 0, DateTimeKind.Utc));
         AddLead(objDbContext, objItaituba.Id, new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc));
         AddLead(objDbContext, objSantarem.Id, new DateTime(2026, 7, 9, 12, 0, 0, DateTimeKind.Utc));
-        AddLead(objDbContext, objSemEmail.Id, new DateTime(2026, 7, 9, 12, 0, 0, DateTimeKind.Utc));
+        AddLead(objDbContext, objWithoutEmail.Id, new DateTime(2026, 7, 9, 12, 0, 0, DateTimeKind.Utc));
         FakeEmailSender objSender = new FakeEmailSender();
 
         await CreateService(objDbContext, objSender).SendDueReportsAsync(new DateTime(2026, 8, 1), CancellationToken.None);
 
-        Assert.Equal(2, objSender.Enviados.Count);
-        FakeEmailSender.Email objItb = objSender.Enviados.Single(email => email.To == "gerente.itb@regional.com.br");
-        Assert.Equal(3, LinhasDoCsv(objItb.Attachment)); // cabeçalho + 2 de julho
+        Assert.Equal(2, objSender.Sent.Count);
+        FakeEmailSender.Email objItb = objSender.Sent.Single(email => email.To == "gerente.itb@regional.com.br");
+        Assert.Equal(3, CsvLineCount(objItb.Attachment)); // cabeçalho + 2 de julho
         Assert.Contains("itaituba", objItb.Subject);
         Assert.Equal("cadastros-regional-itaituba-2026-07.csv", objItb.AttachmentName);
-        FakeEmailSender.Email objStm = objSender.Enviados.Single(email => email.To == "gerente.stm@regional.com.br");
-        Assert.Equal(2, LinhasDoCsv(objStm.Attachment));
+        FakeEmailSender.Email objStm = objSender.Sent.Single(email => email.To == "gerente.stm@regional.com.br");
+        Assert.Equal(2, CsvLineCount(objStm.Attachment));
     }
 
     [Fact]
-    public async Task SendDueReports_LeadCadastradoNoMesMasReconectadoDepois_ContaNoMesDoCadastro()
+    public async Task SendDueReports_LeadSignedUpInMonthButReconnectedLater_CountsInSignupMonth()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = AddCompany(objDbContext, "regional", iSendDay: 1);
@@ -111,7 +111,7 @@ public class ReportServiceTests
         objDbContext.Leads.Add(new Lead
         {
             IDUnit = objUnit.Id,
-            Nome = "Fulano",
+            Name = "Fulano",
             CreatedAt = new DateTime(2026, 7, 10, 12, 0, 0, DateTimeKind.Utc),
             Timestamp = new DateTime(2026, 8, 3, 9, 0, 0, DateTimeKind.Utc),
         });
@@ -120,29 +120,29 @@ public class ReportServiceTests
 
         await CreateService(objDbContext, objSender).SendDueReportsAsync(new DateTime(2026, 8, 1), CancellationToken.None);
 
-        Assert.Equal(2, LinhasDoCsv(Assert.Single(objSender.Enviados).Attachment));
+        Assert.Equal(2, CsvLineCount(Assert.Single(objSender.Sent).Attachment));
     }
 
     [Fact]
-    public async Task SendDueReports_NaoReenviaNoMesmoMes_EMarcaAUnidade()
+    public async Task SendDueReports_DoesNotResendSameMonth_AndMarksUnit()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         // Referência = hoje em UTC (alinha com o carimbo LastReportSentAt = UtcNow).
-        DateTime dtHoje = DateTime.UtcNow.Date;
-        Company objCompany = AddCompany(objDbContext, "regional", iSendDay: dtHoje.Day);
+        DateTime dtToday = DateTime.UtcNow.Date;
+        Company objCompany = AddCompany(objDbContext, "regional", iSendDay: dtToday.Day);
         Unit objUnit = AddUnit(objDbContext, objCompany.Id, "itaituba", "gerente@regional.com.br");
         FakeEmailSender objSender = new FakeEmailSender();
         ReportService objService = CreateService(objDbContext, objSender);
 
-        await objService.SendDueReportsAsync(dtHoje, CancellationToken.None);
-        await objService.SendDueReportsAsync(dtHoje, CancellationToken.None);
+        await objService.SendDueReportsAsync(dtToday, CancellationToken.None);
+        await objService.SendDueReportsAsync(dtToday, CancellationToken.None);
 
-        Assert.Single(objSender.Enviados);
+        Assert.Single(objSender.Sent);
         Assert.NotNull(objDbContext.Units.Single(unit => unit.Id == objUnit.Id).LastReportSentAt);
     }
 
     [Fact]
-    public async Task SendDueReports_MesSeguinte_EnviaDeNovoMesmoComLastReportSentAtAntigo()
+    public async Task SendDueReports_NextMonth_SendsAgainEvenWithOldLastReportSentAt()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = AddCompany(objDbContext, "regional", iSendDay: 1);
@@ -154,44 +154,44 @@ public class ReportServiceTests
 
         await CreateService(objDbContext, objSender).SendDueReportsAsync(new DateTime(2026, 8, 1), CancellationToken.None);
 
-        Assert.Single(objSender.Enviados);
+        Assert.Single(objSender.Sent);
     }
 
     [Fact]
-    public async Task SendDueReports_EmpresaOuUnidadeInativa_NaoEnvia()
+    public async Task SendDueReports_InactiveCompanyOrUnit_DoesNotSend()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
-        Company objInativa = AddCompany(objDbContext, "inativa", iSendDay: 1, bActive: false);
-        AddUnit(objDbContext, objInativa.Id, "loja-a", "a@a.com");
-        Company objAtiva = AddCompany(objDbContext, "ativa", iSendDay: 1);
-        AddUnit(objDbContext, objAtiva.Id, "loja-b", "b@b.com", bActive: false);
+        Company objInactive = AddCompany(objDbContext, "inativa", iSendDay: 1, bActive: false);
+        AddUnit(objDbContext, objInactive.Id, "loja-a", "a@a.com");
+        Company objActive = AddCompany(objDbContext, "ativa", iSendDay: 1);
+        AddUnit(objDbContext, objActive.Id, "loja-b", "b@b.com", bActive: false);
         FakeEmailSender objSender = new FakeEmailSender();
 
         await CreateService(objDbContext, objSender).SendDueReportsAsync(new DateTime(2026, 8, 1), CancellationToken.None);
 
-        Assert.Empty(objSender.Enviados);
+        Assert.Empty(objSender.Sent);
     }
 
     [Fact]
-    public async Task SendDueReports_EmailFalhou_NaoMarcaComoEnviadoESegueParaAsOutras()
+    public async Task SendDueReports_EmailFailed_DoesNotMarkSentAndMovesOn()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = AddCompany(objDbContext, "regional", iSendDay: 1);
-        Unit objPrimeira = AddUnit(objDbContext, objCompany.Id, "a-primeira", "a@regional.com.br");
-        Unit objSegunda = AddUnit(objDbContext, objCompany.Id, "b-segunda", "b@regional.com.br");
-        FakeEmailSender objSender = new FakeEmailSender { FalharVezes = 1 }; // a primeira (ordem por nome) falha
+        Unit objFirst = AddUnit(objDbContext, objCompany.Id, "a-primeira", "a@regional.com.br");
+        Unit objSecond = AddUnit(objDbContext, objCompany.Id, "b-segunda", "b@regional.com.br");
+        FakeEmailSender objSender = new FakeEmailSender { FailTimes = 1 }; // a primeira (ordem por nome) falha
 
         await CreateService(objDbContext, objSender).SendDueReportsAsync(new DateTime(2026, 8, 1), CancellationToken.None);
 
-        Assert.Equal("b@regional.com.br", Assert.Single(objSender.Enviados).To);
-        Assert.Null(objDbContext.Units.Single(unit => unit.Id == objPrimeira.Id).LastReportSentAt);
-        Assert.NotNull(objDbContext.Units.Single(unit => unit.Id == objSegunda.Id).LastReportSentAt);
+        Assert.Equal("b@regional.com.br", Assert.Single(objSender.Sent).To);
+        Assert.Null(objDbContext.Units.Single(unit => unit.Id == objFirst.Id).LastReportSentAt);
+        Assert.NotNull(objDbContext.Units.Single(unit => unit.Id == objSecond.Id).LastReportSentAt);
         // Correio eletrônico: só o que saiu.
         Assert.Equal("b@regional.com.br", Assert.Single(objDbContext.SentEmails).ToEmail);
     }
 
     [Fact]
-    public async Task Correio_RelatorioEnviado_FicaRegistradoEOCsvERemontadoDoMes()
+    public async Task Mail_ReportSent_IsRecordedAndCsvIsRebuiltForMonth()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = AddCompany(objDbContext, "regional", iSendDay: 1);
@@ -203,20 +203,20 @@ public class ReportServiceTests
 
         await CreateService(objDbContext, objSender).SendDueReportsAsync(new DateTime(2026, 8, 1), CancellationToken.None);
 
-        FakeEmailSender.Email objEnviado = Assert.Single(objSender.Enviados);
-        SentEmail objRegistro = Assert.Single(objDbContext.SentEmails);
-        Assert.Equal(SentEmailKind.Report, objRegistro.Kind);
-        Assert.Equal(objUnit.Id, objRegistro.IDUnit);
-        Assert.Equal(objEnviado.Subject, objRegistro.Subject);
-        Assert.Equal(objEnviado.Body, objRegistro.Body);
-        Assert.Equal(new DateTime(2026, 7, 1, 0, 0, 0, DateTimeKind.Utc), objRegistro.PeriodStart);
-        Assert.Equal(new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc), objRegistro.PeriodEnd);
+        FakeEmailSender.Email objSent = Assert.Single(objSender.Sent);
+        SentEmail objRecord = Assert.Single(objDbContext.SentEmails);
+        Assert.Equal(SentEmailKind.Report, objRecord.Kind);
+        Assert.Equal(objUnit.Id, objRecord.IDUnit);
+        Assert.Equal(objSent.Subject, objRecord.Subject);
+        Assert.Equal(objSent.Body, objRecord.Body);
+        Assert.Equal(new DateTime(2026, 7, 1, 0, 0, 0, DateTimeKind.Utc), objRecord.PeriodStart);
+        Assert.Equal(new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc), objRecord.PeriodEnd);
 
         AccessWifi.Api.Controllers.EmailsController objController = new(objDbContext);
         TestHelpers.SetUser(objController, null, "root");
         Microsoft.AspNetCore.Mvc.FileContentResult objCsv = Assert.IsType<Microsoft.AspNetCore.Mvc.FileContentResult>(
-            await objController.Attachment(objRegistro.Id, "regional", CancellationToken.None));
-        Assert.Equal(objEnviado.AttachmentName, objCsv.FileDownloadName);
-        Assert.Equal(LinhasDoCsv(objEnviado.Attachment), LinhasDoCsv(objCsv.FileContents)); // cabeçalho + 2 cadastros
+            await objController.Attachment(objRecord.Id, "regional", CancellationToken.None));
+        Assert.Equal(objSent.AttachmentName, objCsv.FileDownloadName);
+        Assert.Equal(CsvLineCount(objSent.Attachment), CsvLineCount(objCsv.FileContents)); // cabeçalho + 2 cadastros
     }
 }

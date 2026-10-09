@@ -11,13 +11,13 @@ public class CampaignPdfTests
     [InlineData("(93) 99123-4567", "5593991234567")]
     [InlineData("5593991234567", "5593991234567")] // já com o código do país
     [InlineData("9335181234", "559335181234")]    // fixo, 10 dígitos
-    public void WhatsAppNumber_PoeO55NaFrente(string sPhone, string sEsperado)
+    public void WhatsAppNumber_Prepends55(string sPhone, string sExpected)
     {
-        Assert.Equal(sEsperado, CampaignContact.WhatsAppNumber(sPhone));
+        Assert.Equal(sExpected, CampaignContact.WhatsAppNumber(sPhone));
     }
 
     [Fact]
-    public void WhatsAppUrl_LevaAMensagemCodificada_ComEmoji()
+    public void WhatsAppUrl_CarriesEncodedMessage_WithEmoji()
     {
         string sUrl = CampaignContact.WhatsAppUrl("93991234567", "Feliz aniversário, Ana! 🎉");
 
@@ -30,37 +30,37 @@ public class CampaignPdfTests
     [InlineData("9335181234", "(93) 3518-1234")]
     [InlineData("5593991234567", "(93) 99123-4567")]
     [InlineData("123", "123")]
-    public void FormatPhone(string sPhone, string sEsperado)
+    public void FormatPhone(string sPhone, string sExpected)
     {
-        Assert.Equal(sEsperado, CampaignContact.FormatPhone(sPhone));
+        Assert.Equal(sExpected, CampaignContact.FormatPhone(sPhone));
     }
 
     [Fact]
-    public void RenderShared_PreencheEmpresaEUnidade_EDeixaOsCamposDoCliente()
+    public void RenderShared_FillsCompanyAndUnit_AndLeavesCustomerFields()
     {
-        string sTexto = CampaignMessage.RenderShared(
+        string sText = CampaignMessage.RenderShared(
             "{primeiro_nome}, a {empresa} de {unidade} lembra: {idade} anos, {anos_de_cadastro} de casa, {nome}.",
             "Lojas Regional", "Itaituba");
 
-        Assert.Equal("{primeiro_nome}, a Lojas Regional de Itaituba lembra: {idade} anos, {anos_de_cadastro} de casa, {nome}.", sTexto);
+        Assert.Equal("{primeiro_nome}, a Lojas Regional de Itaituba lembra: {idade} anos, {anos_de_cadastro} de casa, {nome}.", sText);
     }
 
     [Fact]
-    public void WithoutEmoji_TiraOsEmojisEAvisa_SemMexerNoResto()
+    public void WithoutEmoji_RemovesEmojisAndWarns_WithoutTouchingTheRest()
     {
-        string sLimpo = CampaignContact.WithoutEmoji(
-            "Feliz aniversário, {primeiro_nome}! 🎉 A {empresa} deseja um dia incrível ❤️ para você.", out bool bTinha);
+        string sClean = CampaignContact.WithoutEmoji(
+            "Feliz aniversário, {primeiro_nome}! 🎉 A {empresa} deseja um dia incrível ❤️ para você.", out bool bHad);
 
-        Assert.True(bTinha);
-        Assert.Equal("Feliz aniversário, {primeiro_nome}! A {empresa} deseja um dia incrível para você.", sLimpo);
-        Assert.Equal("Olá — tudo bem? Até já…", CampaignContact.WithoutEmoji("Olá — tudo bem? Até já…", out bool bNenhum));
-        Assert.False(bNenhum);
+        Assert.True(bHad);
+        Assert.Equal("Feliz aniversário, {primeiro_nome}! A {empresa} deseja um dia incrível para você.", sClean);
+        Assert.Equal("Olá — tudo bem? Até já…", CampaignContact.WithoutEmoji("Olá — tudo bem? Até já…", out bool bNone));
+        Assert.False(bNone);
     }
 
     [Fact]
-    public void Build_GeraOPdf_ComLogoInvalidaETemaQuebrado()
+    public void Build_GeneratesPdf_WithInvalidLogoAndBrokenTheme()
     {
-        CampaignPdfData objDados = new CampaignPdfData(
+        CampaignPdfData objData = new CampaignPdfData(
             "Lojas Regional", "Itaituba", "Aniversário", CampaignKind.Birthday, new DateOnly(2026, 10, 12),
             "Feliz aniversário, {primeiro_nome}! 🎉", "data:image/png;base64,isto-nao-e-base64!!",
             new ThemeColors { Brand = "vermelho", Ink = "#123" },
@@ -69,27 +69,27 @@ public class CampaignPdfTests
                 new CampaignPdfRow("Bruno Lima", "93991230000", "", "sex, 16/10 · 36 anos", false, "Feliz aniversário, Bruno!"),
             ]);
 
-        byte[] arrPdf = CampaignPdf.Build(objDados);
+        byte[] arrPdf = CampaignPdf.Build(objData);
 
         Assert.Equal("%PDF", System.Text.Encoding.ASCII.GetString(arrPdf, 0, 4));
         Assert.True(arrPdf.Length > 1000);
     }
 
     [Fact]
-    public void Build_ComLogoPngDeVerdade_EUmaCampanhaSemColunaDeInformacao()
+    public void Build_WithRealPngLogo_AndCampaignWithoutInfoColumn()
     {
         // PNG 1×1 transparente.
         const string sLogo = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
-        CampaignPdfData objDados = new CampaignPdfData(
+        CampaignPdfData objData = new CampaignPdfData(
             "Lojas Regional", "Itaituba", "Promoção de outubro", CampaignKind.Filtered, new DateOnly(2026, 10, 12),
             "Oi {primeiro_nome}!", sLogo, new ThemeColors(),
             [new CampaignPdfRow("Ana", "93991234567", "", "", false, "Oi Ana!")]);
 
-        Assert.Equal("%PDF", System.Text.Encoding.ASCII.GetString(CampaignPdf.Build(objDados), 0, 4));
+        Assert.Equal("%PDF", System.Text.Encoding.ASCII.GetString(CampaignPdf.Build(objData), 0, 4));
     }
 
     [Fact]
-    public void FileName_PorTipoUnidadeEDia()
+    public void FileName_ByKindUnitAndDay()
     {
         Assert.Equal("campanha-aniversario-itaituba-2026-10-12.pdf",
             CampaignDeliveryDocument.FileName(CampaignKind.Birthday, "itaituba", new DateOnly(2026, 10, 12)));

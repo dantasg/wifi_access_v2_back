@@ -12,7 +12,7 @@ public record SettingsDto(
     string? RedirectUrl,
     // DDD do exemplo de telefone no portal. No painel é o da empresa; no portal, o da unidade (ou o da
     // empresa, se a unidade não tiver). No PUT, nulo = manter o atual; "" = sem DDD.
-    string? Ddd = null,
+    string? AreaCode = null,
     // Slug da unidade resolvida. Só sai na leitura do portal (o front precisa dele para o
     // /authorize quando a unidade veio pelo host); ignorado no PUT do painel.
     string? Unit = null)
@@ -27,7 +27,7 @@ public record SettingsDto(
             Ssid: objSettings.Ssid,
             AccessMinutes: objSettings.AccessMinutes,
             RedirectUrl: objSettings.RedirectUrl,
-            Ddd: objSettings.Ddd,
+            AreaCode: objSettings.AreaCode,
             Unit: sUnitSlug);
     }
 
@@ -43,7 +43,7 @@ public record SettingsDto(
             Logo = PortalImage.Url(objUnit.Slug, PortalImage.Logo, objSettings.Logo),
             Favicon = PortalImage.Url(objUnit.Slug, PortalImage.Favicon, objSettings.Favicon),
             Banner = PortalImage.Url(objUnit.Slug, PortalImage.Banner, objSettings.Banner),
-            Ddd = string.IsNullOrEmpty(objUnit.Ddd) ? objSettings.Ddd : objUnit.Ddd,
+            AreaCode = string.IsNullOrEmpty(objUnit.AreaCode) ? objSettings.AreaCode : objUnit.AreaCode,
         };
     }
 }

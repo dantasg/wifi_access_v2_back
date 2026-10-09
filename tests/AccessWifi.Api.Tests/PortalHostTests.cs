@@ -22,13 +22,13 @@ public class PortalHostTests
 
     private class FakeUnifiClient : IUnifiClient
     {
-        public string? SMacAutorizado { get; private set; }
+        public string? SAuthorizedMac { get; private set; }
 
         public Task AuthorizeGuestAsync(
             CompanyUnifi objConfig, string sMac, int iAccessMinutes,
             CancellationToken objCancellationToken = default)
         {
-            SMacAutorizado = sMac;
+            SAuthorizedMac = sMac;
             return Task.CompletedTask;
         }
 
@@ -64,11 +64,11 @@ public class PortalHostTests
     private static AuthorizeRequest CreateAuthorizeRequest(string? sUnit, string? sHost)
     {
         return new AuthorizeRequest(
-            Nome: "Ana Beatriz",
+            Name: "Ana Beatriz",
             Instagram: "@ana",
-            Telefone: "(93) 98888-1234",
-            Nascimento: "10/05/1990",
-            Consentimento: true,
+            Phone: "(93) 98888-1234",
+            BirthDate: "10/05/1990",
+            Consent: true,
             Unit: sUnit,
             Mac: "aa:bb:cc:dd:ee:ff",
             Ap: "8c:30:66:4e:9b:58",
@@ -80,7 +80,7 @@ public class PortalHostTests
     // ------------------------------------------------------------------ GET /settings
 
     [Fact]
-    public async Task Settings_PeloHost_AchaAUnidadeEDevolveOSlug()
+    public async Task Settings_ByHost_FindsUnitAndReturnsSlug()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateUnit(objDbContext, "itaituba", HostItaituba);
@@ -99,7 +99,7 @@ public class PortalHostTests
     [InlineData("ITAITUBA.Wifi.Exemplo.com.BR")]
     [InlineData("itaituba.wifi.exemplo.com.br:443")]
     [InlineData("  itaituba.wifi.exemplo.com.br.  ")]
-    public async Task Settings_HostEmVariacoesDeEscrita_AindaAcha(string sHost)
+    public async Task Settings_HostSpellingVariations_StillFound(string sHost)
     {
         // O navegador pode mandar com maiúsculas, com porta ou com o ponto final do FQDN absoluto.
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
@@ -113,7 +113,7 @@ public class PortalHostTests
     }
 
     [Fact]
-    public async Task Settings_ComUnitEHost_OSlugTemPrioridade()
+    public async Task Settings_WithUnitAndHost_SlugTakesPriority()
     {
         // Não quebra nada que já esteja configurado com "?unit=".
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
@@ -130,7 +130,7 @@ public class PortalHostTests
     }
 
     [Fact]
-    public async Task Settings_HostDesconhecido_Retorna404()
+    public async Task Settings_UnknownHost_Returns404()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateUnit(objDbContext, "itaituba", HostItaituba);
@@ -143,7 +143,7 @@ public class PortalHostTests
     }
 
     [Fact]
-    public async Task Settings_SemUnitESemHost_Retorna400()
+    public async Task Settings_NoUnitAndNoHost_Returns400()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         SettingsController objController = new SettingsController(objDbContext);
@@ -155,7 +155,7 @@ public class PortalHostTests
     }
 
     [Fact]
-    public async Task Settings_HostVazioNaoCasaComUnidadeSemHost()
+    public async Task Settings_EmptyHostDoesNotMatchUnitWithoutHost()
     {
         // Unidades sem host ficam com "" no banco: um host vazio não pode "achar" qualquer uma.
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
@@ -171,7 +171,7 @@ public class PortalHostTests
     // ------------------------------------------------------------------ POST /authorize
 
     [Fact]
-    public async Task Authorize_PeloHost_GravaOLeadNaUnidadeCerta()
+    public async Task Authorize_ByHost_SavesLeadInRightUnit()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Unit objUnit = CreateUnit(objDbContext, "itaituba", HostItaituba);
@@ -188,7 +188,7 @@ public class PortalHostTests
     }
 
     [Fact]
-    public async Task Authorize_HostDesconhecido_Retorna400()
+    public async Task Authorize_UnknownHost_Returns400()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateUnit(objDbContext, "itaituba", HostItaituba);
@@ -206,7 +206,7 @@ public class PortalHostTests
     }
 
     [Fact]
-    public async Task Authorize_SemUnitESemHost_Retorna400()
+    public async Task Authorize_NoUnitAndNoHost_Returns400()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         AuthorizeController objController = new AuthorizeController(
@@ -224,7 +224,7 @@ public class PortalHostTests
     // ------------------------------------------------------------------ Cadastro do host
 
     [Fact]
-    public async Task Update_GravaOHostNormalizado()
+    public async Task Update_SavesNormalizedHost()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Unit objUnit = CreateUnit(objDbContext, "itaituba", "");
@@ -245,7 +245,7 @@ public class PortalHostTests
     [InlineData("http://itaituba.wifi.exemplo.com.br")]
     [InlineData("itaituba.wifi.exemplo.com.br/guest")]
     [InlineData("-comeca-com-hifen.com")]
-    public async Task Update_HostInvalido_Retorna400(string sHost)
+    public async Task Update_InvalidHost_Returns400(string sHost)
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Unit objUnit = CreateUnit(objDbContext, "itaituba", "");
@@ -261,16 +261,16 @@ public class PortalHostTests
     }
 
     [Fact]
-    public async Task Update_HostJaUsadoPorOutraUnidade_Retorna400()
+    public async Task Update_HostUsedByAnotherUnit_Returns400()
     {
         // Duas unidades com o mesmo endereço tornariam a identificação ambígua.
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateUnit(objDbContext, "itaituba", HostItaituba);
-        Unit objOutra = CreateUnit(objDbContext, "santarem", "", "regional2");
+        Unit objOther = CreateUnit(objDbContext, "santarem", "", "regional2");
         UnitsController objController = CreateUnitsController(objDbContext);
 
         ActionResult<UnitDto> objResult = await objController.Update(
-            objOutra.Id,
+            objOther.Id,
             new UpdateUnitRequest("Santarém", true, null, HostItaituba),
             CancellationToken.None);
 
@@ -281,7 +281,7 @@ public class PortalHostTests
     }
 
     [Fact]
-    public async Task Update_HostNulo_MantemOAtual()
+    public async Task Update_NullHost_KeepsCurrent()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Unit objUnit = CreateUnit(objDbContext, "itaituba", HostItaituba);
@@ -294,7 +294,7 @@ public class PortalHostTests
     }
 
     [Fact]
-    public async Task Update_HostVazio_Limpa()
+    public async Task Update_EmptyHost_Clears()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Unit objUnit = CreateUnit(objDbContext, "itaituba", HostItaituba);
@@ -307,7 +307,7 @@ public class PortalHostTests
     }
 
     [Fact]
-    public async Task Update_MesmoHostDaPropriaUnidade_NaoAcusaDuplicidade()
+    public async Task Update_SameHostOfOwnUnit_IsNotDuplicate()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Unit objUnit = CreateUnit(objDbContext, "itaituba", HostItaituba);

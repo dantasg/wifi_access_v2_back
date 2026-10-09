@@ -68,84 +68,84 @@ public class UnitDeviceSync
         }
 
         // Agrupa pela chave já decifrada: o texto cifrado muda a cada gravação, a chave não.
-        Dictionary<string, List<Unit>> objPorChave = [];
-        int iFalhas = 0;
+        Dictionary<string, List<Unit>> objByKey = [];
+        int iFailures = 0;
         foreach (Unit objUnit in objUnits)
         {
             string sKey = DecryptKey(objUnit.Unifi.ApiKey);
             if (sKey.Length == 0)
             {
-                Falhou(objUnit, "Chave de API da nuvem UniFi ilegível.");
-                iFalhas++;
+                MarkFailed(objUnit, "Chave de API da nuvem UniFi ilegível.");
+                iFailures++;
                 continue;
             }
-            if (!objPorChave.TryGetValue(sKey, out List<Unit>? objLista))
+            if (!objByKey.TryGetValue(sKey, out List<Unit>? objList))
             {
-                objLista = [];
-                objPorChave[sKey] = objLista;
+                objList = [];
+                objByKey[sKey] = objList;
             }
-            objLista.Add(objUnit);
+            objList.Add(objUnit);
         }
 
         DateTime dtNowUtc = DateTime.UtcNow;
         int iDevices = 0;
-        foreach ((string sKey, List<Unit> objLista) in objPorChave)
+        foreach ((string sKey, List<Unit> objList) in objByKey)
         {
-            List<UnifiCloudClient.CloudDevice> objDaNuvem;
+            List<UnifiCloudClient.CloudDevice> objFromCloud;
             try
             {
-                objDaNuvem = await _objCloudClient.ListDevicesAsync(sKey, objCancellationToken);
+                objFromCloud = await _objCloudClient.ListDevicesAsync(sKey, objCancellationToken);
             }
             catch (UnifiException objException)
             {
-                foreach (Unit objUnit in objLista)
+                foreach (Unit objUnit in objList)
                 {
-                    Falhou(objUnit, objException.Message);
+                    MarkFailed(objUnit, objException.Message);
                 }
-                iFalhas += objLista.Count;
+                iFailures += objList.Count;
                 continue;
             }
 
-            foreach (Unit objUnit in objLista)
+            foreach (Unit objUnit in objList)
             {
                 string sConsole = objUnit.Unifi.ConsoleId.Trim();
-                List<UnifiCloudClient.CloudDevice> objDoConsole = objDaNuvem
+                List<UnifiCloudClient.CloudDevice> objFromConsole = objFromCloud
                     .Where(device => string.Equals(device.HostId, sConsole, StringComparison.OrdinalIgnoreCase))
                     .GroupBy(device => device.Mac)
-                    .Select(grupo => grupo.First())
+                    .Select(group => group.First())
                     .ToList();
-                if (objDoConsole.Count == 0)
+                if (objFromConsole.Count == 0)
                 {
-                    Falhou(objUnit, "Nenhum aparelho deste console na nuvem da UniFi (confira o console da unidade).");
-                    iFalhas++;
+                    MarkFailed(objUnit, "Nenhum aparelho deste console na nuvem da UniFi (confira o console da unidade).");
+                    iFailures++;
                     continue;
                 }
 
-                await GravarAsync(objUnit, objDoConsole, dtNowUtc, objCancellationToken);
-                iDevices += objDoConsole.Count;
+                await SaveAsync(objUnit, objFromConsole, dtNowUtc, objCancellationToken);
+                iDevices += objFromConsole.Count;
             }
         }
 
         await _objDbContext.SaveChangesAsync(objCancellationToken);
-        await AvisarRepetidosAsync(objCancellationToken);
-        return new Result(objUnits.Count, iDevices, iFalhas);
+        await WarnRepeatedAsync(objCancellationToken);
+        return new Result(objUnits.Count, iDevices, iFailures);
     }
 
-    private async Task GravarAsync(
-        Unit objUnit, List<UnifiCloudClient.CloudDevice> objDoConsole, DateTime dtNowUtc,
+    private async Task SaveAsync(
+        Unit objUnit, List<UnifiCloudClient.CloudDevice> objFromConsole, DateTime dtNowUtc,
         CancellationToken objCancellationToken)
     {
-        Dictionary<string, UnitDevice> objAtuais = await _objDbContext.UnitDevices
+        Dictionary<string, UnitDevice> objCurrent = await _objDbContext.UnitDevices
             .Where(device => device.IDUnit == objUnit.Id)
             .ToDictionaryAsync(device => device.Mac, objCancellationToken);
 
-        foreach (UnifiCloudClient.CloudDevice objDevice in objDoConsole)
+        foreach (UnifiCloudClient.CloudDevice objDevice in objFromConsole)
         {
-            if (objAtuais.Remove(objDevice.Mac, out UnitDevice? objExistente))
+            if (objCurrent.Remove(objDevice.Mac, out UnitDevice? objExisting))
             {
-                objExistente.Name = Truncate(objDevice.Name, 120);
-                objExistente.Model = Truncate(objDevice.Model, 60);
-                objExistente.SyncedAt = dtNowUtc;
+                objExisting.Name = Truncate(objDevice.Name, 120);
+                objExisting.Model = Truncate(objDevice.Model, 60);
+                objExisting.SyncedAt = dtNowUtc;
             }
             else
             {
@@ -161,31 +161,31 @@ public class UnitDeviceSync
         }
 
         // Saiu do console (trocado, levado para outra loja): deixa de identificar esta unidade.
-        _objDbContext.UnitDevices.RemoveRange(objAtuais.Values);
+        _objDbContext.UnitDevices.RemoveRange(objCurrent.Values);
         objUnit.DevicesSyncedAt = dtNowUtc;
         objUnit.DevicesSyncError = "";
     }
 
     /// <summary>O mesmo MAC em duas unidades (duas unidades com o mesmo console): o portal não escolhe por ele.</summary>
-    private async Task AvisarRepetidosAsync(CancellationToken objCancellationToken)
+    private async Task WarnRepeatedAsync(CancellationToken objCancellationToken)
     {
-        List<string> objRepetidos = await _objDbContext.UnitDevices
+        List<string> objRepeated = await _objDbContext.UnitDevices
             .GroupBy(device => device.Mac)
-            .Where(grupo => grupo.Count() > 1)
-            .Select(grupo => grupo.Key)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
             .ToListAsync(objCancellationToken);
-        foreach (string sMac in objRepetidos)
+        foreach (string sMac in objRepeated)
         {
             _objLogger.LogWarning(
                 "Ponto de acesso {Mac} em mais de uma unidade: o portal não escolhe a loja por ele.", sMac);
         }
     }
 
-    private void Falhou(Unit objUnit, string sMotivo)
+    private void MarkFailed(Unit objUnit, string sReason)
     {
-        objUnit.DevicesSyncError = Truncate(sMotivo, 300);
+        objUnit.DevicesSyncError = Truncate(sReason, 300);
         _objLogger.LogWarning(
-            "Aparelhos da unidade {Unidade} não lidos na nuvem da UniFi: {Motivo}", objUnit.Slug, sMotivo);
+            "Aparelhos da unidade {Unidade} não lidos na nuvem da UniFi: {Motivo}", objUnit.Slug, sReason);
     }
 
     private string DecryptKey(string sEncrypted)

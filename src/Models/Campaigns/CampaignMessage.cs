@@ -61,11 +61,11 @@ namespace Models.Campaigns
         public static int FullYearsBetween(DateOnly dtStart, DateOnly dtDate)
         {
             int iYears = dtDate.Year - dtStart.Year;
-            bool bFezNesteAno =
+            bool bHadThisYear =
                 dtDate.Month > dtStart.Month
                 || (dtDate.Month == dtStart.Month && dtDate.Day >= dtStart.Day)
                 || CampaignCalendar.IsAnniversary(dtStart.Month, dtStart.Day, dtDate);
-            return bFezNesteAno ? iYears : iYears - 1;
+            return bHadThisYear ? iYears : iYears - 1;
         }
     }
 }

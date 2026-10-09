@@ -74,11 +74,11 @@ public sealed class AccessScope
 
         List<Guid> objIds = objUser.Units.Select(link => link.IDUnit).ToList();
         // Só unidades da própria empresa contam, mesmo que alguma tenha mudado de empresa depois.
-        HashSet<Guid> objDaEmpresa = (await objDbContext.Units.AsNoTracking()
+        HashSet<Guid> objCompanyUnits = (await objDbContext.Units.AsNoTracking()
                 .Where(unit => unit.IDCompany == objCompanyId && objIds.Contains(unit.Id))
                 .Select(unit => unit.Id)
                 .ToListAsync(objCancellationToken))
             .ToHashSet();
-        return new AccessScope(objCompanyId, objDaEmpresa);
+        return new AccessScope(objCompanyId, objCompanyUnits);
     }
 }

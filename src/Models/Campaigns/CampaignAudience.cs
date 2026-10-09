@@ -32,10 +32,10 @@ namespace Models.Campaigns
             // Quem é de 29/02 comemora em 28/02 nos anos não bissextos (D3).
             int iMonth = dtLocalDate.Month;
             int iDay = dtLocalDate.Day;
-            bool bInclui29DeFevereiro = iMonth == 2 && iDay == 28 && !DateTime.IsLeapYear(dtLocalDate.Year);
+            bool bIncludesFeb29 = iMonth == 2 && iDay == 28 && !DateTime.IsLeapYear(dtLocalDate.Year);
 
             // Execuções desta campanha: base para "não repetir quem já recebeu".
-            IQueryable<Guid> objRunsDaCampanha = objDbContext.CampaignRuns
+            IQueryable<Guid> objCampaignRuns = objDbContext.CampaignRuns
                 .Where(run => run.IDCampaign == objCampaignId)
                 .Select(run => run.Id);
 
@@ -44,10 +44,10 @@ namespace Models.Campaigns
                 case CampaignKind.Birthday:
                     // D21: os aniversariantes de hoje até sábado (na segunda, desde domingo), como
                     // "mês × 100 + dia" para a consulta virar um IN simples.
-                    int[] arrDias = CampaignCalendar.BirthdayKeys(dtLocalDate);
+                    int[] arrDays = CampaignCalendar.BirthdayKeys(dtLocalDate);
                     objQuery = objQuery.Where(customer =>
                         customer.BirthDate != null
-                        && arrDias.Contains(customer.BirthDate.Value.Month * 100 + customer.BirthDate.Value.Day));
+                        && arrDays.Contains(customer.BirthDate.Value.Month * 100 + customer.BirthDate.Value.Day));
                     break;
 
                 case CampaignKind.SignupAnniversary:
@@ -56,12 +56,12 @@ namespace Models.Campaigns
                         customer.FirstVisitDate.Year < iYear
                         && customer.FirstVisitDate.Month == iMonth
                         && (customer.FirstVisitDate.Day == iDay
-                            || (bInclui29DeFevereiro && customer.FirstVisitDate.Day == 29)));
+                            || (bIncludesFeb29 && customer.FirstVisitDate.Day == 29)));
                     break;
 
                 case CampaignKind.WeMissYou:
-                    DateTime dtLimite = dtOccurrenceUtc.AddDays(-(objConfig.AbsenceDays ?? 30));
-                    objQuery = objQuery.Where(customer => customer.LastVisitAt <= dtLimite);
+                    DateTime dtLimit = dtOccurrenceUtc.AddDays(-(objConfig.AbsenceDays ?? 30));
+                    objQuery = objQuery.Where(customer => customer.LastVisitAt <= dtLimit);
                     if (objCampaignId is not null)
                     {
                         // Uma vez por ausência: quem já recebeu depois da última visita não recebe de
@@ -70,7 +70,7 @@ namespace Models.Campaigns
                             recipient.IDCustomer == customer.Id
                             && recipient.CreatedAt >= customer.LastVisitAt
                             && s_arrDelivered.Contains(recipient.Status)
-                            && objRunsDaCampanha.Contains(recipient.IDRun)));
+                            && objCampaignRuns.Contains(recipient.IDRun)));
                     }
                     break;
 
@@ -84,20 +84,20 @@ namespace Models.Campaigns
                             recipient.IDCustomer == customer.Id
                             && recipient.Milestone == customer.VisitCount / iStep * iStep
                             && s_arrDelivered.Contains(recipient.Status)
-                            && objRunsDaCampanha.Contains(recipient.IDRun)));
+                            && objCampaignRuns.Contains(recipient.IDRun)));
                     }
                     break;
 
                 case CampaignKind.Filtered:
                     objQuery = ApplyFilters(objDbContext, objQuery, objConfig.Filters, dtLocalDate);
-                    if (objCampaignId is not null && objConfig.ResendAfterDays is int iDias)
+                    if (objCampaignId is not null && objConfig.ResendAfterDays is int iDays)
                     {
-                        DateTime dtDesde = dtOccurrenceUtc.AddDays(-iDias);
+                        DateTime dtSince = dtOccurrenceUtc.AddDays(-iDays);
                         objQuery = objQuery.Where(customer => !objDbContext.CampaignRecipients.Any(recipient =>
                             recipient.IDCustomer == customer.Id
-                            && recipient.CreatedAt >= dtDesde
+                            && recipient.CreatedAt >= dtSince
                             && s_arrDelivered.Contains(recipient.Status)
-                            && objRunsDaCampanha.Contains(recipient.IDRun)));
+                            && objCampaignRuns.Contains(recipient.IDRun)));
                     }
                     break;
 
@@ -125,14 +125,14 @@ namespace Models.Campaigns
             if (objFilters.AgeMin is int iAgeMin)
             {
                 // Tem pelo menos iAgeMin anos: nasceu até esta data.
-                DateOnly dtNascidoAte = dtLocalDate.AddYears(-iAgeMin);
-                objQuery = objQuery.Where(customer => customer.BirthDate != null && customer.BirthDate <= dtNascidoAte);
+                DateOnly dtBornUntil = dtLocalDate.AddYears(-iAgeMin);
+                objQuery = objQuery.Where(customer => customer.BirthDate != null && customer.BirthDate <= dtBornUntil);
             }
             if (objFilters.AgeMax is int iAgeMax)
             {
                 // Tem no máximo iAgeMax anos: ainda não fez iAgeMax + 1.
-                DateOnly dtNascidoDepoisDe = dtLocalDate.AddYears(-(iAgeMax + 1));
-                objQuery = objQuery.Where(customer => customer.BirthDate != null && customer.BirthDate > dtNascidoDepoisDe);
+                DateOnly dtBornAfter = dtLocalDate.AddYears(-(iAgeMax + 1));
+                objQuery = objQuery.Where(customer => customer.BirthDate != null && customer.BirthDate > dtBornAfter);
             }
             if (objFilters.BirthMonths is { Count: > 0 })
             {
@@ -150,13 +150,13 @@ namespace Models.Campaigns
             }
             if (objFilters.LastVisitWithinDays is int iWithin)
             {
-                DateOnly dtDesde = dtLocalDate.AddDays(-iWithin);
-                objQuery = objQuery.Where(customer => customer.LastVisitDate >= dtDesde);
+                DateOnly dtSince = dtLocalDate.AddDays(-iWithin);
+                objQuery = objQuery.Where(customer => customer.LastVisitDate >= dtSince);
             }
             if (objFilters.LastVisitOlderThanDays is int iOlder)
             {
-                DateOnly dtAntesDe = dtLocalDate.AddDays(-iOlder);
-                objQuery = objQuery.Where(customer => customer.LastVisitDate < dtAntesDe);
+                DateOnly dtBefore = dtLocalDate.AddDays(-iOlder);
+                objQuery = objQuery.Where(customer => customer.LastVisitDate < dtBefore);
             }
             if (objFilters.VisitsMin is int iVisits)
             {

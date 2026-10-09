@@ -10,20 +10,20 @@ public class AesGcmEncryptorTests
     private static AesGcmEncryptor Create() => new AesGcmEncryptor(Key);
 
     [Fact]
-    public void EncryptDecrypt_IdaEVolta_RecuperaOTextoOriginal()
+    public void EncryptDecrypt_RoundTrip_RecoversOriginalText()
     {
         AesGcmEncryptor objEncryptor = Create();
 
-        string? sCifrado = objEncryptor.Encrypt("senha-super-secreta");
+        string? sEncrypted = objEncryptor.Encrypt("senha-super-secreta");
 
-        Assert.NotNull(sCifrado);
-        Assert.StartsWith("enc:v1:", sCifrado);
-        Assert.NotEqual("senha-super-secreta", sCifrado);
-        Assert.Equal("senha-super-secreta", objEncryptor.Decrypt(sCifrado));
+        Assert.NotNull(sEncrypted);
+        Assert.StartsWith("enc:v1:", sEncrypted);
+        Assert.NotEqual("senha-super-secreta", sEncrypted);
+        Assert.Equal("senha-super-secreta", objEncryptor.Decrypt(sEncrypted));
     }
 
     [Fact]
-    public void Encrypt_MesmoTexto_GeraCifradosDiferentes_MasDecifraIgual()
+    public void Encrypt_SameText_ProducesDifferentCiphertexts_ButDecryptsEqual()
     {
         AesGcmEncryptor objEncryptor = Create();
 
@@ -37,14 +37,14 @@ public class AesGcmEncryptorTests
     }
 
     [Fact]
-    public void Decrypt_TextoPuroSemPrefixo_DevolveComoEsta()
+    public void Decrypt_PlainTextWithoutPrefix_ReturnsAsIs()
     {
         // Tolerância a dados legados (gravados antes da cifragem).
         Assert.Equal("texto-puro-legado", Create().Decrypt("texto-puro-legado"));
     }
 
     [Fact]
-    public void Encrypt_NuloOuVazio_PassaDireto()
+    public void Encrypt_NullOrEmpty_PassesThrough()
     {
         AesGcmEncryptor objEncryptor = Create();
         Assert.Null(objEncryptor.Encrypt(null));
@@ -52,20 +52,20 @@ public class AesGcmEncryptorTests
     }
 
     [Fact]
-    public void Ctor_ChaveInvalida_Lanca()
+    public void Ctor_InvalidKey_Throws()
     {
         Assert.Throws<InvalidOperationException>(() => new AesGcmEncryptor(""));
         Assert.Throws<InvalidOperationException>(() => new AesGcmEncryptor("chave-curta"));
     }
 
     [Fact]
-    public void Decrypt_ChaveDiferente_Falha()
+    public void Decrypt_DifferentKey_Fails()
     {
-        string? sCifrado = Create().Encrypt("segredo");
+        string? sEncrypted = Create().Encrypt("segredo");
         // Outra chave de 32 bytes.
-        AesGcmEncryptor objOutro = new AesGcmEncryptor("YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXowMTIzNDU=");
+        AesGcmEncryptor objOther = new AesGcmEncryptor("YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXowMTIzNDU=");
 
         Assert.ThrowsAny<System.Security.Cryptography.CryptographicException>(
-            () => objOutro.Decrypt(sCifrado));
+            () => objOther.Decrypt(sEncrypted));
     }
 }

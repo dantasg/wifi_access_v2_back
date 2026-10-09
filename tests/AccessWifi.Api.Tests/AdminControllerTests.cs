@@ -13,7 +13,7 @@ namespace AccessWifi.Api.Tests;
 
 public class AdminControllerTests
 {
-    private static readonly string s_sHashSenhaCorreta = BCrypt.Net.BCrypt.HashPassword("senha-forte");
+    private static readonly string s_sCorrectPasswordHash = BCrypt.Net.BCrypt.HashPassword("senha-forte");
 
     private static TokenService CreateTokenService()
     {
@@ -49,14 +49,14 @@ public class AdminControllerTests
         objDbContext.Users.Add(new AdminUser
         {
             Username = sUsername,
-            PasswordHash = s_sHashSenhaCorreta,
+            PasswordHash = s_sCorrectPasswordHash,
             IDCompany = objCompanyId,
         });
         objDbContext.SaveChanges();
     }
 
     [Fact]
-    public async Task Login_CredenciaisValidas_DevolveTokenRoleEEmpresa()
+    public async Task Login_ValidCredentials_ReturnsTokenRoleAndCompany()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext, "exemplo");
@@ -75,7 +75,7 @@ public class AdminControllerTests
     }
 
     [Fact]
-    public async Task Login_SuperAdmin_DevolveRoleSuperadminSemEmpresa()
+    public async Task Login_SuperAdmin_ReturnsSuperadminRoleWithoutCompany()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateUser(objDbContext, "root", null);
@@ -91,7 +91,7 @@ public class AdminControllerTests
     }
 
     [Fact]
-    public async Task Login_SenhaErrada_Retorna401()
+    public async Task Login_WrongPassword_Returns401()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateUser(objDbContext, "admin", null);
@@ -104,7 +104,7 @@ public class AdminControllerTests
     }
 
     [Fact]
-    public async Task Login_EmpresaInativa_Retorna401()
+    public async Task Login_InactiveCompany_Returns401()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext, "exemplo");
@@ -120,7 +120,7 @@ public class AdminControllerTests
     }
 
     [Fact]
-    public async Task Login_UsuarioInativo_Retorna401MesmoComSenhaCorreta()
+    public async Task Login_InactiveUser_Returns401EvenWithRightPassword()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateUser(objDbContext, "admin", CreateCompany(objDbContext, "exemplo").Id);
@@ -136,7 +136,7 @@ public class AdminControllerTests
     }
 
     [Fact]
-    public async Task Refresh_UsuarioDesativadoDepoisDoLogin_Retorna401()
+    public async Task Refresh_UserDisabledAfterLogin_Returns401()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateUser(objDbContext, "admin", CreateCompany(objDbContext, "exemplo").Id);
@@ -154,7 +154,7 @@ public class AdminControllerTests
     }
 
     [Fact]
-    public async Task Login_DevolveRefreshTokenEPersisteNoBanco()
+    public async Task Login_ReturnsRefreshTokenAndPersistsIt()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateUser(objDbContext, "root", null);
@@ -170,7 +170,7 @@ public class AdminControllerTests
     }
 
     [Fact]
-    public async Task Refresh_TokenValido_DevolveNovoParERevogaOAntigo()
+    public async Task Refresh_ValidToken_ReturnsNewPairAndRevokesOld()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateUser(objDbContext, "root", null);
@@ -192,7 +192,7 @@ public class AdminControllerTests
     }
 
     [Fact]
-    public async Task Refresh_TokenRevogado_Retorna401()
+    public async Task Refresh_RevokedToken_Returns401()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateUser(objDbContext, "root", null);
@@ -210,7 +210,7 @@ public class AdminControllerTests
     }
 
     [Fact]
-    public async Task Refresh_TokenInexistente_Retorna401()
+    public async Task Refresh_UnknownToken_Returns401()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         AdminController objController = CreateController(objDbContext);
@@ -222,7 +222,7 @@ public class AdminControllerTests
     }
 
     [Fact]
-    public async Task Logout_RevogaORefreshToken()
+    public async Task Logout_RevokesRefreshToken()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateUser(objDbContext, "root", null);
@@ -241,7 +241,7 @@ public class AdminControllerTests
     }
 
     [Fact]
-    public async Task GetLeads_AdminDeEmpresa_VeOsLeadsDeTodasAsSuasUnidades()
+    public async Task GetLeads_CompanyAdmin_SeesLeadsOfAllItsUnits()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompanyA = CreateCompany(objDbContext, "exemplo");
@@ -249,9 +249,9 @@ public class AdminControllerTests
         Unit objUnitA1 = CreateUnit(objDbContext, objCompanyA.Id, "exemplo-um");
         Unit objUnitA2 = CreateUnit(objDbContext, objCompanyA.Id, "exemplo-dois");
         Unit objUnitB = CreateUnit(objDbContext, objCompanyB.Id, "outra-um");
-        objDbContext.Leads.Add(new Lead { IDUnit = objUnitA1.Id, Nome = "Da Unidade Um" });
-        objDbContext.Leads.Add(new Lead { IDUnit = objUnitA2.Id, Nome = "Da Unidade Dois" });
-        objDbContext.Leads.Add(new Lead { IDUnit = objUnitB.Id, Nome = "Da Outra" });
+        objDbContext.Leads.Add(new Lead { IDUnit = objUnitA1.Id, Name = "Da Unidade Um" });
+        objDbContext.Leads.Add(new Lead { IDUnit = objUnitA2.Id, Name = "Da Unidade Dois" });
+        objDbContext.Leads.Add(new Lead { IDUnit = objUnitB.Id, Name = "Da Outra" });
         objDbContext.SaveChanges();
         AdminController objController = CreateController(objDbContext);
         TestHelpers.SetCompanyUser(objController, objDbContext, objCompanyA.Id);
@@ -262,18 +262,18 @@ public class AdminControllerTests
         List<LeadDto> objLeads =
             Assert.IsType<List<LeadDto>>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
         Assert.Equal(2, objLeads.Count);
-        Assert.DoesNotContain(objLeads, lead => lead.Nome == "Da Outra");
+        Assert.DoesNotContain(objLeads, lead => lead.Name == "Da Outra");
     }
 
     [Fact]
-    public async Task GetLeads_ComFiltroDeUnidade_SoVeOsLeadsDaqueleSlug()
+    public async Task GetLeads_WithUnitFilter_SeesOnlyThatSlugLeads()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext, "exemplo");
         Unit objUnit1 = CreateUnit(objDbContext, objCompany.Id, "exemplo-um");
         Unit objUnit2 = CreateUnit(objDbContext, objCompany.Id, "exemplo-dois");
-        objDbContext.Leads.Add(new Lead { IDUnit = objUnit1.Id, Nome = "Da Unidade Um" });
-        objDbContext.Leads.Add(new Lead { IDUnit = objUnit2.Id, Nome = "Da Unidade Dois" });
+        objDbContext.Leads.Add(new Lead { IDUnit = objUnit1.Id, Name = "Da Unidade Um" });
+        objDbContext.Leads.Add(new Lead { IDUnit = objUnit2.Id, Name = "Da Unidade Dois" });
         objDbContext.SaveChanges();
         AdminController objController = CreateController(objDbContext);
         TestHelpers.SetCompanyUser(objController, objDbContext, objCompany.Id);
@@ -284,19 +284,19 @@ public class AdminControllerTests
         List<LeadDto> objLeads =
             Assert.IsType<List<LeadDto>>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
         LeadDto objLead = Assert.Single(objLeads);
-        Assert.Equal("Da Unidade Dois", objLead.Nome);
+        Assert.Equal("Da Unidade Dois", objLead.Name);
         Assert.Equal("exemplo-dois", objLead.UnitSlug);
     }
 
     [Fact]
-    public async Task GetLeads_TrazOPrimeiroCadastroSeparadoDoUltimoAcesso()
+    public async Task GetLeads_ReturnsFirstSignupSeparateFromLastAccess()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext, "exemplo");
         Unit objUnit = CreateUnit(objDbContext, objCompany.Id, "exemplo-um");
-        DateTime dtPrimeiro = new DateTime(2026, 9, 21, 12, 0, 0, DateTimeKind.Utc);
-        DateTime dtUltimo = new DateTime(2026, 9, 29, 11, 26, 0, DateTimeKind.Utc);
-        objDbContext.Leads.Add(new Lead { IDUnit = objUnit.Id, Nome = "Voltou", CreatedAt = dtPrimeiro, Timestamp = dtUltimo });
+        DateTime dtFirst = new DateTime(2026, 9, 21, 12, 0, 0, DateTimeKind.Utc);
+        DateTime dtLast = new DateTime(2026, 9, 29, 11, 26, 0, DateTimeKind.Utc);
+        objDbContext.Leads.Add(new Lead { IDUnit = objUnit.Id, Name = "Voltou", CreatedAt = dtFirst, Timestamp = dtLast });
         objDbContext.SaveChanges();
         AdminController objController = CreateController(objDbContext);
         TestHelpers.SetCompanyUser(objController, objDbContext, objCompany.Id);
@@ -305,12 +305,12 @@ public class AdminControllerTests
 
         LeadDto objLead = Assert.Single(
             Assert.IsType<List<LeadDto>>(Assert.IsType<OkObjectResult>(objResult.Result).Value));
-        Assert.Equal(dtPrimeiro, objLead.CreatedAt);
-        Assert.Equal(dtUltimo, objLead.Timestamp);
+        Assert.Equal(dtFirst, objLead.CreatedAt);
+        Assert.Equal(dtLast, objLead.Timestamp);
     }
 
     [Fact]
-    public async Task GetLeads_SuperAdminSemSlug_Retorna400()
+    public async Task GetLeads_SuperAdminWithoutSlug_Returns400()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         AdminController objController = CreateController(objDbContext);
@@ -324,15 +324,15 @@ public class AdminControllerTests
     }
 
     [Fact]
-    public async Task GetLeads_SuperAdminComSlug_VeOsLeadsDaEmpresaIndicada()
+    public async Task GetLeads_SuperAdminWithSlug_SeesGivenCompanyLeads()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompanyA = CreateCompany(objDbContext, "exemplo");
         Company objCompanyB = CreateCompany(objDbContext, "outra");
         Unit objUnitA = CreateUnit(objDbContext, objCompanyA.Id, "exemplo-um");
         Unit objUnitB = CreateUnit(objDbContext, objCompanyB.Id, "outra-um");
-        objDbContext.Leads.Add(new Lead { IDUnit = objUnitA.Id, Nome = "Da Exemplo" });
-        objDbContext.Leads.Add(new Lead { IDUnit = objUnitB.Id, Nome = "Da Outra" });
+        objDbContext.Leads.Add(new Lead { IDUnit = objUnitA.Id, Name = "Da Exemplo" });
+        objDbContext.Leads.Add(new Lead { IDUnit = objUnitB.Id, Name = "Da Outra" });
         objDbContext.SaveChanges();
         AdminController objController = CreateController(objDbContext);
         TestHelpers.SetUser(objController, null);
@@ -343,6 +343,6 @@ public class AdminControllerTests
         List<LeadDto> objLeads =
             Assert.IsType<List<LeadDto>>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
         LeadDto objLead = Assert.Single(objLeads);
-        Assert.Equal("Da Outra", objLead.Nome);
+        Assert.Equal("Da Outra", objLead.Name);
     }
 }

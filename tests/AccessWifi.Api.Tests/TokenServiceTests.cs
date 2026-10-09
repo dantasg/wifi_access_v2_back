@@ -25,7 +25,7 @@ public class TokenServiceTests
     }
 
     [Fact]
-    public void GenerateToken_TokenValidaComAMesmaChaveIssuerEAudience()
+    public void GenerateToken_TokenValidatesWithSameKeyIssuerAndAudience()
     {
         AdminUser objUser = new AdminUser { Username = "admin", IDCompany = Guid.NewGuid() };
         string sToken = CreateService().GenerateToken(objUser);
@@ -48,7 +48,7 @@ public class TokenServiceTests
     }
 
     [Fact]
-    public void GenerateToken_AdminDeEmpresa_CarregaRoleAdminEIDCompany()
+    public void GenerateToken_CompanyAdmin_CarriesAdminRoleAndCompanyId()
     {
         Guid objCompanyId = Guid.NewGuid();
         AdminUser objUser = new AdminUser { Username = "admin", IDCompany = objCompanyId };
@@ -64,7 +64,7 @@ public class TokenServiceTests
     }
 
     [Fact]
-    public void GenerateToken_SuperAdmin_CarregaRoleSuperadminSemIDCompany()
+    public void GenerateToken_SuperAdmin_CarriesSuperadminRoleWithoutCompanyId()
     {
         AdminUser objUser = new AdminUser { Username = "root", IDCompany = null };
 

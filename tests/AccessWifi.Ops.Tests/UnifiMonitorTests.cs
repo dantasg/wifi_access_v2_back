@@ -28,7 +28,7 @@ public class UnifiMonitorTests
     }
 
     [Fact]
-    public async Task SequenciaReal_05_10_AvisaNaPrimeiraRecusa_ResumeEm10Min_EAvisaQuandoVolta()
+    public async Task RealSequence_05_10_WarnsOnFirstRejection_SummarizesIn10Min_AndWarnsOnRecovery()
     {
         ListNotifier objNotifier = new ListNotifier();
         UnifiMonitor objMonitor = new UnifiMonitor(objNotifier);
@@ -66,7 +66,7 @@ public class UnifiMonitorTests
     }
 
     [Fact]
-    public async Task BotaoTestarDoPainel_NaoEhCliente_NaoAvisa()
+    public async Task PanelTestButton_IsNotCustomer_DoesNotWarn()
     {
         ListNotifier objNotifier = new ListNotifier();
         UnifiMonitor objMonitor = new UnifiMonitor(objNotifier);
@@ -79,7 +79,7 @@ public class UnifiMonitorTests
     }
 
     [Fact]
-    public async Task RecusaSemLinhaDeMotivo_AvisaDepoisDe3Segundos()
+    public async Task RejectionWithoutReasonLine_WarnsAfter3Seconds()
     {
         ListNotifier objNotifier = new ListNotifier();
         UnifiMonitor objMonitor = new UnifiMonitor(objNotifier);
@@ -95,7 +95,7 @@ public class UnifiMonitorTests
     }
 
     [Fact]
-    public async Task NovoProblemaDepoisDeVoltar_AvisaDeNovoNaHora()
+    public async Task NewProblemAfterRecovery_WarnsAgainAtOnce()
     {
         ListNotifier objNotifier = new ListNotifier();
         UnifiMonitor objMonitor = new UnifiMonitor(objNotifier);
@@ -109,7 +109,7 @@ public class UnifiMonitorTests
     }
 
     [Fact]
-    public async Task LiberacaoBoaSemIncidente_NaoAvisa()
+    public async Task SuccessfulAuthorizationWithoutIncident_DoesNotWarn()
     {
         ListNotifier objNotifier = new ListNotifier();
         UnifiMonitor objMonitor = new UnifiMonitor(objNotifier);
@@ -128,7 +128,7 @@ public class UnifiMonitorTests
         + "Chave de API da nuvem UniFi inválida ou revogada.";
 
     [Fact]
-    public async Task ApDesconhecido_AvisaUmaVezACada6h()
+    public async Task UnknownAp_WarnsOnceEvery6h()
     {
         ListNotifier objNotifier = new ListNotifier();
         UnifiMonitor objMonitor = new UnifiMonitor(objNotifier);
@@ -148,7 +148,7 @@ public class UnifiMonitorTests
     }
 
     [Fact]
-    public async Task ApRepetidoELeituraQueFalhou_AvisamCadaUmUmaVez()
+    public async Task RepeatedApAndFailedRead_EachWarnsOnce()
     {
         ListNotifier objNotifier = new ListNotifier();
         UnifiMonitor objMonitor = new UnifiMonitor(objNotifier);

@@ -105,9 +105,9 @@ namespace Models.Campaigns
         /// </summary>
         public static (DateOnly Start, DateOnly End) BirthdayRange(DateOnly dtDate)
         {
-            DateOnly dtSabado = dtDate.AddDays(DayOfWeek.Saturday - dtDate.DayOfWeek);
-            DateOnly dtInicio = dtDate.DayOfWeek == DayOfWeek.Monday ? dtDate.AddDays(-1) : dtDate;
-            return (dtInicio, dtSabado);
+            DateOnly dtSaturday = dtDate.AddDays(DayOfWeek.Saturday - dtDate.DayOfWeek);
+            DateOnly dtStart = dtDate.DayOfWeek == DayOfWeek.Monday ? dtDate.AddDays(-1) : dtDate;
+            return (dtStart, dtSaturday);
         }
 
         /// <summary>
@@ -118,10 +118,10 @@ namespace Models.Campaigns
         {
             (DateOnly dtStart, DateOnly dtEnd) = BirthdayRange(dtDate);
             List<int> objKeys = [];
-            for (DateOnly dtDia = dtStart; dtDia <= dtEnd; dtDia = dtDia.AddDays(1))
+            for (DateOnly dtDay = dtStart; dtDay <= dtEnd; dtDay = dtDay.AddDays(1))
             {
-                objKeys.Add(dtDia.Month * 100 + dtDia.Day);
-                if (dtDia.Month == 2 && dtDia.Day == 28 && !DateTime.IsLeapYear(dtDia.Year))
+                objKeys.Add(dtDay.Month * 100 + dtDay.Day);
+                if (dtDay.Month == 2 && dtDay.Day == 28 && !DateTime.IsLeapYear(dtDay.Year))
                 {
                     objKeys.Add(229);
                 }
@@ -133,11 +133,11 @@ namespace Models.Campaigns
         public static DateOnly? BirthdayInRange(DateOnly dtBirth, DateOnly dtDate)
         {
             (DateOnly dtStart, DateOnly dtEnd) = BirthdayRange(dtDate);
-            for (DateOnly dtDia = dtStart; dtDia <= dtEnd; dtDia = dtDia.AddDays(1))
+            for (DateOnly dtDay = dtStart; dtDay <= dtEnd; dtDay = dtDay.AddDays(1))
             {
-                if (IsAnniversary(dtBirth.Month, dtBirth.Day, dtDia))
+                if (IsAnniversary(dtBirth.Month, dtBirth.Day, dtDay))
                 {
-                    return dtDia;
+                    return dtDay;
                 }
             }
             return null;

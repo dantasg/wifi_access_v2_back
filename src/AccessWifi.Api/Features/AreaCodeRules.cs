@@ -5,9 +5,9 @@ namespace AccessWifi.Api.Features;
 /// se preenchido, para cada unidade (lojas da mesma empresa em estados diferentes). Só os DDDs que
 /// existem no Brasil (lista da Anatel).
 /// </summary>
-public static class DddRules
+public static class AreaCodeRules
 {
-    private static readonly HashSet<string> s_objValidos =
+    private static readonly HashSet<string> s_objValidCodes =
     [
         "11", "12", "13", "14", "15", "16", "17", "18", "19",
         "21", "22", "24", "27", "28",
@@ -21,15 +21,15 @@ public static class DddRules
     ];
 
     /// <summary>Só os dígitos (aceita "(91)" ou " 91 "). Nulo continua nulo.</summary>
-    public static string? Normalize(string? sDdd)
+    public static string? Normalize(string? sAreaCode)
     {
-        return sDdd is null ? null : new string(sDdd.Where(char.IsAsciiDigit).ToArray());
+        return sAreaCode is null ? null : new string(sAreaCode.Where(char.IsAsciiDigit).ToArray());
     }
 
     /// <summary>Vazio é aceito (sem DDD); senão, um DDD que existe. Devolve o erro, ou null.</summary>
-    public static string? Validate(string? sDdd)
+    public static string? Validate(string? sAreaCode)
     {
-        if (string.IsNullOrEmpty(sDdd) || s_objValidos.Contains(sDdd))
+        if (string.IsNullOrEmpty(sAreaCode) || s_objValidCodes.Contains(sAreaCode))
         {
             return null;
         }

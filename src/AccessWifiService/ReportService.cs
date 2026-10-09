@@ -71,13 +71,13 @@ namespace AccessWifiService
                 .Select(lead => new LeadReportRow(lead, objUnit.Name))
                 .ToListAsync(objCancellationToken);
 
-            string sPeriodo = dtStartUtc.ToString("MM/yyyy", CultureInfo.InvariantCulture);
+            string sPeriod = dtStartUtc.ToString("MM/yyyy", CultureInfo.InvariantCulture);
             byte[] objCsv = LeadsCsv.Build(objRows);
             string sFileName = $"cadastros-{objCompany.Slug}-{objUnit.Slug}-{dtStartUtc:yyyy-MM}.csv";
-            string sSubject = $"Relatório de cadastros — {objCompany.Name} — {objUnit.Name} — {sPeriodo}";
+            string sSubject = $"Relatório de cadastros — {objCompany.Name} — {objUnit.Name} — {sPeriod}";
             string sBody =
                 $"Olá,\r\n\r\nSegue em anexo o relatório de cadastros da unidade {objUnit.Name} ({objCompany.Name}) " +
-                $"referente a {sPeriodo}.\r\nTotal de cadastros no período: {objRows.Count}.\r\n\r\n" +
+                $"referente a {sPeriod}.\r\nTotal de cadastros no período: {objRows.Count}.\r\n\r\n" +
                 "Mensagem automática do AccessWifi.";
 
             await _objEmailSender.SendAsync(objUnit.Email.Trim(), sSubject, sBody, objCsv, sFileName, objCancellationToken);
@@ -101,7 +101,7 @@ namespace AccessWifiService
 
             _objLogger.LogInformation(
                 "Relatório de {Count} cadastros ({Periodo}) enviado para {Email} (unidade {Unidade}, empresa {Slug}).",
-                objRows.Count, sPeriodo, objUnit.Email, objUnit.Name, objCompany.Slug);
+                objRows.Count, sPeriod, objUnit.Email, objUnit.Name, objCompany.Slug);
         }
     }
 }

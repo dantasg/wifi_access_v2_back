@@ -62,9 +62,9 @@ public partial class CompaniesController : ControllerBase
                 "Slug inválido: use só letras minúsculas, números e hífen (2 a 40 caracteres)."));
         }
 
-        bool slugEmUso = await _objDbContext.Companies
+        bool slugInUse = await _objDbContext.Companies
             .AnyAsync(company => company.Slug == objRequest.Slug, objCancellationToken);
-        if (slugEmUso)
+        if (slugInUse)
         {
             return BadRequest(new ErrorResponse("Já existe uma empresa com esse slug."));
         }
@@ -148,10 +148,10 @@ public partial class CompaniesController : ControllerBase
         {
             return "Tipo de campanha inválido.";
         }
-        if (objKinds?.FirstOrDefault(sKind => !CampaignKind.IsAvailable(sKind)) is string sEmBreve)
+        if (objKinds?.FirstOrDefault(sKind => !CampaignKind.IsAvailable(sKind)) is string sComingSoon)
         {
             // D23: a filtrada aparece como "em breve" e ainda não pode ser liberada.
-            return $"A campanha \"{CampaignKind.Label(sEmBreve)}\" ainda não está disponível (em breve).";
+            return $"A campanha \"{CampaignKind.Label(sComingSoon)}\" ainda não está disponível (em breve).";
         }
         return null;
     }
@@ -165,14 +165,14 @@ public partial class CompaniesController : ControllerBase
             return;
         }
 
-        List<CompanyCampaignKind> objAtuais = await _objDbContext.CompanyCampaignKinds
+        List<CompanyCampaignKind> objCurrent = await _objDbContext.CompanyCampaignKinds
             .Where(kind => kind.IDCompany == objCompanyId)
             .ToListAsync(objCancellationToken);
-        HashSet<string> objDesejados = objKinds.ToHashSet();
+        HashSet<string> objWanted = objKinds.ToHashSet();
 
         _objDbContext.CompanyCampaignKinds.RemoveRange(
-            objAtuais.Where(kind => !objDesejados.Contains(kind.Kind)));
-        foreach (string sKind in objDesejados.Where(sKind => objAtuais.All(kind => kind.Kind != sKind)))
+            objCurrent.Where(kind => !objWanted.Contains(kind.Kind)));
+        foreach (string sKind in objWanted.Where(sKind => objCurrent.All(kind => kind.Kind != sKind)))
         {
             _objDbContext.CompanyCampaignKinds.Add(new CompanyCampaignKind
             {
@@ -195,7 +195,7 @@ public partial class CompaniesController : ControllerBase
     /// </summary>
     private async Task RefreshCampaignScheduleAsync(Company objCompany, CancellationToken objCancellationToken)
     {
-        HashSet<string> objLigados = (await KindsOfAsync(objCompany.Id, objCancellationToken)).ToHashSet();
+        HashSet<string> objEnabled = (await KindsOfAsync(objCompany.Id, objCancellationToken)).ToHashSet();
         List<Campaign> objCampaigns = await _objDbContext.Campaigns
             .Where(campaign => campaign.IDCompany == objCompany.Id && campaign.Status == CampaignStatus.Active)
             .ToListAsync(objCancellationToken);
@@ -203,7 +203,7 @@ public partial class CompaniesController : ControllerBase
         foreach (Campaign objCampaign in objCampaigns)
         {
             CampaignScheduling.RefreshNextRun(
-                objCampaign, objZone, DateTime.UtcNow, objLigados.Contains(objCampaign.Kind));
+                objCampaign, objZone, DateTime.UtcNow, objEnabled.Contains(objCampaign.Kind));
         }
         await _objDbContext.SaveChangesAsync(objCancellationToken);
     }

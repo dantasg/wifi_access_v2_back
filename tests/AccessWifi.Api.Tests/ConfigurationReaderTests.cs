@@ -13,7 +13,7 @@ public class ConfigurationReaderTests
     }
 
     [Fact]
-    public async Task GetSmtpAsync_LeAsChavesDaTabela()
+    public async Task GetSmtpAsync_ReadsKeysFromTable()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         AddConfig(objDbContext, ConfigurationKeys.SmtpHost, "smtp.exemplo.com.br");
@@ -34,11 +34,11 @@ public class ConfigurationReaderTests
     }
 
     [Fact]
-    public async Task GetSmtpAsync_SenhaCifrada_DevolveEmClaro()
+    public async Task GetSmtpAsync_EncryptedPassword_ReturnsPlain()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
-        string? sSenhaCifrada = TestHelpers.CreateEncryptor().Encrypt("segredo-smtp");
-        AddConfig(objDbContext, ConfigurationKeys.SmtpPassword, sSenhaCifrada!);
+        string? sEncryptedPassword = TestHelpers.CreateEncryptor().Encrypt("segredo-smtp");
+        AddConfig(objDbContext, ConfigurationKeys.SmtpPassword, sEncryptedPassword!);
 
         SmtpOptions objSmtp =
             await new ConfigurationReader(objDbContext, TestHelpers.CreateEncryptor()).GetSmtpAsync();
@@ -47,7 +47,7 @@ public class ConfigurationReaderTests
     }
 
     [Fact]
-    public async Task GetSmtpAsync_SemChaves_UsaOsPadroes()
+    public async Task GetSmtpAsync_NoKeys_UsesDefaults()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
 
@@ -60,7 +60,7 @@ public class ConfigurationReaderTests
     }
 
     [Fact]
-    public async Task GetValueAsync_ChaveInexistente_DevolveNull()
+    public async Task GetValueAsync_UnknownKey_ReturnsNull()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
 

@@ -20,8 +20,8 @@ namespace AccessWifi.Api.Features.Dashboard;
 /// </summary>
 public class DashboardBuilder
 {
-    private static readonly string[] s_arrFaixas = ["Menos de 18", "18 a 24", "25 a 34", "35 a 44", "45 a 59", "60 ou mais"];
-    private static readonly string[] s_arrFrequencias = ["1 visita", "2 visitas", "3 a 4 visitas", "5 ou mais"];
+    private static readonly string[] s_arrBands = ["Menos de 18", "18 a 24", "25 a 34", "35 a 44", "45 a 59", "60 ou mais"];
+    private static readonly string[] s_arrFrequencies = ["1 visita", "2 visitas", "3 a 4 visitas", "5 ou mais"];
 
     private readonly AppDbContext _objDbContext;
 
@@ -31,269 +31,269 @@ public class DashboardBuilder
     }
 
     /// <summary>Conexão do período, só com o que as contas usam.</summary>
-    private record ConexaoLida(Guid IDUnit, Guid? IDCustomer, DateOnly LocalDate, int LocalHour, string Ap);
+    private record LoadedVisit(Guid IDUnit, Guid? IDCustomer, DateOnly LocalDate, int LocalHour, string Ap);
 
     /// <summary>Contas de um período (o pedido e o anterior usam as mesmas).</summary>
-    private sealed class Periodo
+    private sealed class Period
     {
-        public List<ConexaoLida> Conexoes { get; init; } = [];
-        public int Novos { get; init; }
-        public Dictionary<DateOnly, int> NovosPorDia { get; init; } = [];
-        public HashSet<Guid> Visitantes { get; init; } = [];
-        public HashSet<Guid> Voltaram { get; init; } = [];
-        public Dictionary<DateOnly, int> VoltaramPorDia { get; init; } = [];
-        public Dictionary<Guid, (int Visitantes, int Voltaram)> PorUnidade { get; init; } = [];
+        public List<LoadedVisit> Visits { get; init; } = [];
+        public int NewCustomers { get; init; }
+        public Dictionary<DateOnly, int> NewByDay { get; init; } = [];
+        public HashSet<Guid> Visitors { get; init; } = [];
+        public HashSet<Guid> Returning { get; init; } = [];
+        public Dictionary<DateOnly, int> ReturningByDay { get; init; } = [];
+        public Dictionary<Guid, (int Visitors, int Returning)> ByUnit { get; init; } = [];
     }
 
     /// <param name="objUnits">Unidades da visão: todas as que o usuário pode ver, ou só a escolhida.</param>
-    /// <param name="bVisaoUnidade">Visão de uma unidade (pontos de acesso) em vez da visão empresa (tabela por unidade).</param>
+    /// <param name="bUnitView">Visão de uma unidade (pontos de acesso) em vez da visão empresa (tabela por unidade).</param>
     public async Task<DashboardDto> BuildAsync(
-        Company objCompany, List<Unit> objUnits, bool bVisaoUnidade, DateOnly dtFrom, DateOnly dtTo,
+        Company objCompany, List<Unit> objUnits, bool bUnitView, DateOnly dtFrom, DateOnly dtTo,
         DateTime dtNowUtc, CancellationToken objCancellationToken = default)
     {
-        TimeZoneInfo objFuso = CompanyTimeZone.Resolve(objCompany.TimeZone);
-        DateOnly dtHoje = CompanyTimeZone.Today(objFuso, dtNowUtc);
+        TimeZoneInfo objZone = CompanyTimeZone.Resolve(objCompany.TimeZone);
+        DateOnly dtToday = CompanyTimeZone.Today(objZone, dtNowUtc);
         Guid[] arrUnits = objUnits.Select(unit => unit.Id).ToArray();
-        int iDias = dtTo.DayNumber - dtFrom.DayNumber + 1;
+        int iDays = dtTo.DayNumber - dtFrom.DayNumber + 1;
         DateOnly dtPrevTo = dtFrom.AddDays(-1);
-        DateOnly dtPrevFrom = dtPrevTo.AddDays(-(iDias - 1));
-        (DateTime dtIniUtc, DateTime dtFimUtc) = Limites(dtFrom, dtTo, objFuso);
+        DateOnly dtPrevFrom = dtPrevTo.AddDays(-(iDays - 1));
+        (DateTime dtStartUtc, DateTime dtEndUtc) = Bounds(dtFrom, dtTo, objZone);
         DateTime dt30Utc = dtNowUtc.AddDays(-30);
 
-        Periodo objAtual = await CalcularPeriodoAsync(arrUnits, dtFrom, dtTo, objFuso, objCancellationToken);
-        Periodo objAnterior = await CalcularPeriodoAsync(arrUnits, dtPrevFrom, dtPrevTo, objFuso, objCancellationToken);
+        Period objCurrent = await ComputePeriodAsync(arrUnits, dtFrom, dtTo, objZone, objCancellationToken);
+        Period objPrevious = await ComputePeriodAsync(arrUnits, dtPrevFrom, dtPrevTo, objZone, objCancellationToken);
 
         // Clientes da visão: os que já visitaram alguma das unidades dela.
         IQueryable<CustomerUnit> objLinks = _objDbContext.CustomerUnits.AsNoTracking()
             .Where(link => arrUnits.Contains(link.IDUnit));
-        IQueryable<Customer> objClientes = _objDbContext.Customers.AsNoTracking()
+        IQueryable<Customer> objCustomers = _objDbContext.Customers.AsNoTracking()
             .Where(customer => customer.IDCompany == objCompany.Id
                 && _objDbContext.CustomerUnits.Any(link => link.IDCustomer == customer.Id && arrUnits.Contains(link.IDUnit)));
 
         int iBase = await objLinks
-            .Where(link => link.FirstVisitAt < dtFimUtc)
+            .Where(link => link.FirstVisitAt < dtEndUtc)
             .Select(link => link.IDCustomer)
             .Distinct()
             .CountAsync(objCancellationToken);
-        int iAtivos = await objLinks
+        int iActive = await objLinks
             .Where(link => link.LastVisitAt >= dt30Utc)
             .Select(link => link.IDCustomer)
             .Distinct()
             .CountAsync(objCancellationToken);
 
         DashboardKpisDto objKpis = new DashboardKpisDto(
-            new DashboardCompareDto(objAtual.Conexoes.Count, objAnterior.Conexoes.Count),
-            new DashboardCompareDto(objAtual.Novos, objAnterior.Novos),
-            new DashboardCompareDto(objAtual.Visitantes.Count, objAnterior.Visitantes.Count),
-            new DashboardCompareDto(objAtual.Voltaram.Count, objAnterior.Voltaram.Count),
+            new DashboardCompareDto(objCurrent.Visits.Count, objPrevious.Visits.Count),
+            new DashboardCompareDto(objCurrent.NewCustomers, objPrevious.NewCustomers),
+            new DashboardCompareDto(objCurrent.Visitors.Count, objPrevious.Visitors.Count),
+            new DashboardCompareDto(objCurrent.Returning.Count, objPrevious.Returning.Count),
             new DashboardRateDto(
-                Taxa(objAtual.Voltaram.Count, objAtual.Visitantes.Count),
-                Taxa(objAnterior.Voltaram.Count, objAnterior.Visitantes.Count)),
+                Rate(objCurrent.Returning.Count, objCurrent.Visitors.Count),
+                Rate(objPrevious.Returning.Count, objPrevious.Visitors.Count)),
             iBase,
-            iAtivos);
+            iActive);
 
-        Dictionary<DateOnly, int> objConexoesPorDia = objAtual.Conexoes
-            .GroupBy(conexao => conexao.LocalDate)
-            .ToDictionary(grupo => grupo.Key, grupo => grupo.Count());
-        List<DashboardDayDto> objDaily = Enumerable.Range(0, iDias)
-            .Select(iDia => dtFrom.AddDays(iDia))
-            .Select(dtDia => new DashboardDayDto(
-                dtDia,
-                objConexoesPorDia.GetValueOrDefault(dtDia),
-                objAtual.NovosPorDia.GetValueOrDefault(dtDia),
-                objAtual.VoltaramPorDia.GetValueOrDefault(dtDia)))
+        Dictionary<DateOnly, int> objVisitsByDay = objCurrent.Visits
+            .GroupBy(visit => visit.LocalDate)
+            .ToDictionary(group => group.Key, group => group.Count());
+        List<DashboardDayDto> objDaily = Enumerable.Range(0, iDays)
+            .Select(iDay => dtFrom.AddDays(iDay))
+            .Select(dtDay => new DashboardDayDto(
+                dtDay,
+                objVisitsByDay.GetValueOrDefault(dtDay),
+                objCurrent.NewByDay.GetValueOrDefault(dtDay),
+                objCurrent.ReturningByDay.GetValueOrDefault(dtDay)))
             .ToList();
 
         List<int> objHourly = Enumerable.Range(0, 24)
-            .Select(iHora => objAtual.Conexoes.Count(conexao => conexao.LocalHour == iHora))
+            .Select(iHour => objCurrent.Visits.Count(visit => visit.LocalHour == iHour))
             .ToList();
         List<int> objWeekday = Enumerable.Range(0, 7)
-            .Select(iDia => objAtual.Conexoes.Count(conexao => (int)conexao.LocalDate.DayOfWeek == iDia))
+            .Select(iDay => objCurrent.Visits.Count(visit => (int)visit.LocalDate.DayOfWeek == iDay))
             .ToList();
 
-        List<DashboardBucketDto> objFaixas = await FaixasEtariasAsync(objClientes, dtHoje, objCancellationToken);
-        List<DashboardBucketDto> objFrequencia = await FrequenciaAsync(objClientes, objCancellationToken);
+        List<DashboardBucketDto> objBands = await AgeBandsAsync(objCustomers, dtToday, objCancellationToken);
+        List<DashboardBucketDto> objFrequency = await FrequencyAsync(objCustomers, objCancellationToken);
 
-        List<DashboardUnitRowDto> objLinhas = bVisaoUnidade
+        List<DashboardUnitRowDto> objRows = bUnitView
             ? []
-            : await LinhasPorUnidadeAsync(objUnits, objAtual, dtIniUtc, dtFimUtc, dt30Utc, objCancellationToken);
-        List<DashboardApDto> objAps = bVisaoUnidade && objUnits.Count == 1
-            ? await PontosDeAcessoAsync(objUnits[0].Id, objAtual, objCancellationToken)
+            : await RowsByUnitAsync(objUnits, objCurrent, dtStartUtc, dtEndUtc, dt30Utc, objCancellationToken);
+        List<DashboardApDto> objAps = bUnitView && objUnits.Count == 1
+            ? await AccessPointsAsync(objUnits[0].Id, objCurrent, objCancellationToken)
             : [];
 
-        int iAniversariantes = await objClientes
-            .CountAsync(customer => customer.BirthDate != null && customer.BirthDate.Value.Month == dtHoje.Month, objCancellationToken);
-        int iComInstagram = await objClientes.CountAsync(customer => customer.Instagram != "", objCancellationToken);
-        (int iExecucoes, int iEnviados, int iFalhas) = await CampanhasAsync(arrUnits, dtFrom, dtTo, objCancellationToken);
+        int iBirthdays = await objCustomers
+            .CountAsync(customer => customer.BirthDate != null && customer.BirthDate.Value.Month == dtToday.Month, objCancellationToken);
+        int iWithInstagram = await objCustomers.CountAsync(customer => customer.Instagram != "", objCancellationToken);
+        (int iRuns, int iSent, int iFailures) = await CampaignsAsync(arrUnits, dtFrom, dtTo, objCancellationToken);
 
-        DateOnly? dtDesde = await _objDbContext.Visits.AsNoTracking()
+        DateOnly? dtSince = await _objDbContext.Visits.AsNoTracking()
             .Where(visit => arrUnits.Contains(visit.IDUnit))
             .Select(visit => (DateOnly?)visit.LocalDate)
             .MinAsync(objCancellationToken);
 
-        Unit? objUnica = bVisaoUnidade && objUnits.Count == 1 ? objUnits[0] : null;
+        Unit? objSingle = bUnitView && objUnits.Count == 1 ? objUnits[0] : null;
         return new DashboardDto(
             new DashboardRefDto(objCompany.Id, objCompany.Slug, objCompany.Name),
-            objUnica is null ? null : new DashboardRefDto(objUnica.Id, objUnica.Slug, objUnica.Name),
-            new DashboardPeriodDto(dtFrom, dtTo, dtPrevFrom, dtPrevTo, iDias),
-            dtDesde,
+            objSingle is null ? null : new DashboardRefDto(objSingle.Id, objSingle.Slug, objSingle.Name),
+            new DashboardPeriodDto(dtFrom, dtTo, dtPrevFrom, dtPrevTo, iDays),
+            dtSince,
             objKpis,
             objDaily,
             objHourly,
             objWeekday,
-            objFaixas,
-            objFrequencia,
-            objLinhas,
+            objBands,
+            objFrequency,
+            objRows,
             objAps,
-            new DashboardExtrasDto(iAniversariantes, iComInstagram, iExecucoes, iEnviados, iFalhas));
+            new DashboardExtrasDto(iBirthdays, iWithInstagram, iRuns, iSent, iFailures));
     }
 
-    private async Task<Periodo> CalcularPeriodoAsync(
-        Guid[] arrUnits, DateOnly dtFrom, DateOnly dtTo, TimeZoneInfo objFuso, CancellationToken objCancellationToken)
+    private async Task<Period> ComputePeriodAsync(
+        Guid[] arrUnits, DateOnly dtFrom, DateOnly dtTo, TimeZoneInfo objZone, CancellationToken objCancellationToken)
     {
-        (DateTime dtIniUtc, DateTime dtFimUtc) = Limites(dtFrom, dtTo, objFuso);
+        (DateTime dtStartUtc, DateTime dtEndUtc) = Bounds(dtFrom, dtTo, objZone);
 
-        List<ConexaoLida> objConexoes = await _objDbContext.Visits.AsNoTracking()
+        List<LoadedVisit> objVisits = await _objDbContext.Visits.AsNoTracking()
             .Where(visit => arrUnits.Contains(visit.IDUnit) && visit.LocalDate >= dtFrom && visit.LocalDate <= dtTo)
-            .Select(visit => new ConexaoLida(visit.IDUnit, visit.IDCustomer, visit.LocalDate, visit.LocalHour, visit.Ap))
+            .Select(visit => new LoadedVisit(visit.IDUnit, visit.IDCustomer, visit.LocalDate, visit.LocalHour, visit.Ap))
             .ToListAsync(objCancellationToken);
 
         // Clientes novos: a 1ª visita a alguma unidade da visão caiu no período.
-        List<DateTime> objPrimeirasNoPeriodo = await _objDbContext.CustomerUnits.AsNoTracking()
+        List<DateTime> objFirstsInPeriod = await _objDbContext.CustomerUnits.AsNoTracking()
             .Where(link => arrUnits.Contains(link.IDUnit))
             .GroupBy(link => link.IDCustomer)
-            .Select(grupo => grupo.Min(link => link.FirstVisitAt))
-            .Where(dtPrimeira => dtPrimeira >= dtIniUtc && dtPrimeira < dtFimUtc)
+            .Select(group => group.Min(link => link.FirstVisitAt))
+            .Where(dtFirst => dtFirst >= dtStartUtc && dtFirst < dtEndUtc)
             .ToListAsync(objCancellationToken);
-        Dictionary<DateOnly, int> objNovosPorDia = objPrimeirasNoPeriodo
-            .GroupBy(dtPrimeira => CompanyTimeZone.Today(objFuso, dtPrimeira))
-            .ToDictionary(grupo => grupo.Key, grupo => grupo.Count());
+        Dictionary<DateOnly, int> objNewByDay = objFirstsInPeriod
+            .GroupBy(dtFirst => CompanyTimeZone.Today(objZone, dtFirst))
+            .ToDictionary(group => group.Key, group => group.Count());
 
         // Voltou: visita num dia depois do dia da 1ª visita (às unidades da visão e a cada unidade).
-        Guid[] arrClientes = objConexoes
-            .Where(conexao => conexao.IDCustomer is not null)
-            .Select(conexao => conexao.IDCustomer!.Value)
+        Guid[] arrCustomers = objVisits
+            .Where(visit => visit.IDCustomer is not null)
+            .Select(visit => visit.IDCustomer!.Value)
             .Distinct()
             .ToArray();
-        List<CustomerUnit> objPrimeiras = arrClientes.Length == 0
+        List<CustomerUnit> objFirsts = arrCustomers.Length == 0
             ? []
             : await _objDbContext.CustomerUnits.AsNoTracking()
-                .Where(link => arrClientes.Contains(link.IDCustomer) && arrUnits.Contains(link.IDUnit))
+                .Where(link => arrCustomers.Contains(link.IDCustomer) && arrUnits.Contains(link.IDUnit))
                 .ToListAsync(objCancellationToken);
-        Dictionary<Guid, DateOnly> objPrimeiroDia = objPrimeiras
+        Dictionary<Guid, DateOnly> objFirstDay = objFirsts
             .GroupBy(link => link.IDCustomer)
-            .ToDictionary(grupo => grupo.Key, grupo => CompanyTimeZone.Today(objFuso, grupo.Min(link => link.FirstVisitAt)));
-        Dictionary<(Guid, Guid), DateOnly> objPrimeiroDiaNaUnidade = objPrimeiras
-            .ToDictionary(link => (link.IDCustomer, link.IDUnit), link => CompanyTimeZone.Today(objFuso, link.FirstVisitAt));
+            .ToDictionary(group => group.Key, group => CompanyTimeZone.Today(objZone, group.Min(link => link.FirstVisitAt)));
+        Dictionary<(Guid, Guid), DateOnly> objFirstDayInUnit = objFirsts
+            .ToDictionary(link => (link.IDCustomer, link.IDUnit), link => CompanyTimeZone.Today(objZone, link.FirstVisitAt));
 
-        List<ConexaoLida> objComCliente = objConexoes.Where(conexao => conexao.IDCustomer is not null).ToList();
-        List<ConexaoLida> objRetornos = objComCliente
-            .Where(conexao => objPrimeiroDia.TryGetValue(conexao.IDCustomer!.Value, out DateOnly dtPrimeiro)
-                && conexao.LocalDate > dtPrimeiro)
+        List<LoadedVisit> objWithCustomer = objVisits.Where(visit => visit.IDCustomer is not null).ToList();
+        List<LoadedVisit> objReturns = objWithCustomer
+            .Where(visit => objFirstDay.TryGetValue(visit.IDCustomer!.Value, out DateOnly dtFirst)
+                && visit.LocalDate > dtFirst)
             .ToList();
 
-        Dictionary<Guid, (int, int)> objPorUnidade = objComCliente
-            .GroupBy(conexao => conexao.IDUnit)
+        Dictionary<Guid, (int, int)> objByUnit = objWithCustomer
+            .GroupBy(visit => visit.IDUnit)
             .ToDictionary(
-                grupo => grupo.Key,
-                grupo => (
-                    grupo.Select(conexao => conexao.IDCustomer!.Value).Distinct().Count(),
-                    grupo.Where(conexao => objPrimeiroDiaNaUnidade.TryGetValue(
-                            (conexao.IDCustomer!.Value, conexao.IDUnit), out DateOnly dtPrimeiro)
-                            && conexao.LocalDate > dtPrimeiro)
-                        .Select(conexao => conexao.IDCustomer!.Value)
+                group => group.Key,
+                group => (
+                    group.Select(visit => visit.IDCustomer!.Value).Distinct().Count(),
+                    group.Where(visit => objFirstDayInUnit.TryGetValue(
+                            (visit.IDCustomer!.Value, visit.IDUnit), out DateOnly dtFirst)
+                            && visit.LocalDate > dtFirst)
+                        .Select(visit => visit.IDCustomer!.Value)
                         .Distinct()
                         .Count()));
 
-        return new Periodo
+        return new Period
         {
-            Conexoes = objConexoes,
-            Novos = objPrimeirasNoPeriodo.Count,
-            NovosPorDia = objNovosPorDia,
-            Visitantes = objComCliente.Select(conexao => conexao.IDCustomer!.Value).ToHashSet(),
-            Voltaram = objRetornos.Select(conexao => conexao.IDCustomer!.Value).ToHashSet(),
-            VoltaramPorDia = objRetornos
-                .GroupBy(conexao => conexao.LocalDate)
-                .ToDictionary(grupo => grupo.Key, grupo => grupo.Select(conexao => conexao.IDCustomer).Distinct().Count()),
-            PorUnidade = objPorUnidade,
+            Visits = objVisits,
+            NewCustomers = objFirstsInPeriod.Count,
+            NewByDay = objNewByDay,
+            Visitors = objWithCustomer.Select(visit => visit.IDCustomer!.Value).ToHashSet(),
+            Returning = objReturns.Select(visit => visit.IDCustomer!.Value).ToHashSet(),
+            ReturningByDay = objReturns
+                .GroupBy(visit => visit.LocalDate)
+                .ToDictionary(group => group.Key, group => group.Select(visit => visit.IDCustomer).Distinct().Count()),
+            ByUnit = objByUnit,
         };
     }
 
-    private async Task<List<DashboardUnitRowDto>> LinhasPorUnidadeAsync(
-        List<Unit> objUnits, Periodo objAtual, DateTime dtIniUtc, DateTime dtFimUtc, DateTime dt30Utc,
+    private async Task<List<DashboardUnitRowDto>> RowsByUnitAsync(
+        List<Unit> objUnits, Period objCurrent, DateTime dtStartUtc, DateTime dtEndUtc, DateTime dt30Utc,
         CancellationToken objCancellationToken)
     {
         Guid[] arrUnits = objUnits.Select(unit => unit.Id).ToArray();
-        var objContas = await _objDbContext.CustomerUnits.AsNoTracking()
+        var objUnitCounts = await _objDbContext.CustomerUnits.AsNoTracking()
             .Where(link => arrUnits.Contains(link.IDUnit))
             .GroupBy(link => link.IDUnit)
-            .Select(grupo => new
+            .Select(group => new
             {
-                IDUnit = grupo.Key,
-                Novos = grupo.Count(link => link.FirstVisitAt >= dtIniUtc && link.FirstVisitAt < dtFimUtc),
-                Clientes = grupo.Count(link => link.FirstVisitAt < dtFimUtc),
-                Ativos = grupo.Count(link => link.LastVisitAt >= dt30Utc),
-                Ultima = grupo.Max(link => (DateTime?)link.LastVisitAt),
+                IDUnit = group.Key,
+                NewCustomers = group.Count(link => link.FirstVisitAt >= dtStartUtc && link.FirstVisitAt < dtEndUtc),
+                Customers = group.Count(link => link.FirstVisitAt < dtEndUtc),
+                Active = group.Count(link => link.LastVisitAt >= dt30Utc),
+                Last = group.Max(link => (DateTime?)link.LastVisitAt),
             })
             .ToListAsync(objCancellationToken);
 
-        Dictionary<Guid, int> objConexoes = objAtual.Conexoes
-            .GroupBy(conexao => conexao.IDUnit)
-            .ToDictionary(grupo => grupo.Key, grupo => grupo.Count());
+        Dictionary<Guid, int> objVisits = objCurrent.Visits
+            .GroupBy(visit => visit.IDUnit)
+            .ToDictionary(group => group.Key, group => group.Count());
 
         return objUnits
             .Select(unit =>
             {
-                var objConta = objContas.FirstOrDefault(conta => conta.IDUnit == unit.Id);
-                (int iVisitantes, int iVoltaram) = objAtual.PorUnidade.GetValueOrDefault(unit.Id);
+                var objUnitCount = objUnitCounts.FirstOrDefault(count => count.IDUnit == unit.Id);
+                (int iVisitors, int iReturning) = objCurrent.ByUnit.GetValueOrDefault(unit.Id);
                 return new DashboardUnitRowDto(
                     unit.Id, unit.Slug, unit.Name, unit.Active,
-                    objConexoes.GetValueOrDefault(unit.Id),
-                    objConta?.Novos ?? 0,
-                    iVisitantes,
-                    iVoltaram,
-                    Taxa(iVoltaram, iVisitantes),
-                    objConta?.Clientes ?? 0,
-                    objConta?.Ativos ?? 0,
-                    objConta?.Ultima);
+                    objVisits.GetValueOrDefault(unit.Id),
+                    objUnitCount?.NewCustomers ?? 0,
+                    iVisitors,
+                    iReturning,
+                    Rate(iReturning, iVisitors),
+                    objUnitCount?.Customers ?? 0,
+                    objUnitCount?.Active ?? 0,
+                    objUnitCount?.Last);
             })
-            .OrderByDescending(linha => linha.Connections)
-            .ThenBy(linha => linha.Name)
+            .OrderByDescending(row => row.Connections)
+            .ThenBy(row => row.Name)
             .ToList();
     }
 
-    private async Task<List<DashboardApDto>> PontosDeAcessoAsync(
-        Guid objUnitId, Periodo objAtual, CancellationToken objCancellationToken)
+    private async Task<List<DashboardApDto>> AccessPointsAsync(
+        Guid objUnitId, Period objCurrent, CancellationToken objCancellationToken)
     {
-        Dictionary<string, UnitDevice> objAparelhos = await _objDbContext.UnitDevices.AsNoTracking()
+        Dictionary<string, UnitDevice> objDevices = await _objDbContext.UnitDevices.AsNoTracking()
             .Where(device => device.IDUnit == objUnitId)
             .ToDictionaryAsync(device => device.Mac, objCancellationToken);
 
-        return objAtual.Conexoes
-            .GroupBy(conexao => conexao.Ap)
-            .Select(grupo =>
+        return objCurrent.Visits
+            .GroupBy(visit => visit.Ap)
+            .Select(group =>
             {
-                UnitDevice? objAparelho = objAparelhos.GetValueOrDefault(grupo.Key);
+                UnitDevice? objDevice = objDevices.GetValueOrDefault(group.Key);
                 return new DashboardApDto(
-                    grupo.Key,
-                    grupo.Key.Length == 0 ? "Sem ponto de acesso informado" : objAparelho?.Name ?? "Ponto de acesso não identificado",
-                    objAparelho?.Model ?? "",
-                    grupo.Count());
+                    group.Key,
+                    group.Key.Length == 0 ? "Sem ponto de acesso informado" : objDevice?.Name ?? "Ponto de acesso não identificado",
+                    objDevice?.Model ?? "",
+                    group.Count());
             })
             .OrderByDescending(ap => ap.Connections)
             .ToList();
     }
 
-    private static async Task<List<DashboardBucketDto>> FaixasEtariasAsync(
-        IQueryable<Customer> objClientes, DateOnly dtHoje, CancellationToken objCancellationToken)
+    private static async Task<List<DashboardBucketDto>> AgeBandsAsync(
+        IQueryable<Customer> objCustomers, DateOnly dtToday, CancellationToken objCancellationToken)
     {
         // Nascido depois de hoje-18 anos = menos de 18, e assim por diante.
-        DateOnly dt18 = dtHoje.AddYears(-18);
-        DateOnly dt25 = dtHoje.AddYears(-25);
-        DateOnly dt35 = dtHoje.AddYears(-35);
-        DateOnly dt45 = dtHoje.AddYears(-45);
-        DateOnly dt60 = dtHoje.AddYears(-60);
-        Dictionary<int, int> objContagem = await objClientes
+        DateOnly dt18 = dtToday.AddYears(-18);
+        DateOnly dt25 = dtToday.AddYears(-25);
+        DateOnly dt35 = dtToday.AddYears(-35);
+        DateOnly dt45 = dtToday.AddYears(-45);
+        DateOnly dt60 = dtToday.AddYears(-60);
+        Dictionary<int, int> objCounts = await objCustomers
             .Where(customer => customer.BirthDate != null)
             .GroupBy(customer =>
                 customer.BirthDate!.Value > dt18 ? 0
@@ -302,31 +302,31 @@ public class DashboardBuilder
                 : customer.BirthDate!.Value > dt45 ? 3
                 : customer.BirthDate!.Value > dt60 ? 4
                 : 5)
-            .Select(grupo => new { grupo.Key, Total = grupo.Count() })
+            .Select(group => new { group.Key, Total = group.Count() })
             .ToDictionaryAsync(item => item.Key, item => item.Total, objCancellationToken);
-        return s_arrFaixas
-            .Select((sFaixa, iFaixa) => new DashboardBucketDto(sFaixa, objContagem.GetValueOrDefault(iFaixa)))
+        return s_arrBands
+            .Select((sBand, iBand) => new DashboardBucketDto(sBand, objCounts.GetValueOrDefault(iBand)))
             .ToList();
     }
 
     /// <summary>Dias com visita de cada cliente, em todas as lojas da empresa (é o que o cadastro guarda).</summary>
-    private static async Task<List<DashboardBucketDto>> FrequenciaAsync(
-        IQueryable<Customer> objClientes, CancellationToken objCancellationToken)
+    private static async Task<List<DashboardBucketDto>> FrequencyAsync(
+        IQueryable<Customer> objCustomers, CancellationToken objCancellationToken)
     {
-        Dictionary<int, int> objContagem = await objClientes
+        Dictionary<int, int> objCounts = await objCustomers
             .GroupBy(customer => customer.VisitCount >= 5 ? 3 : customer.VisitCount >= 3 ? 2 : customer.VisitCount == 2 ? 1 : 0)
-            .Select(grupo => new { grupo.Key, Total = grupo.Count() })
+            .Select(group => new { group.Key, Total = group.Count() })
             .ToDictionaryAsync(item => item.Key, item => item.Total, objCancellationToken);
-        return s_arrFrequencias
-            .Select((sFaixa, iFaixa) => new DashboardBucketDto(sFaixa, objContagem.GetValueOrDefault(iFaixa)))
+        return s_arrFrequencies
+            .Select((sBand, iBand) => new DashboardBucketDto(sBand, objCounts.GetValueOrDefault(iBand)))
             .ToList();
     }
 
     /// <summary>Execuções no período e mensagens dos clientes das unidades da visão (simulações antigas não contam).</summary>
-    private async Task<(int Execucoes, int Enviados, int Falhas)> CampanhasAsync(
+    private async Task<(int Runs, int Sent, int Failures)> CampaignsAsync(
         Guid[] arrUnits, DateOnly dtFrom, DateOnly dtTo, CancellationToken objCancellationToken)
     {
-        var objPorStatus = await (
+        var objByStatus = await (
                 from recipient in _objDbContext.CampaignRecipients.AsNoTracking()
                 join run in _objDbContext.CampaignRuns.AsNoTracking() on recipient.IDRun equals run.Id
                 where !run.Simulation
@@ -336,16 +336,16 @@ public class DashboardBuilder
                 select new { recipient.IDRun, recipient.Status })
             .ToListAsync(objCancellationToken);
         return (
-            objPorStatus.Select(item => item.IDRun).Distinct().Count(),
-            objPorStatus.Count(item => item.Status == CampaignRecipientStatus.Sent),
-            objPorStatus.Count(item => item.Status == CampaignRecipientStatus.Failed));
+            objByStatus.Select(item => item.IDRun).Distinct().Count(),
+            objByStatus.Count(item => item.Status == CampaignRecipientStatus.Sent),
+            objByStatus.Count(item => item.Status == CampaignRecipientStatus.Failed));
     }
 
     /// <summary>Início do 1º dia e início do dia seguinte ao último, no fuso da empresa, em UTC.</summary>
-    private static (DateTime IniUtc, DateTime FimUtc) Limites(DateOnly dtFrom, DateOnly dtTo, TimeZoneInfo objFuso) =>
-        (TimeZoneInfo.ConvertTimeToUtc(dtFrom.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified), objFuso),
-         TimeZoneInfo.ConvertTimeToUtc(dtTo.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified), objFuso));
+    private static (DateTime StartUtc, DateTime EndUtc) Bounds(DateOnly dtFrom, DateOnly dtTo, TimeZoneInfo objZone) =>
+        (TimeZoneInfo.ConvertTimeToUtc(dtFrom.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified), objZone),
+         TimeZoneInfo.ConvertTimeToUtc(dtTo.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified), objZone));
 
-    private static double? Taxa(int iParte, int iTotal) =>
-        iTotal == 0 ? null : Math.Round(100.0 * iParte / iTotal, 1);
+    private static double? Rate(int iPart, int iTotal) =>
+        iTotal == 0 ? null : Math.Round(100.0 * iPart / iTotal, 1);
 }

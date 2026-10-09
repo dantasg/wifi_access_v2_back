@@ -27,13 +27,13 @@ public class LeadRetentionServiceTests
     {
         objDbContext.Leads.Add(new Lead
         {
-            IDUnit = Guid.NewGuid(), Nome = "Fulano", CreatedAt = dtCreatedAt, Timestamp = dtLastVisit,
+            IDUnit = Guid.NewGuid(), Name = "Fulano", CreatedAt = dtCreatedAt, Timestamp = dtLastVisit,
         });
         objDbContext.SaveChanges();
     }
 
     [Fact]
-    public async Task Purge_ContaDaUltimaVisita_QuemContinuaVoltandoNaoEApagado()
+    public async Task Purge_CountsFromLastVisit_ReturningCustomerIsNotDeleted()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         // Cadastrou há 3 anos, mas voltou mês passado: fica (D4).
@@ -50,7 +50,7 @@ public class LeadRetentionServiceTests
     }
 
     [Fact]
-    public async Task Purge_ApagaClienteQueFicou24MesesSemVoltar()
+    public async Task Purge_DeletesCustomerAway24Months()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Guid objCompanyId = Guid.NewGuid();
@@ -61,32 +61,32 @@ public class LeadRetentionServiceTests
 
         await CreateService(objDbContext).PurgeExpiredLeadsAsync(s_dtNow, CancellationToken.None);
 
-        Customer objFicou = Assert.Single(objDbContext.Customers);
-        Assert.Equal("91988880002", objFicou.Phone);
+        Customer objKept = Assert.Single(objDbContext.Customers);
+        Assert.Equal("91988880002", objKept.Phone);
     }
 
     [Fact]
-    public async Task Purge_ApagaDestinatariosDeExecucoesComMaisDe12MesesEMantemOResumo()
+    public async Task Purge_DeletesRecipientsOfRunsOlderThan12MonthsAndKeepsSummary()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
-        CampaignRun objVelha = new CampaignRun { IDCampaign = Guid.NewGuid(), CreatedAt = s_dtNow.AddMonths(-13), TotalCount = 1 };
-        CampaignRun objNova = new CampaignRun { IDCampaign = Guid.NewGuid(), CreatedAt = s_dtNow.AddMonths(-2), TotalCount = 1 };
-        objDbContext.CampaignRuns.AddRange(objVelha, objNova);
+        CampaignRun objOld = new CampaignRun { IDCampaign = Guid.NewGuid(), CreatedAt = s_dtNow.AddMonths(-13), TotalCount = 1 };
+        CampaignRun objNew = new CampaignRun { IDCampaign = Guid.NewGuid(), CreatedAt = s_dtNow.AddMonths(-2), TotalCount = 1 };
+        objDbContext.CampaignRuns.AddRange(objOld, objNew);
         objDbContext.CampaignRecipients.AddRange(
-            new CampaignRecipient { IDRun = objVelha.Id, IDCustomer = Guid.NewGuid(), Phone = "1" },
-            new CampaignRecipient { IDRun = objNova.Id, IDCustomer = Guid.NewGuid(), Phone = "2" });
+            new CampaignRecipient { IDRun = objOld.Id, IDCustomer = Guid.NewGuid(), Phone = "1" },
+            new CampaignRecipient { IDRun = objNew.Id, IDCustomer = Guid.NewGuid(), Phone = "2" });
         objDbContext.SaveChanges();
 
         await CreateService(objDbContext).PurgeExpiredLeadsAsync(s_dtNow, CancellationToken.None);
 
-        CampaignRecipient objFicou = Assert.Single(objDbContext.CampaignRecipients);
-        Assert.Equal(objNova.Id, objFicou.IDRun);
+        CampaignRecipient objKept = Assert.Single(objDbContext.CampaignRecipients);
+        Assert.Equal(objNew.Id, objKept.IDRun);
         // O resumo (a execução, com os números) fica (D16).
         Assert.Equal(2, objDbContext.CampaignRuns.Count());
     }
 
     [Fact]
-    public async Task Purge_PrazoZero_NaoApagaNada()
+    public async Task Purge_ZeroPeriod_DeletesNothing()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         AddLead(objDbContext, s_dtNow.AddYears(-5), s_dtNow.AddYears(-5));

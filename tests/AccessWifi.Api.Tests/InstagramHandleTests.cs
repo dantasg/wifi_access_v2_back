@@ -14,9 +14,9 @@ public class InstagramHandleTests
     [InlineData("http://instagr.am/ana", "ana")]
     [InlineData("a", "a")]
     [InlineData("abcdefghijklmnopqrstuvwxyz1234", "abcdefghijklmnopqrstuvwxyz1234")]
-    public void Normalize_FormatoValido_DevolveOUsuario(string sDigitado, string sEsperado)
+    public void Normalize_ValidFormat_ReturnsUsername(string sTyped, string sExpected)
     {
-        Assert.Equal(sEsperado, InstagramHandle.Normalize(sDigitado));
+        Assert.Equal(sExpected, InstagramHandle.Normalize(sTyped));
     }
 
     [Theory]
@@ -34,9 +34,9 @@ public class InstagramHandleTests
     [InlineData("ana..souza")]
     [InlineData("abcdefghijklmnopqrstuvwxyz12345")]
     [InlineData("instagram.com/")]
-    public void Normalize_ForaDoFormato_ViraVazio(string? sDigitado)
+    public void Normalize_InvalidFormat_BecomesEmpty(string? sTyped)
     {
-        Assert.Equal("", InstagramHandle.Normalize(sDigitado));
+        Assert.Equal("", InstagramHandle.Normalize(sTyped));
     }
 
     [Theory]
@@ -45,8 +45,8 @@ public class InstagramHandleTests
     [InlineData("https://www.instagram.com/Ana.Souza/?igsh=abc123", "https://www.instagram.com/ana.souza")]
     [InlineData("biell6555@gmail.com", "")]
     [InlineData("", "")]
-    public void ProfileUrl_DevolveOLinkDoPerfilOuVazio(string sDigitado, string sEsperado)
+    public void ProfileUrl_ReturnsProfileLinkOrEmpty(string sTyped, string sExpected)
     {
-        Assert.Equal(sEsperado, InstagramHandle.ProfileUrl(sDigitado));
+        Assert.Equal(sExpected, InstagramHandle.ProfileUrl(sTyped));
     }
 }

@@ -17,8 +17,8 @@ namespace Models.Campaigns
         {
             string sDigits = CustomerDirectory.NormalizePhone(sPhone);
             // Já veio com o 55 na frente (12 ou 13 dígitos): mantém.
-            bool bJaTemPais = sDigits.StartsWith(BrazilCode, StringComparison.Ordinal) && sDigits.Length >= 12;
-            return bJaTemPais ? sDigits : BrazilCode + sDigits;
+            bool bAlreadyHasCountry = sDigits.StartsWith(BrazilCode, StringComparison.Ordinal) && sDigits.Length >= 12;
+            return bAlreadyHasCountry ? sDigits : BrazilCode + sDigits;
         }
 
         /// <summary>wa.me com o texto: no celular abre o WhatsApp, no computador o WhatsApp Web.</summary>
@@ -62,13 +62,13 @@ namespace Models.Campaigns
                 objResult.Append(objRune.ToString());
             }
 
-            string sLimpo = objResult.ToString();
+            string sClean = objResult.ToString();
             // Emoji entre duas palavras deixa espaço dobrado.
-            while (sLimpo.Contains("  ", StringComparison.Ordinal))
+            while (sClean.Contains("  ", StringComparison.Ordinal))
             {
-                sLimpo = sLimpo.Replace("  ", " ", StringComparison.Ordinal);
+                sClean = sClean.Replace("  ", " ", StringComparison.Ordinal);
             }
-            return sLimpo.Replace(" \n", "\n", StringComparison.Ordinal).Trim();
+            return sClean.Replace(" \n", "\n", StringComparison.Ordinal).Trim();
         }
 
         private static bool IsEmoji(int iCodePoint) =>

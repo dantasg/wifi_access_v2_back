@@ -25,10 +25,10 @@ public static class RedirectUrlRules
             return $"URL de redirecionamento muito longa (máximo de {MaxChars} caracteres).";
         }
 
-        bool bUrlValida =
+        bool bValidUrl =
             Uri.TryCreate(sRedirectUrl, UriKind.Absolute, out Uri? objUri) &&
             (objUri.Scheme == Uri.UriSchemeHttp || objUri.Scheme == Uri.UriSchemeHttps);
-        if (!bUrlValida)
+        if (!bValidUrl)
         {
             return "URL de redirecionamento inválida (informe um endereço http ou https completo).";
         }

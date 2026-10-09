@@ -43,7 +43,7 @@ namespace AccessWifi.Api.Features.Units
         DateTime? DevicesSyncedAt = null,
         string DevicesSyncError = "",
         // DDD do exemplo de telefone no portal. Vazio = usa o da empresa (Configurações).
-        string Ddd = "")
+        string AreaCode = "")
     {
         public static UnitDto FromEntity(Unit objUnit, int iDeviceCount = 0)
         {
@@ -51,7 +51,7 @@ namespace AccessWifi.Api.Features.Units
                 objUnit.Id, objUnit.IDCompany, objUnit.Name, objUnit.Slug, objUnit.Active,
                 objUnit.CreatedAt, objUnit.PortalHost, UnitUnifiDto.FromEntity(objUnit.Unifi),
                 objUnit.RedirectUrl, objUnit.Email, objUnit.LastReportSentAt,
-                iDeviceCount, objUnit.DevicesSyncedAt, objUnit.DevicesSyncError, objUnit.Ddd);
+                iDeviceCount, objUnit.DevicesSyncedAt, objUnit.DevicesSyncError, objUnit.AreaCode);
         }
     }
 
@@ -83,11 +83,11 @@ namespace AccessWifi.Api.Features.Units
     // empresa).
     public record CreateUnitRequest(
         Guid IDCompany, string Name, string Slug, UnitUnifiRequest? Unifi, string? PortalHost = null,
-        string? RedirectUrl = null, string? Email = null, string? Ddd = null);
+        string? RedirectUrl = null, string? Email = null, string? AreaCode = null);
 
     public record UpdateUnitRequest(
         string Name, bool Active, UnitUnifiRequest? Unifi, string? PortalHost = null,
-        string? RedirectUrl = null, string? Email = null, string? Ddd = null);
+        string? RedirectUrl = null, string? Email = null, string? AreaCode = null);
 
     /// <summary>Resultado do botão "Testar conexão" (D7). Sucesso falso não é erro HTTP.</summary>
     public record UnifiTestResponse(bool Success, string Message);

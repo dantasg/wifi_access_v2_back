@@ -36,18 +36,18 @@ public class AdminController : ControllerBase
     {
         // Usuário digitado com maiúscula ou espaço sobrando ainda entra (é guardado em minúsculas, sem
         // espaços). O texto original também vale, para o admin da configuração, que pode ter maiúsculas.
-        string sDigitado = objRequest.Username ?? "";
-        string sNormalizado = UserRules.NormalizeUsername(sDigitado);
+        string sTyped = objRequest.Username ?? "";
+        string sNormalized = UserRules.NormalizeUsername(sTyped);
         AdminUser? objUser = await _objDbContext.Users
             .Include(user => user.Company)
             .FirstOrDefaultAsync(
-                user => user.Username == sNormalizado || user.Username == sDigitado, objCancellationToken);
+                user => user.Username == sNormalized || user.Username == sTyped, objCancellationToken);
 
         // Verifica sempre um hash (o do usuário ou o isca) para gastar o mesmo tempo, exista o
         // usuário ou não. Só autentica se o usuário existe E a senha confere.
-        string sHashParaVerificar = objUser?.PasswordHash ?? s_sDummyPasswordHash;
-        bool bSenhaConfere = BCrypt.Net.BCrypt.Verify(objRequest.Password, sHashParaVerificar);
-        if (objUser is null || !bSenhaConfere)
+        string sHashToVerify = objUser?.PasswordHash ?? s_sDummyPasswordHash;
+        bool bPasswordMatches = BCrypt.Net.BCrypt.Verify(objRequest.Password, sHashToVerify);
+        if (objUser is null || !bPasswordMatches)
         {
             return Unauthorized();
         }
@@ -194,8 +194,8 @@ public class AdminController : ControllerBase
              join unit in objUnitsQuery on lead.IDUnit equals unit.Id
              orderby lead.Timestamp descending
              select new LeadDto(
-                 lead.Timestamp, lead.CreatedAt, lead.Nome, lead.Instagram, lead.Telefone,
-                 lead.Nascimento, lead.Mac, lead.Ap, lead.Ssid,
+                 lead.Timestamp, lead.CreatedAt, lead.Name, lead.Instagram, lead.Phone,
+                 lead.BirthDate, lead.Mac, lead.Ap, lead.Ssid,
                  unit.Slug, unit.Name))
             .ToListAsync(objCancellationToken);
 

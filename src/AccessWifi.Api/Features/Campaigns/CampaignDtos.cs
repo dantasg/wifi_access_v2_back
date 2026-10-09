@@ -32,29 +32,29 @@ namespace AccessWifi.Api.Features.Campaigns
     {
         public static CampaignRunDto FromEntity(CampaignRun objRun)
         {
-            int iProcessados = objRun.SentCount + objRun.SimulatedCount + objRun.FailedCount
+            int iProcessed = objRun.SentCount + objRun.SimulatedCount + objRun.FailedCount
                 + objRun.IgnoredCount + objRun.CancelledCount;
             return new CampaignRunDto(
                 objRun.Id, objRun.IDCampaign, objRun.VersionNumber, objRun.ScheduledFor, objRun.LocalDate,
                 objRun.Status, objRun.Simulation, objRun.TotalCount, objRun.SentCount, objRun.SimulatedCount,
                 objRun.FailedCount, objRun.IgnoredCount, objRun.CancelledCount,
-                Math.Max(0, objRun.TotalCount - iProcessados),
+                Math.Max(0, objRun.TotalCount - iProcessed),
                 objRun.CreatedAt, objRun.StartedAt, objRun.FinishedAt, objRun.Error);
         }
 
         /// <summary>
         /// A execução vista por um usuário de unidade: os números contam só os destinatários das
-        /// unidades dele (objPorSituacao = quantos destinatários em cada situação).
+        /// unidades dele (objByStatus = quantos destinatários em cada situação).
         /// </summary>
-        public static CampaignRunDto ForUnits(CampaignRun objRun, IReadOnlyDictionary<string, int> objPorSituacao)
+        public static CampaignRunDto ForUnits(CampaignRun objRun, IReadOnlyDictionary<string, int> objByStatus)
         {
-            int Qtd(string sStatus) => objPorSituacao.GetValueOrDefault(sStatus);
+            int CountOf(string sStatus) => objByStatus.GetValueOrDefault(sStatus);
             return new CampaignRunDto(
                 objRun.Id, objRun.IDCampaign, objRun.VersionNumber, objRun.ScheduledFor, objRun.LocalDate,
-                objRun.Status, objRun.Simulation, objPorSituacao.Values.Sum(),
-                Qtd(CampaignRecipientStatus.Sent), Qtd(CampaignRecipientStatus.Simulated),
-                Qtd(CampaignRecipientStatus.Failed), Qtd(CampaignRecipientStatus.Ignored),
-                Qtd(CampaignRecipientStatus.Cancelled), Qtd(CampaignRecipientStatus.Pending),
+                objRun.Status, objRun.Simulation, objByStatus.Values.Sum(),
+                CountOf(CampaignRecipientStatus.Sent), CountOf(CampaignRecipientStatus.Simulated),
+                CountOf(CampaignRecipientStatus.Failed), CountOf(CampaignRecipientStatus.Ignored),
+                CountOf(CampaignRecipientStatus.Cancelled), CountOf(CampaignRecipientStatus.Pending),
                 objRun.CreatedAt, objRun.StartedAt, objRun.FinishedAt, objRun.Error);
         }
     }

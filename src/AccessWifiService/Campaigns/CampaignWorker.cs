@@ -28,10 +28,10 @@ namespace AccessWifiService.Campaigns
 
         protected override async Task ExecuteAsync(CancellationToken objStoppingToken)
         {
-            TimeSpan tsIntervalo = TimeSpan.FromSeconds(Math.Max(1, _objOptions.TickSeconds));
+            TimeSpan tsInterval = TimeSpan.FromSeconds(Math.Max(1, _objOptions.TickSeconds));
             _objLogger.LogInformation(
                 "Campanhas: agendador ativo (a cada {Segundos} s; PDF por e-mail para cada unidade).",
-                tsIntervalo.TotalSeconds);
+                tsInterval.TotalSeconds);
 
             while (!objStoppingToken.IsCancellationRequested)
             {
@@ -52,7 +52,7 @@ namespace AccessWifiService.Campaigns
 
                 try
                 {
-                    await Task.Delay(tsIntervalo, objStoppingToken);
+                    await Task.Delay(tsInterval, objStoppingToken);
                 }
                 catch (OperationCanceledException)
                 {

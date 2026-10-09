@@ -83,7 +83,7 @@ public partial class UnitsController : ControllerBase
         Dictionary<Guid, int> objDeviceCounts = await _objDbContext.UnitDevices.AsNoTracking()
             .Where(device => arrIds.Contains(device.IDUnit))
             .GroupBy(device => device.IDUnit)
-            .Select(grupo => new { grupo.Key, Count = grupo.Count() })
+            .Select(group => new { group.Key, Count = group.Count() })
             .ToDictionaryAsync(item => item.Key, item => item.Count, objCancellationToken);
 
         return Ok(objUnits
@@ -97,8 +97,8 @@ public partial class UnitsController : ControllerBase
     public async Task<ActionResult<List<UnitDeviceDto>>> GetDevices(
         Guid id, CancellationToken objCancellationToken)
     {
-        bool bExiste = await _objDbContext.Units.AnyAsync(unit => unit.Id == id, objCancellationToken);
-        if (!bExiste)
+        bool bExists = await _objDbContext.Units.AnyAsync(unit => unit.Id == id, objCancellationToken);
+        if (!bExists)
         {
             return NotFound(new ErrorResponse("Unidade não encontrada."));
         }
@@ -145,16 +145,16 @@ public partial class UnitsController : ControllerBase
                 "Slug inválido: use só letras minúsculas, números e hífen (2 a 40 caracteres)."));
         }
 
-        bool bCompanyExiste = await _objDbContext.Companies
+        bool bCompanyExists = await _objDbContext.Companies
             .AnyAsync(company => company.Id == objRequest.IDCompany, objCancellationToken);
-        if (!bCompanyExiste)
+        if (!bCompanyExists)
         {
             return BadRequest(new ErrorResponse("Empresa não encontrada."));
         }
 
-        bool bSlugEmUso = await _objDbContext.Units
+        bool bSlugInUse = await _objDbContext.Units
             .AnyAsync(unit => unit.Slug == objRequest.Slug, objCancellationToken);
-        if (bSlugEmUso)
+        if (bSlugInUse)
         {
             return BadRequest(new ErrorResponse("Já existe uma unidade com esse slug."));
         }
@@ -175,7 +175,7 @@ public partial class UnitsController : ControllerBase
 
         string? sRedirectError = ApplyRedirectUrl(objUnit, objRequest.RedirectUrl)
             ?? ApplyEmail(objUnit, objRequest.Email)
-            ?? ApplyDdd(objUnit, objRequest.Ddd);
+            ?? ApplyAreaCode(objUnit, objRequest.AreaCode);
         if (sRedirectError is not null)
         {
             return BadRequest(new ErrorResponse(sRedirectError));
@@ -212,7 +212,7 @@ public partial class UnitsController : ControllerBase
 
         objUnit.Name = objRequest.Name.Trim();
         objUnit.Active = objRequest.Active;
-        string sConsoleAntes = objUnit.Unifi.Mode == UnifiMode.Cloud ? objUnit.Unifi.ConsoleId : "";
+        string sConsoleBefore = objUnit.Unifi.Mode == UnifiMode.Cloud ? objUnit.Unifi.ConsoleId : "";
 
         string? sHostError = await ApplyPortalHostAsync(
             objUnit, objRequest.PortalHost, objCancellationToken);
@@ -223,7 +223,7 @@ public partial class UnitsController : ControllerBase
 
         string? sRedirectError = ApplyRedirectUrl(objUnit, objRequest.RedirectUrl)
             ?? ApplyEmail(objUnit, objRequest.Email)
-            ?? ApplyDdd(objUnit, objRequest.Ddd);
+            ?? ApplyAreaCode(objUnit, objRequest.AreaCode);
         if (sRedirectError is not null)
         {
             return BadRequest(new ErrorResponse(sRedirectError));
@@ -231,8 +231,8 @@ public partial class UnitsController : ControllerBase
 
         ApplyUnifi(objUnit, objRequest.Unifi);
 
-        string sConsoleDepois = objUnit.Unifi.Mode == UnifiMode.Cloud ? objUnit.Unifi.ConsoleId : "";
-        if (sConsoleDepois != sConsoleAntes)
+        string sConsoleAfter = objUnit.Unifi.Mode == UnifiMode.Cloud ? objUnit.Unifi.ConsoleId : "";
+        if (sConsoleAfter != sConsoleBefore)
         {
             // Outro console (ou saiu da nuvem): os pontos de acesso gravados são de outro equipamento.
             _objDbContext.UnitDevices.RemoveRange(
@@ -289,14 +289,14 @@ public partial class UnitsController : ControllerBase
 
         try
         {
-            string sDetalhe = await _objUnifiClient.TestConnectionAsync(
+            string sDetail = await _objUnifiClient.TestConnectionAsync(
                 objUnit.Unifi, objCancellationToken);
 
             // O teste pode ter descoberto o SiteId; guardar aqui evita a descoberta no primeiro
             // visitante, que é justamente a hora em que ninguém quer surpresa.
             await _objDbContext.SaveChangesAsync(objCancellationToken);
 
-            return Ok(new UnifiTestResponse(true, sDetalhe));
+            return Ok(new UnifiTestResponse(true, sDetail));
         }
         catch (UnifiException objException)
         {
@@ -332,9 +332,9 @@ public partial class UnitsController : ControllerBase
             return "Endereço do portal inválido: informe um domínio, como itaituba.wifi.exemplo.com.br.";
         }
 
-        bool bEmUso = await _objDbContext.Units.AnyAsync(
+        bool bInUse = await _objDbContext.Units.AnyAsync(
             unit => unit.PortalHost == sHost && unit.Id != objUnit.Id, objCancellationToken);
-        if (bEmUso)
+        if (bInUse)
         {
             return "Já existe uma unidade usando esse endereço de portal.";
         }
@@ -355,10 +355,10 @@ public partial class UnitsController : ControllerBase
             return null;
         }
 
-        string? sErro = RedirectUrlRules.Validate(sRedirectUrl);
-        if (sErro is not null)
+        string? sError = RedirectUrlRules.Validate(sRedirectUrl);
+        if (sError is not null)
         {
-            return sErro;
+            return sError;
         }
 
         objUnit.RedirectUrl = sRedirectUrl.Trim();
@@ -366,21 +366,21 @@ public partial class UnitsController : ControllerBase
     }
 
     /// <summary>DDD da loja no exemplo de telefone do portal. Nulo mantém o atual; "" volta a usar o da empresa.</summary>
-    private static string? ApplyDdd(Unit objUnit, string? sDdd)
+    private static string? ApplyAreaCode(Unit objUnit, string? sAreaCode)
     {
-        string? sDigitos = DddRules.Normalize(sDdd);
-        if (sDigitos is null)
+        string? sDigits = AreaCodeRules.Normalize(sAreaCode);
+        if (sDigits is null)
         {
             return null;
         }
 
-        string? sErro = DddRules.Validate(sDigitos);
-        if (sErro is not null)
+        string? sError = AreaCodeRules.Validate(sDigits);
+        if (sError is not null)
         {
-            return sErro;
+            return sError;
         }
 
-        objUnit.Ddd = sDigitos;
+        objUnit.AreaCode = sDigits;
         return null;
     }
 
@@ -395,13 +395,13 @@ public partial class UnitsController : ControllerBase
             return null;
         }
 
-        string sValor = sEmail.Trim();
-        if (sValor.Length > 200 || (sValor.Length > 0 && !EmailRegex().IsMatch(sValor)))
+        string sValue = sEmail.Trim();
+        if (sValue.Length > 200 || (sValue.Length > 0 && !EmailRegex().IsMatch(sValue)))
         {
             return "E-mail da unidade inválido.";
         }
 
-        objUnit.Email = sValor;
+        objUnit.Email = sValue;
         return null;
     }
 

@@ -47,9 +47,9 @@ public class UnifiCloudClientTests
         public List<string> ObjBodies { get; } = [];
         public required Func<HttpRequestMessage, HttpResponseMessage> ObjResponder { get; init; }
 
-        public int IClassicas => ObjRequests.Count(objRequest => EhClassica(objRequest));
-        public int IBuscas => ObjRequests.Count(objRequest => objRequest.RequestUri!.ToString().Contains("/clients?filter="));
-        public int IAutorizacoesOficiais => ObjRequests.Count(objRequest => objRequest.RequestUri!.ToString().EndsWith("/actions"));
+        public int IClassicCalls => ObjRequests.Count(objRequest => IsClassic(objRequest));
+        public int ISearches => ObjRequests.Count(objRequest => objRequest.RequestUri!.ToString().Contains("/clients?filter="));
+        public int IOfficialAuthorizations => ObjRequests.Count(objRequest => objRequest.RequestUri!.ToString().EndsWith("/actions"));
 
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage objRequest, CancellationToken objCancellationToken)
@@ -77,7 +77,7 @@ public class UnifiCloudClientTests
             };
     }
 
-    private static bool EhClassica(HttpRequestMessage objRequest) =>
+    private static bool IsClassic(HttpRequestMessage objRequest) =>
         objRequest.RequestUri!.ToString().EndsWith("/cmd/stamgr");
 
     private static HttpResponseMessage Json(string sBody, HttpStatusCode objStatus = HttpStatusCode.OK)
@@ -89,7 +89,7 @@ public class UnifiCloudClientTests
     }
 
     /// <summary>A API oficial, respondendo como a controladora real (sites, aparelho, autorização).</summary>
-    private static HttpResponseMessage RespondeOficial(HttpRequestMessage objRequest)
+    private static HttpResponseMessage OfficialResponse(HttpRequestMessage objRequest)
     {
         string sUrl = objRequest.RequestUri!.ToString();
         if (sUrl.EndsWith("/sites")) return Json(SitesJson);
@@ -98,12 +98,12 @@ public class UnifiCloudClientTests
     }
 
     /// <summary>Tudo funcionando: a clássica autoriza.</summary>
-    private static HttpResponseMessage RespondeClassicaOk(HttpRequestMessage objRequest) =>
-        EhClassica(objRequest) ? Json(ClassicOkJson) : RespondeOficial(objRequest);
+    private static HttpResponseMessage ClassicOkResponse(HttpRequestMessage objRequest) =>
+        IsClassic(objRequest) ? Json(ClassicOkJson) : OfficialResponse(objRequest);
 
     /// <summary>A Ubiquiti desligou a API clássica: só a oficial responde.</summary>
-    private static HttpResponseMessage RespondeSemClassica(HttpRequestMessage objRequest) =>
-        EhClassica(objRequest) ? Json("{}", HttpStatusCode.NotFound) : RespondeOficial(objRequest);
+    private static HttpResponseMessage NoClassicResponse(HttpRequestMessage objRequest) =>
+        IsClassic(objRequest) ? Json("{}", HttpStatusCode.NotFound) : OfficialResponse(objRequest);
 
     private static CompanyUnifi CreateConfig(string sSiteId = "", string sSite = "default")
     {
@@ -130,9 +130,9 @@ public class UnifiCloudClientTests
     // ------------------------------------------------------------------ Caminho principal: API clássica
 
     [Fact]
-    public async Task Autorizar_PelaApiClassica_UmaIdaSoPeloMac()
+    public async Task Authorize_ByClassicApi_SingleCallByMac()
     {
-        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(RespondeClassicaOk);
+        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(ClassicOkResponse);
 
         await objClient.AuthorizeGuestAsync(CreateConfig(SiteId), "36:9d:94:1e:aa:10", 1440);
 
@@ -149,17 +149,17 @@ public class UnifiCloudClientTests
     }
 
     [Fact]
-    public async Task Autorizar_PelaApiClassica_NaoPrecisaDoSiteIdNemDaListaDeAparelhos()
+    public async Task Authorize_ByClassicApi_NeedsNeitherSiteIdNorDeviceList()
     {
         // A clássica não depende de a controladora já listar o aparelho — exatamente o que fez
         // a busca adiantada falhar no teste real (o celular tinha 2 s de conexão).
-        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(RespondeClassicaOk);
+        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(ClassicOkResponse);
         CompanyUnifi objConfig = CreateConfig();
 
         await objClient.AuthorizeGuestAsync(objConfig, "36:9d:94:1e:aa:10", 1440);
 
-        Assert.Equal(1, objHandler.IClassicas);
-        Assert.Equal(0, objHandler.IBuscas);
+        Assert.Equal(1, objHandler.IClassicCalls);
+        Assert.Equal(0, objHandler.ISearches);
         Assert.Equal("", objConfig.SiteId);
     }
 
@@ -167,9 +167,9 @@ public class UnifiCloudClientTests
     [InlineData("36-9D-94-1E-AA-10")]
     [InlineData("369D941EAA10")]
     [InlineData("36:9D:94:1E:AA:10")]
-    public async Task Autorizar_MacEmQualquerFormato_VaiNormalizadoParaAClassica(string sMac)
+    public async Task Authorize_MacInAnyFormat_GoesNormalizedToClassic(string sMac)
     {
-        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(RespondeClassicaOk);
+        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(ClassicOkResponse);
 
         await objClient.AuthorizeGuestAsync(CreateConfig(SiteId), sMac, 1440);
 
@@ -177,9 +177,9 @@ public class UnifiCloudClientTests
     }
 
     [Fact]
-    public async Task Autorizar_UsaONomeDoSiteDaUnidadeNaClassica()
+    public async Task Authorize_UsesUnitSiteNameOnClassic()
     {
-        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(RespondeClassicaOk);
+        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(ClassicOkResponse);
 
         await objClient.AuthorizeGuestAsync(CreateConfig(SiteId, sSite: "loja2"), "36:9d:94:1e:aa:10", 1440);
 
@@ -189,37 +189,37 @@ public class UnifiCloudClientTests
     // ------------------------------------------------------------------ Plano B: API oficial
 
     [Fact]
-    public async Task Autorizar_ClassicaIndisponivel_CaiNaApiOficial()
+    public async Task Authorize_ClassicUnavailable_FallsBackToOfficialApi()
     {
-        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(RespondeSemClassica);
+        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(NoClassicResponse);
 
         await objClient.AuthorizeGuestAsync(CreateConfig(SiteId), "36:9d:94:1e:aa:10", 1440);
 
         // Clássica recusou; a oficial achou o aparelho e autorizou.
-        Assert.Equal(1, objHandler.IClassicas);
-        Assert.Equal(1, objHandler.IBuscas);
-        Assert.Equal(1, objHandler.IAutorizacoesOficiais);
+        Assert.Equal(1, objHandler.IClassicCalls);
+        Assert.Equal(1, objHandler.ISearches);
+        Assert.Equal(1, objHandler.IOfficialAuthorizations);
         Assert.EndsWith($"/sites/{SiteId}/clients/{ClientId}/actions", objHandler.SUrl(2));
         Assert.Contains("\"action\":\"AUTHORIZE_GUEST_ACCESS\"", objHandler.ObjBodies[2]);
         Assert.Contains("\"timeLimitMinutes\":1440", objHandler.ObjBodies[2]);
     }
 
     [Fact]
-    public async Task Autorizar_ClassicaRespondeErro_CaiNaApiOficial()
+    public async Task Authorize_ClassicRespondsError_FallsBackToOfficialApi()
     {
         // HTTP 200 mas "rc: error" — a clássica sinaliza falha no corpo, não no status.
         (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(objRequest =>
-            EhClassica(objRequest) ? Json(ClassicErrorJson) : RespondeOficial(objRequest));
+            IsClassic(objRequest) ? Json(ClassicErrorJson) : OfficialResponse(objRequest));
 
         await objClient.AuthorizeGuestAsync(CreateConfig(SiteId), "36:9d:94:1e:aa:10", 1440);
 
-        Assert.Equal(1, objHandler.IAutorizacoesOficiais);
+        Assert.Equal(1, objHandler.IOfficialAuthorizations);
     }
 
     [Fact]
-    public async Task Autorizar_PelaOficialSemSiteId_DescobreOSiteEGravaParaQuemChamou()
+    public async Task Authorize_ByOfficialWithoutSiteId_DiscoversSiteAndReturnsItToCaller()
     {
-        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(RespondeSemClassica);
+        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(NoClassicResponse);
         CompanyUnifi objConfig = CreateConfig();
 
         await objClient.AuthorizeGuestAsync(objConfig, "36:9d:94:1e:aa:10", 1440);
@@ -232,43 +232,43 @@ public class UnifiCloudClientTests
     }
 
     [Fact]
-    public async Task Autorizar_PelaOficial_AparelhoSoApareceNaSegundaConsulta_Autoriza()
+    public async Task Authorize_ByOfficial_DeviceShowsOnSecondQuery_Authorizes()
     {
         // D6: o aparelho acabou de conectar e a controladora ainda não o listou.
-        int iBusca = 0;
+        int iSearch = 0;
         (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(objRequest =>
         {
-            if (EhClassica(objRequest)) return Json("{}", HttpStatusCode.NotFound);
+            if (IsClassic(objRequest)) return Json("{}", HttpStatusCode.NotFound);
             if (objRequest.RequestUri!.ToString().Contains("/clients?filter="))
-                return Json(++iBusca == 1 ? ClientEmptyJson : ClientFoundJson);
+                return Json(++iSearch == 1 ? ClientEmptyJson : ClientFoundJson);
             return Json(AuthorizedJson);
         });
 
         await objClient.AuthorizeGuestAsync(CreateConfig(SiteId), "36:9d:94:1e:aa:10", 1440);
 
-        Assert.Equal(2, objHandler.IBuscas);
-        Assert.Equal(1, objHandler.IAutorizacoesOficiais);
+        Assert.Equal(2, objHandler.ISearches);
+        Assert.Equal(1, objHandler.IOfficialAuthorizations);
     }
 
     [Fact]
-    public async Task Autorizar_PelaOficial_AparelhoNuncaAparece_ErroClaroESemAutorizar()
+    public async Task Authorize_ByOfficial_DeviceNeverShows_ClearErrorAndNoAuthorization()
     {
         (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(objRequest =>
-            EhClassica(objRequest) ? Json("{}", HttpStatusCode.NotFound) : Json(ClientEmptyJson));
+            IsClassic(objRequest) ? Json("{}", HttpStatusCode.NotFound) : Json(ClientEmptyJson));
 
         UnifiException objException = await Assert.ThrowsAsync<UnifiException>(
             () => objClient.AuthorizeGuestAsync(CreateConfig(SiteId), "36:9d:94:1e:aa:10", 1440));
 
         Assert.Contains("Aparelho não encontrado", objException.Message);
-        Assert.Equal(0, objHandler.IAutorizacoesOficiais);
+        Assert.Equal(0, objHandler.IOfficialAuthorizations);
     }
 
     [Fact]
-    public async Task Autorizar_PelaOficial_RedeNaoEhDeVisitantes_MensagemExplicaACausa()
+    public async Task Authorize_ByOfficial_NetworkIsNotGuest_MessageExplainsCause()
     {
         (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(objRequest =>
         {
-            if (EhClassica(objRequest)) return Json("{}", HttpStatusCode.NotFound);
+            if (IsClassic(objRequest)) return Json("{}", HttpStatusCode.NotFound);
             if (objRequest.RequestUri!.ToString().Contains("/clients?filter=")) return Json(ClientFoundJson);
             return Json("""{"code":"api.client.not-guest","message":"Client is not a guest"}""",
                 HttpStatusCode.UnprocessableEntity);
@@ -286,8 +286,8 @@ public class UnifiCloudClientTests
     [InlineData(HttpStatusCode.Unauthorized, "inválida ou revogada")]
     [InlineData(HttpStatusCode.Forbidden, "não alcança este console")]
     [InlineData(HttpStatusCode.TooManyRequests, "Limite de chamadas")]
-    public async Task Autorizar_ClassicaRecusaAChave_ErroNaHoraSemTentarAOficial(
-        HttpStatusCode objStatus, string sTrechoEsperado)
+    public async Task Authorize_ClassicRejectsKey_FailsAtOnceWithoutTryingOfficial(
+        HttpStatusCode objStatus, string sExpectedSnippet)
     {
         // A oficial usa a mesma chave e o mesmo túnel: tentar de novo só dobraria a espera.
         (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(_ => Json("{}", objStatus));
@@ -295,12 +295,12 @@ public class UnifiCloudClientTests
         UnifiException objException = await Assert.ThrowsAsync<UnifiException>(
             () => objClient.AuthorizeGuestAsync(CreateConfig(SiteId), "36:9d:94:1e:aa:10", 1440));
 
-        Assert.Contains(sTrechoEsperado, objException.Message);
+        Assert.Contains(sExpectedSnippet, objException.Message);
         Assert.Single(objHandler.ObjRequests);
     }
 
     [Fact]
-    public async Task Autorizar_NuvemFora_ErroNaHoraSemTentarAOficial()
+    public async Task Authorize_CloudDown_FailsAtOnceWithoutTryingOfficial()
     {
         (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(
             _ => throw new HttpRequestException("sem rota"));
@@ -315,9 +315,9 @@ public class UnifiCloudClientTests
     // ------------------------------------------------------------------ Validação antes de sair para a rede
 
     [Fact]
-    public async Task Autorizar_MacInvalido_NemChegaAFalarComARede()
+    public async Task Authorize_InvalidMac_NeverCallsNetwork()
     {
-        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(RespondeClassicaOk);
+        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(ClassicOkResponse);
 
         UnifiException objException = await Assert.ThrowsAsync<UnifiException>(
             () => objClient.AuthorizeGuestAsync(CreateConfig(SiteId), "não-é-um-mac", 1440));
@@ -327,9 +327,9 @@ public class UnifiCloudClientTests
     }
 
     [Fact]
-    public async Task Autorizar_SemChaveDeApi_NemChegaAFalarComARede()
+    public async Task Authorize_NoApiKey_NeverCallsNetwork()
     {
-        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(RespondeClassicaOk);
+        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(ClassicOkResponse);
         CompanyUnifi objConfig = CreateConfig(SiteId);
         objConfig.ApiKey = "";
 
@@ -341,9 +341,9 @@ public class UnifiCloudClientTests
     }
 
     [Fact]
-    public async Task Autorizar_ConsoleIdInvalido_NemChegaAFalarComARede()
+    public async Task Authorize_InvalidConsoleId_NeverCallsNetwork()
     {
-        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(RespondeClassicaOk);
+        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(ClassicOkResponse);
         CompanyUnifi objConfig = CreateConfig(SiteId);
         // Barra no ConsoleId escaparia do caminho previsto na URL.
         objConfig.ConsoleId = "../../algum-outro-console";
@@ -356,37 +356,37 @@ public class UnifiCloudClientTests
     }
 
     [Fact]
-    public async Task Autorizar_NomeDoSiteInvalido_NaoMontaAUrlClassicaEVaiPelaOficial()
+    public async Task Authorize_InvalidSiteName_SkipsClassicUrlAndUsesOfficial()
     {
         // O nome curto do site entra na URL da clássica; um valor estranho não pode escapar dela.
-        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(RespondeClassicaOk);
+        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(ClassicOkResponse);
 
         await objClient.AuthorizeGuestAsync(CreateConfig(SiteId, sSite: "../../x"), "36:9d:94:1e:aa:10", 1440);
 
-        Assert.Equal(0, objHandler.IClassicas);
-        Assert.Equal(1, objHandler.IAutorizacoesOficiais);
+        Assert.Equal(0, objHandler.IClassicCalls);
+        Assert.Equal(1, objHandler.IOfficialAuthorizations);
     }
 
     // ------------------------------------------------------------------ Teste de conexão (painel)
 
     [Fact]
-    public async Task TestConnectionAsync_ConsoleComUmSite_DescreveOSiteEGravaOId()
+    public async Task TestConnectionAsync_ConsoleWithOneSite_DescribesSiteAndSavesId()
     {
         (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(_ => Json(SitesJson));
         CompanyUnifi objConfig = CreateConfig();
 
-        string sDetalhe = await objClient.TestConnectionAsync(objConfig);
+        string sDetail = await objClient.TestConnectionAsync(objConfig);
 
-        Assert.Contains("Default", sDetalhe);
+        Assert.Contains("Default", sDetail);
         Assert.Equal(SiteId, objConfig.SiteId);
     }
 
     [Fact]
-    public async Task TestConnectionAsync_ConsoleComMaisDeUmSite_ExigeEscolhaManual()
+    public async Task TestConnectionAsync_ConsoleWithManySites_RequiresManualChoice()
     {
-        const string sDoisSites =
+        const string sTwoSites =
             """{"totalCount":2,"data":[{"id":"88f7af54-98f8-306a-a1c7-c9349722b1f6","name":"Default"},{"id":"11111111-2222-3333-4444-555555555555","name":"Filial"}]}""";
-        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(_ => Json(sDoisSites));
+        (UnifiCloudClient objClient, StubHandler objHandler) = CreateClient(_ => Json(sTwoSites));
         CompanyUnifi objConfig = CreateConfig();
 
         UnifiException objException = await Assert.ThrowsAsync<UnifiException>(

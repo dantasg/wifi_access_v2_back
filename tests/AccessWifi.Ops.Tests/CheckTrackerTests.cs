@@ -5,7 +5,7 @@ namespace AccessWifi.Ops.Tests;
 public class CheckTrackerTests
 {
     [Fact]
-    public async Task Quebra_Lembra_EVolta()
+    public async Task Breaks_Reminds_AndRecovers()
     {
         OpsState objState = new OpsState();
         ListNotifier objNotifier = new ListNotifier();

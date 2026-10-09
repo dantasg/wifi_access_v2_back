@@ -26,7 +26,7 @@ public class UnifiClientRouterTests
     }
 
     [Fact]
-    public async Task ModoCloud_UsaOClienteDaNuvem()
+    public async Task CloudMode_UsesCloudClient()
     {
         CompanyUnifi objConfig = new CompanyUnifi { Mode = UnifiMode.Cloud };
 
@@ -41,7 +41,7 @@ public class UnifiClientRouterTests
     [InlineData("Local")]
     [InlineData("")]
     [InlineData("qualquer-coisa")]
-    public async Task ModoDiferenteDeCloud_UsaOClienteLocal(string sMode)
+    public async Task NonCloudMode_UsesLocalClient(string sMode)
     {
         // Qualquer valor inesperado cai no local, que é o comportamento histórico — nunca na nuvem.
         CompanyUnifi objConfig = new CompanyUnifi { Mode = sMode };
@@ -53,7 +53,7 @@ public class UnifiClientRouterTests
     }
 
     [Fact]
-    public async Task ModoCloudEmMaiusculasOuMinusculas_ContinuaIndoParaANuvem()
+    public async Task CloudModeInAnyCase_StillGoesToCloud()
     {
         CompanyUnifi objConfig = new CompanyUnifi { Mode = "cloud" };
 

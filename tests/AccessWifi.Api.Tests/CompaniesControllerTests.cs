@@ -18,7 +18,7 @@ public class CompaniesControllerTests
     }
 
     [Fact]
-    public async Task Create_ComDadosValidos_Cria()
+    public async Task Create_ValidData_Creates()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CompaniesController objController = new CompaniesController(objDbContext);
@@ -33,7 +33,7 @@ public class CompaniesControllerTests
     }
 
     [Fact]
-    public async Task Create_SlugDuplicado_Retorna400()
+    public async Task Create_DuplicateSlug_Returns400()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CompaniesController objController = new CompaniesController(objDbContext);
@@ -48,7 +48,7 @@ public class CompaniesControllerTests
     }
 
     [Fact]
-    public async Task Create_SlugInvalido_Retorna400()
+    public async Task Create_InvalidSlug_Returns400()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CompaniesController objController = new CompaniesController(objDbContext);
@@ -61,7 +61,7 @@ public class CompaniesControllerTests
     }
 
     [Fact]
-    public async Task Create_GravaODiaDoRelatorio()
+    public async Task Create_SavesReportDay()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CompaniesController objController = new CompaniesController(objDbContext);
@@ -75,7 +75,7 @@ public class CompaniesControllerTests
     }
 
     [Fact]
-    public async Task Create_SemDia_UsaPadraoDia1()
+    public async Task Create_NoDay_DefaultsToDay1()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CompaniesController objController = new CompaniesController(objDbContext);
@@ -88,7 +88,7 @@ public class CompaniesControllerTests
     }
 
     [Fact]
-    public async Task Create_DiaForaDoIntervalo_Retorna400()
+    public async Task Create_DayOutOfRange_Returns400()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CompaniesController objController = new CompaniesController(objDbContext);
@@ -101,7 +101,7 @@ public class CompaniesControllerTests
     }
 
     [Fact]
-    public async Task Update_AtualizaODiaDoRelatorio()
+    public async Task Update_UpdatesReportDay()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CompaniesController objController = new CompaniesController(objDbContext);

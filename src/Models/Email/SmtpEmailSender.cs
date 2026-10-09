@@ -54,15 +54,15 @@ namespace Models.Email
             {
                 MemoryStream objStream = new MemoryStream(objAttachment);
 
-                string sNome = sAttachmentName ?? "anexo.csv";
+                string sName = sAttachmentName ?? "anexo.csv";
                 // Com o tipo certo, o celular abre o PDF direto do e-mail.
-                string sTipo = Path.GetExtension(sNome).ToLowerInvariant() switch
+                string sKind = Path.GetExtension(sName).ToLowerInvariant() switch
                 {
                     ".pdf" => MediaTypeNames.Application.Pdf,
                     ".csv" => MediaTypeNames.Text.Csv,
                     _ => MediaTypeNames.Application.Octet,
                 };
-                Attachment objMailAttachment = new Attachment(objStream, sNome, sTipo);
+                Attachment objMailAttachment = new Attachment(objStream, sName, sKind);
 
                 objMessage.Attachments.Add(objMailAttachment);
             }

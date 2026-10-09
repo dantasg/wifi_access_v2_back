@@ -52,10 +52,10 @@ public class UsersController : ControllerBase
         List<AdminUser> objUsers = await objQuery
             .OrderBy(user => user.Username)
             .ToListAsync(objCancellationToken);
-        Dictionary<Guid, UserUnitDto> objUnidades = await UnitRefsAsync(
+        Dictionary<Guid, UserUnitDto> objUnits = await UnitRefsAsync(
             objUsers.SelectMany(user => user.Units.Select(link => link.IDUnit)), objCancellationToken);
 
-        return Ok(objUsers.Select(user => ToDto(user, objUnidades)).ToList());
+        return Ok(objUsers.Select(user => ToDto(user, objUnits)).ToList());
     }
 
     [HttpPost]
@@ -68,15 +68,15 @@ public class UsersController : ControllerBase
         }
 
         string sUsername = UserRules.NormalizeUsername(objRequest.Username);
-        string? sErroCampos = UserRules.ValidateUsername(sUsername) ?? UserRules.ValidatePassword(objRequest.Password);
-        if (sErroCampos is not null)
+        string? sFieldsError = UserRules.ValidateUsername(sUsername) ?? UserRules.ValidatePassword(objRequest.Password);
+        if (sFieldsError is not null)
         {
-            return BadRequest(new ErrorResponse(sErroCampos));
+            return BadRequest(new ErrorResponse(sFieldsError));
         }
 
-        bool usernameEmUso = await _objDbContext.Users
+        bool usernameInUse = await _objDbContext.Users
             .AnyAsync(user => user.Username == sUsername, objCancellationToken);
-        if (usernameEmUso)
+        if (usernameInUse)
         {
             return BadRequest(new ErrorResponse("Já existe um usuário com esse nome."));
         }
@@ -97,13 +97,13 @@ public class UsersController : ControllerBase
         List<Guid> objUnitIds = [];
         if (objRequest.RestrictToUnits)
         {
-            (List<Guid>? objValidas, string? sErro) = await ValidateUnitsAsync(
+            (List<Guid>? objValid, string? sError) = await ValidateUnitsAsync(
                 objCompanyId, objRequest.UnitIds, objCancellationToken);
-            if (objValidas is null)
+            if (objValid is null)
             {
-                return BadRequest(new ErrorResponse(sErro!));
+                return BadRequest(new ErrorResponse(sError!));
             }
-            objUnitIds = objValidas;
+            objUnitIds = objValid;
         }
 
         AdminUser objUser = new AdminUser
@@ -118,8 +118,8 @@ public class UsersController : ControllerBase
         await _objDbContext.SaveChangesAsync(objCancellationToken);
 
         objUser.Company = objCompany;
-        Dictionary<Guid, UserUnitDto> objUnidades = await UnitRefsAsync(objUnitIds, objCancellationToken);
-        return Ok(ToDto(objUser, objUnidades));
+        Dictionary<Guid, UserUnitDto> objUnits = await UnitRefsAsync(objUnitIds, objCancellationToken);
+        return Ok(ToDto(objUser, objUnits));
     }
 
     /// <summary>
@@ -147,29 +147,29 @@ public class UsersController : ControllerBase
             return NotFound(new ErrorResponse("Usuário não encontrado."));
         }
 
-        bool bProprio = objUser.Username == User.GetUsername();
+        bool bOwn = objUser.Username == User.GetUsername();
 
-        if (objRequest.RestrictToUnits is bool bRestringir)
+        if (objRequest.RestrictToUnits is bool bRestrict)
         {
             if (objUser.IDCompany is null)
             {
                 return BadRequest(new ErrorResponse("Super admin não fica preso a unidades."));
             }
-            if (bProprio)
+            if (bOwn)
             {
                 return BadRequest(new ErrorResponse("Você não pode mudar o próprio acesso."));
             }
 
             List<Guid> objUnitIds = [];
-            if (bRestringir)
+            if (bRestrict)
             {
-                (List<Guid>? objValidas, string? sErro) = await ValidateUnitsAsync(
+                (List<Guid>? objValid, string? sError) = await ValidateUnitsAsync(
                     objUser.IDCompany, objRequest.UnitIds, objCancellationToken);
-                if (objValidas is null)
+                if (objValid is null)
                 {
-                    return BadRequest(new ErrorResponse(sErro!));
+                    return BadRequest(new ErrorResponse(sError!));
                 }
-                objUnitIds = objValidas;
+                objUnitIds = objValid;
             }
 
             objUser.Units.Clear();
@@ -177,22 +177,22 @@ public class UsersController : ControllerBase
             {
                 objUser.Units.Add(new AdminUserUnit { IDUser = objUser.Id, IDUnit = objUnitId });
             }
-            objUser.RestrictToUnits = bRestringir;
+            objUser.RestrictToUnits = bRestrict;
         }
 
-        if (objRequest.Active is bool bAtivo && objUser.Active && !bAtivo)
+        if (objRequest.Active is bool bActive && objUser.Active && !bActive)
         {
-            if (bProprio)
+            if (bOwn)
             {
                 return BadRequest(new ErrorResponse("Você não pode desativar o próprio usuário."));
             }
 
             if (objUser.IDCompany is null)
             {
-                bool bExisteOutroSuperAdminAtivo = await _objDbContext.Users.AnyAsync(
+                bool bAnotherActiveSuperAdminExists = await _objDbContext.Users.AnyAsync(
                     user => user.IDCompany == null && user.Active && user.Id != objUser.Id,
                     objCancellationToken);
-                if (!bExisteOutroSuperAdminAtivo)
+                if (!bAnotherActiveSuperAdminExists)
                 {
                     return BadRequest(new ErrorResponse(
                         "Não é possível desativar o último super admin ativo."));
@@ -209,15 +209,15 @@ public class UsersController : ControllerBase
             }
         }
 
-        if (objRequest.Active is bool bNovoAtivo)
+        if (objRequest.Active is bool bNewActive)
         {
-            objUser.Active = bNovoAtivo;
+            objUser.Active = bNewActive;
         }
         await _objDbContext.SaveChangesAsync(objCancellationToken);
 
-        Dictionary<Guid, UserUnitDto> objUnidades = await UnitRefsAsync(
+        Dictionary<Guid, UserUnitDto> objUnits = await UnitRefsAsync(
             objUser.Units.Select(link => link.IDUnit), objCancellationToken);
-        return Ok(ToDto(objUser, objUnidades));
+        return Ok(ToDto(objUser, objUnits));
     }
 
     /// <summary>
@@ -238,9 +238,9 @@ public class UsersController : ControllerBase
             return (null, "Escolha ao menos uma unidade.");
         }
 
-        int iDaEmpresa = await _objDbContext.Units.CountAsync(
+        int iInCompany = await _objDbContext.Units.CountAsync(
             unit => unit.IDCompany == objCompanyId && objIds.Contains(unit.Id), objCancellationToken);
-        return iDaEmpresa == objIds.Count
+        return iInCompany == objIds.Count
             ? (objIds, null)
             : (null, "Unidade não encontrada nesta empresa.");
     }
@@ -248,17 +248,17 @@ public class UsersController : ControllerBase
     private async Task<Dictionary<Guid, UserUnitDto>> UnitRefsAsync(
         IEnumerable<Guid> objIds, CancellationToken objCancellationToken)
     {
-        List<Guid> objLista = objIds.Distinct().ToList();
-        if (objLista.Count == 0)
+        List<Guid> objList = objIds.Distinct().ToList();
+        if (objList.Count == 0)
         {
             return [];
         }
         return await _objDbContext.Units.AsNoTracking()
-            .Where(unit => objLista.Contains(unit.Id))
+            .Where(unit => objList.Contains(unit.Id))
             .ToDictionaryAsync(unit => unit.Id, unit => new UserUnitDto(unit.Id, unit.Slug, unit.Name), objCancellationToken);
     }
 
-    private static UserDto ToDto(AdminUser objUser, Dictionary<Guid, UserUnitDto> objUnidades) =>
+    private static UserDto ToDto(AdminUser objUser, Dictionary<Guid, UserUnitDto> objUnits) =>
         new UserDto(
             objUser.Id,
             objUser.Username,
@@ -269,7 +269,7 @@ public class UsersController : ControllerBase
             objUser.Active,
             objUser.RestrictToUnits,
             objUser.Units
-                .Select(link => objUnidades.GetValueOrDefault(link.IDUnit))
+                .Select(link => objUnits.GetValueOrDefault(link.IDUnit))
                 .OfType<UserUnitDto>()
                 .OrderBy(unit => unit.Name)
                 .ToList());

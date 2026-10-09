@@ -34,9 +34,9 @@ namespace Models.DataBase
 
         /// <summary>
         /// DDD da loja no exemplo de telefone do portal, para lojas da mesma empresa em estados diferentes.
-        /// Vazio = usa o da empresa (<see cref="PortalSettings.Ddd"/>).
+        /// Vazio = usa o da empresa (<see cref="PortalSettings.AreaCode"/>).
         /// </summary>
-        public string Ddd { get; set; } = "";
+        public string AreaCode { get; set; } = "";
 
         /// <summary>
         /// Quando o último relatório mensal desta unidade foi enviado (UTC). Marcador de idempotência:

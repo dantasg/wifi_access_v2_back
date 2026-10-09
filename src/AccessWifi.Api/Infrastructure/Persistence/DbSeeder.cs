@@ -37,10 +37,10 @@ public static class DbSeeder
 
             // Campanhas: monta a base de clientes a partir dos cadastros que já existiam (só na
             // primeira vez, com a tabela vazia). Depois disso, cada conexão atualiza o cliente.
-            int iClientes = await CustomerDirectory.BackfillIfEmptyAsync(objDbContext, DateTime.UtcNow);
-            if (iClientes > 0)
+            int iCustomers = await CustomerDirectory.BackfillIfEmptyAsync(objDbContext, DateTime.UtcNow);
+            if (iCustomers > 0)
             {
-                objLogger.LogInformation("Seed: {Count} cliente(s) montados a partir dos cadastros.", iClientes);
+                objLogger.LogInformation("Seed: {Count} cliente(s) montados a partir dos cadastros.", iCustomers);
             }
         }
         catch (Exception objException)
