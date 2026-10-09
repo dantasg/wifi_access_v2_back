@@ -1,9 +1,10 @@
 using System.Globalization;
-using System.Text.RegularExpressions;
 using Models.DataBase;
+using Models.Pdf;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
+using static Models.Pdf.PdfTheme;
 
 namespace Models.Campaigns
 {
@@ -28,28 +29,12 @@ namespace Models.Campaigns
     /// empresa, diz qual é a campanha, qual mensagem mandar e lista os clientes, com o WhatsApp (abre a
     /// conversa com a mensagem pronta) e o Instagram de cada um como link.
     /// </summary>
-    public static partial class CampaignPdf
+    public static class CampaignPdf
     {
         private static readonly string[] s_arrDias =
             ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"];
 
         private static readonly string[] s_arrDiasCurtos = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
-
-        [GeneratedRegex("^#[0-9a-fA-F]{6}$")]
-        private static partial Regex HexColorRegex();
-
-        [GeneratedRegex(@"^data:image/(?<tipo>[a-z0-9.+-]+);base64,(?<dados>.+)$", RegexOptions.Singleline)]
-        private static partial Regex DataUrlRegex();
-
-        static CampaignPdf()
-        {
-            // Licença gratuita (empresa com faturamento anual abaixo de US$ 1 milhão).
-            QuestPDF.Settings.License = LicenseType.Community;
-            // Só a fonte que vai junto com o programa (Lato): o servidor não tem fontes instaladas, e o
-            // PDF sai igual aqui e lá. O que a fonte não tem (emojis) é tirado antes (CampaignContact).
-            QuestPDF.Settings.UseSystemFonts = false;
-            QuestPDF.Settings.ThrowOnMissingTextGlyphs = false;
-        }
 
         /// <summary>"segunda-feira, 12/10/2026" (nomes fixos em português: o servidor roda sem cultura instalada).</summary>
         public static string LongDate(DateOnly dtDate) =>
@@ -71,10 +56,9 @@ namespace Models.Campaigns
 
         public static byte[] Build(CampaignPdfData objData)
         {
-            Paleta objCores = Paleta.From(objData.Colors);
-            Image? objLogoImagem = null;
-            SvgImage? objLogoSvg = null;
-            ReadLogo(objData.LogoDataUrl, ref objLogoImagem, ref objLogoSvg);
+            Palette objCores = Palette.From(objData.Colors);
+            PdfTheme.Configure();
+            Logo objLogo = Logo.Read(objData.LogoDataUrl);
             string sMensagem = CampaignContact.WithoutEmoji(
                 CampaignMessage.RenderShared(objData.MessageTemplate, objData.CompanyName, objData.UnitName),
                 out bool bTinhaEmoji);
@@ -90,28 +74,8 @@ namespace Models.Campaigns
                 objPage.DefaultTextStyle(style => style.FontSize(10).FontColor(objCores.Ink));
 
                 // ---------------------------------------------------------- Cabeçalho (toda página)
-                objPage.Header().PaddingBottom(14).BorderBottom(2).BorderColor(objCores.Brand).PaddingBottom(10).Row(objRow =>
-                {
-                    IContainer objLogo = objRow.RelativeItem().AlignLeft().AlignMiddle().Height(44);
-                    if (objLogoImagem is not null)
-                    {
-                        objLogo.Image(objLogoImagem).FitHeight();
-                    }
-                    else if (objLogoSvg is not null)
-                    {
-                        objLogo.Svg(objLogoSvg).FitHeight();
-                    }
-                    else
-                    {
-                        objLogo.AlignMiddle().Text(objData.CompanyName).FontSize(16).Bold().FontColor(objCores.BrandDark);
-                    }
-
-                    objRow.RelativeItem().AlignRight().AlignMiddle().Column(objColuna =>
-                    {
-                        objColuna.Item().AlignRight().Text("PDF de campanha").FontSize(16).Bold().FontColor(objCores.BrandDark);
-                        objColuna.Item().AlignRight().Text($"{objData.CompanyName} · {objData.UnitName}").FontColor(objCores.Muted);
-                    });
-                });
+                Header(objPage, objLogo, objCores, objData.CompanyName, "PDF de campanha",
+                    $"{objData.CompanyName} · {objData.UnitName}");
 
                 // ---------------------------------------------------------------- Conteúdo
                 objPage.Content().Column(objColuna =>
@@ -129,9 +93,9 @@ namespace Models.Campaigns
 
                     objColuna.Item().Row(objRow =>
                     {
-                        Dado(objRow.RelativeItem(), "Unidade", objData.UnitName, objCores);
-                        Dado(objRow.RelativeItem(), "Data", LongDate(objData.LocalDate), objCores);
-                        Dado(objRow.RelativeItem(), "Clientes", objData.Rows.Count.ToString(), objCores);
+                        Field(objRow.RelativeItem(), "Unidade", objData.UnitName, objCores);
+                        Field(objRow.RelativeItem(), "Data", LongDate(objData.LocalDate), objCores);
+                        Field(objRow.RelativeItem(), "Clientes", objData.Rows.Count.ToString(), objCores);
                     });
 
                     if (objData.Kind == CampaignKind.Birthday)
@@ -194,13 +158,13 @@ namespace Models.Campaigns
 
                         objTabela.Header(objCabecalho =>
                         {
-                            Titulo(objCabecalho.Cell(), "#", objCores);
-                            Titulo(objCabecalho.Cell(), "Cliente", objCores);
-                            Titulo(objCabecalho.Cell(), "WhatsApp", objCores);
-                            Titulo(objCabecalho.Cell(), "Instagram", objCores);
+                            ColumnTitle(objCabecalho.Cell(), "#", objCores);
+                            ColumnTitle(objCabecalho.Cell(), "Cliente", objCores);
+                            ColumnTitle(objCabecalho.Cell(), "WhatsApp", objCores);
+                            ColumnTitle(objCabecalho.Cell(), "Instagram", objCores);
                             if (bComInfo)
                             {
-                                Titulo(objCabecalho.Cell(), sTituloInfo, objCores);
+                                ColumnTitle(objCabecalho.Cell(), sTituloInfo, objCores);
                             }
                         });
 
@@ -208,13 +172,13 @@ namespace Models.Campaigns
                         foreach (CampaignPdfRow objCliente in objData.Rows)
                         {
                             iLinha++;
-                            Celula(objTabela.Cell(), objCores).Text(iLinha.ToString()).FontColor(objCores.Muted);
-                            Celula(objTabela.Cell(), objCores).Text(objCliente.Name).SemiBold();
-                            Celula(objTabela.Cell(), objCores)
+                            Cell(objTabela.Cell(), objCores).Text(iLinha.ToString()).FontColor(objCores.Muted);
+                            Cell(objTabela.Cell(), objCores).Text(objCliente.Name).SemiBold();
+                            Cell(objTabela.Cell(), objCores)
                                 .Hyperlink(CampaignContact.WhatsAppUrl(objCliente.Phone, objCliente.Message))
                                 .Text(CampaignContact.FormatPhone(objCliente.Phone)).FontColor(objCores.Link).Underline();
 
-                            IContainer objInstagram = Celula(objTabela.Cell(), objCores);
+                            IContainer objInstagram = Cell(objTabela.Cell(), objCores);
                             string sPerfil = InstagramHandle.ProfileUrl(objCliente.Instagram);
                             if (sPerfil.Length > 0)
                             {
@@ -233,7 +197,7 @@ namespace Models.Campaigns
 
                             if (bComInfo)
                             {
-                                Celula(objTabela.Cell(), objCores).Text(objTexto =>
+                                Cell(objTabela.Cell(), objCores).Text(objTexto =>
                                 {
                                     if (objCliente.IsToday)
                                     {
@@ -247,116 +211,8 @@ namespace Models.Campaigns
                 });
 
                 // ------------------------------------------------------------------ Rodapé
-                objPage.Footer().PaddingTop(10).AlignCenter().Text(objTexto =>
-                {
-                    objTexto.DefaultTextStyle(style => style.FontSize(8).FontColor(objCores.Muted));
-                    objTexto.Span("Gerado pelo AccessWifi · página ");
-                    objTexto.CurrentPageNumber();
-                    objTexto.Span(" de ");
-                    objTexto.TotalPages();
-                });
+                Footer(objPage, objCores);
             })).GeneratePdf();
-        }
-
-        private static void Dado(IContainer objContainer, string sRotulo, string sValor, Paleta objCores)
-        {
-            objContainer.Column(objColuna =>
-            {
-                objColuna.Item().Text(sRotulo.ToUpperInvariant()).FontSize(8).SemiBold().FontColor(objCores.Muted);
-                objColuna.Item().Text(sValor).FontSize(11).SemiBold();
-            });
-        }
-
-        private static void Titulo(IContainer objContainer, string sTexto, Paleta objCores)
-        {
-            objContainer.Background(objCores.Surface).BorderBottom(1).BorderColor(objCores.Line)
-                .PaddingVertical(6).PaddingHorizontal(6)
-                .Text(sTexto).FontSize(9).Bold().FontColor(objCores.BrandDark);
-        }
-
-        private static IContainer Celula(IContainer objContainer, Paleta objCores) =>
-            objContainer.BorderBottom(1).BorderColor(objCores.Line).PaddingVertical(7).PaddingHorizontal(6);
-
-        /// <summary>A logo do portal vem como data URL; PNG/JPEG/WebP viram imagem, SVG é desenhado. Inválida = sem logo.</summary>
-        /// <summary>
-        /// Abre a logo do tema. Se não abrir (base64 quebrado, arquivo que não é imagem de verdade), o PDF sai
-        /// com o nome da empresa no lugar — uma logo ruim não pode impedir o e-mail da campanha de sair.
-        /// </summary>
-        private static void ReadLogo(string? sDataUrl, ref Image? objImagem, ref SvgImage? objSvg)
-        {
-            Match objMatch = DataUrlRegex().Match(sDataUrl ?? "");
-            if (!objMatch.Success)
-            {
-                return;
-            }
-            try
-            {
-                byte[] arrDados = Convert.FromBase64String(objMatch.Groups["dados"].Value);
-                if (objMatch.Groups["tipo"].Value.StartsWith("svg", StringComparison.Ordinal))
-                {
-                    objSvg = SvgImage.FromText(System.Text.Encoding.UTF8.GetString(arrDados));
-                }
-                else
-                {
-                    objImagem = Image.FromBinaryData(arrDados);
-                }
-            }
-            catch (Exception)
-            {
-                // Logo que não abre: o PDF sai com o nome da empresa no lugar dela.
-                objImagem = null;
-                objSvg = null;
-            }
-        }
-
-        /// <summary>
-        /// As cores do tema da empresa (as mesmas do portal), com o padrão da marca no que vier inválido.
-        /// BrandDark é a cor dos títulos e links: escurecida até dar para ler no papel branco (um amarelo
-        /// de marca, por exemplo, some como texto).
-        /// </summary>
-        private sealed record Paleta(Color Brand, Color BrandDark, Color Surface, Color Ink, Color Muted, Color Line, Color Link)
-        {
-            public static Paleta From(ThemeColors? objTema)
-            {
-                ThemeColors objPadrao = new ThemeColors();
-                objTema ??= objPadrao;
-                Color objTexto = Color.FromHex(ParaTexto(Hex(objTema.BrandDark, objPadrao.BrandDark)));
-                return new Paleta(
-                    Color.FromHex(Hex(objTema.Brand, objPadrao.Brand)),
-                    objTexto,
-                    Color.FromHex(Hex(objTema.Surface, objPadrao.Surface)),
-                    Color.FromHex(ParaTexto(Hex(objTema.Ink, objPadrao.Ink))),
-                    Color.FromHex(ParaTexto(Hex(objTema.Muted, objPadrao.Muted), 4.5)),
-                    Color.FromHex(Hex(objTema.Line, objPadrao.Line)),
-                    objTexto);
-            }
-
-            private static string Hex(string? sHex, string sPadrao) =>
-                sHex is not null && HexColorRegex().IsMatch(sHex) ? sHex : sPadrao;
-
-            /// <summary>Escurece a cor até o contraste com o branco chegar ao mínimo de leitura (WCAG).</summary>
-            private static string ParaTexto(string sHex, double dMinimo = 4.5)
-            {
-                double dR = Convert.ToInt32(sHex[1..3], 16), dG = Convert.ToInt32(sHex[3..5], 16), dB = Convert.ToInt32(sHex[5..7], 16);
-                for (int iPasso = 0; iPasso < 40 && Contraste(dR, dG, dB) < dMinimo; iPasso++)
-                {
-                    dR *= 0.92;
-                    dG *= 0.92;
-                    dB *= 0.92;
-                }
-                return $"#{(int)dR:X2}{(int)dG:X2}{(int)dB:X2}";
-            }
-
-            private static double Contraste(double dR, double dG, double dB)
-            {
-                static double Canal(double dValor)
-                {
-                    double dC = dValor / 255;
-                    return dC <= 0.03928 ? dC / 12.92 : Math.Pow((dC + 0.055) / 1.055, 2.4);
-                }
-                double dLuminancia = 0.2126 * Canal(dR) + 0.7152 * Canal(dG) + 0.0722 * Canal(dB);
-                return 1.05 / (dLuminancia + 0.05);
-            }
         }
     }
 }
