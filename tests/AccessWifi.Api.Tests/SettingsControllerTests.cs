@@ -4,15 +4,16 @@ using AccessWifi.Api.Features;
 using AccessWifi.Api.Features.Companies;
 using AccessWifi.Api.Features.Settings;
 using Models.Persistence;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
 namespace AccessWifi.Api.Tests;
 
 public class SettingsControllerTests
 {
-    private static Company CreateCompany(AppDbContext objDbContext, string sSlug = "doce")
+    private static Company CreateCompany(AppDbContext objDbContext, string sSlug = "exemplo")
     {
-        Company objCompany = new Company { Name = "Dôce Cafeteria", Slug = sSlug };
+        Company objCompany = new Company { Name = "Loja Exemplo", Slug = sSlug };
         objDbContext.Companies.Add(objCompany);
         objDbContext.SaveChanges();
         return objCompany;
@@ -29,20 +30,20 @@ public class SettingsControllerTests
     private static SettingsDto CreateDto(
         string sBrand = "#112233",
         string? sLogo = null,
-        string sSsid = "Doce",
+        string sSsid = "Exemplo",
         int iAccessMinutes = 720,
         string? sRedirectUrl = null)
     {
         return new SettingsDto(
             Colors: new ThemeColorsDto(
                 Brand: sBrand,
-                BrandDark: "#8a6d3c",
-                Surface: "#f3ebdd",
-                Card: "#fffdf8",
-                Field: "#fbf7ef",
-                Ink: "#3a3128",
-                Muted: "#9a8c78",
-                Line: "#e7ddcc"),
+                BrandDark: "#1f2937",
+                Surface: "#f3f4f6",
+                Card: "#ffffff",
+                Field: "#f9fafb",
+                Ink: "#111827",
+                Muted: "#6b7280",
+                Line: "#e5e7eb"),
             Logo: sLogo,
             Favicon: null,
             Banner: null,
@@ -76,18 +77,18 @@ public class SettingsControllerTests
     }
 
     [Fact]
-    public async Task Get_UnidadeSemLinhaGravada_DevolveOsPadroesDaMarca()
+    public async Task Get_UnidadeSemLinhaGravada_DevolveOPadraoNeutro()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
-        string sUnitSlug = CreateUnit(objDbContext, objCompany.Id, "doce-matriz");
+        string sUnitSlug = CreateUnit(objDbContext, objCompany.Id, "exemplo-matriz");
         SettingsController objController = new SettingsController(objDbContext);
 
         ActionResult<SettingsDto> objResult = await objController.Get(sUnitSlug, null, null, CancellationToken.None);
 
         OkObjectResult objOk = Assert.IsType<OkObjectResult>(objResult.Result);
         SettingsDto objSettings = Assert.IsType<SettingsDto>(objOk.Value);
-        Assert.Equal("#c8a46d", objSettings.Colors.Brand);
+        Assert.Equal("#4b5563", objSettings.Colors.Brand);
         Assert.Null(objSettings.Logo);
         Assert.Equal(1440, objSettings.AccessMinutes);
     }
@@ -97,7 +98,7 @@ public class SettingsControllerTests
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
-        string sUnitSlug = CreateUnit(objDbContext, objCompany.Id, "doce-matriz");
+        string sUnitSlug = CreateUnit(objDbContext, objCompany.Id, "exemplo-matriz");
         SettingsController objController = new SettingsController(objDbContext);
         TestHelpers.SetUser(objController, objCompany.Id);
 
@@ -121,7 +122,7 @@ public class SettingsControllerTests
     public async Task Put_DuasEmpresas_CadaUmaTemSuaLinha()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
-        Company objCompanyA = CreateCompany(objDbContext, "doce");
+        Company objCompanyA = CreateCompany(objDbContext, "exemplo");
         Company objCompanyB = CreateCompany(objDbContext, "outra");
         SettingsController objController = new SettingsController(objDbContext);
 
@@ -163,7 +164,7 @@ public class SettingsControllerTests
         TestHelpers.SetUser(objController, null); // super admin
 
         ActionResult<SettingsDto> objResult =
-            await objController.Put(CreateDto(), "doce", CancellationToken.None);
+            await objController.Put(CreateDto(), "exemplo", CancellationToken.None);
 
         Assert.IsType<OkObjectResult>(objResult.Result);
         Assert.Equal(objCompany.Id, objDbContext.PortalSettings.Single().IDCompany);
@@ -219,21 +220,21 @@ public class SettingsControllerTests
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
-        string sUnitSlug = CreateUnit(objDbContext, objCompany.Id, "doce-matriz");
+        string sUnitSlug = CreateUnit(objDbContext, objCompany.Id, "exemplo-matriz");
         SettingsController objController = new SettingsController(objDbContext);
         TestHelpers.SetUser(objController, objCompany.Id);
 
         await objController.Put(
-            CreateDto(sRedirectUrl: "https://instagram.com/doce"), null, CancellationToken.None);
+            CreateDto(sRedirectUrl: "https://instagram.com/exemplo"), null, CancellationToken.None);
 
         Assert.Equal(
-            "https://instagram.com/doce",
+            "https://instagram.com/exemplo",
             objDbContext.PortalSettings.Single().RedirectUrl);
 
         ActionResult<SettingsDto> objGetResult = await objController.Get(sUnitSlug, null, null, CancellationToken.None);
         SettingsDto objLoaded =
             Assert.IsType<SettingsDto>(Assert.IsType<OkObjectResult>(objGetResult.Result).Value);
-        Assert.Equal("https://instagram.com/doce", objLoaded.RedirectUrl);
+        Assert.Equal("https://instagram.com/exemplo", objLoaded.RedirectUrl);
     }
 
     [Fact]
@@ -264,5 +265,161 @@ public class SettingsControllerTests
         ErrorResponse objError = Assert.IsType<ErrorResponse>(objBadRequest.Value);
         Assert.Contains("redirecionamento", objError.Error);
         Assert.Empty(objDbContext.PortalSettings);
+    }
+
+    // ---- Imagens fora da resposta do tema (portal) e leitura do editor (painel) ----
+
+    private const string LogoPng = "data:image/png;base64,iVBORw0KGgo=";
+
+    /// <summary>Empresa com tema gravado (logo, sem favicon e sem banner) e uma unidade.</summary>
+    private static (Company objCompany, string sUnitSlug) CreateCompanyWithLogo(AppDbContext objDbContext)
+    {
+        Company objCompany = CreateCompany(objDbContext);
+        string sUnitSlug = CreateUnit(objDbContext, objCompany.Id, "exemplo-matriz");
+        objDbContext.PortalSettings.Add(new PortalSettings { IDCompany = objCompany.Id, Ssid = "Exemplo", Logo = LogoPng });
+        objDbContext.SaveChanges();
+        return (objCompany, sUnitSlug);
+    }
+
+    private static SettingsController CreateAnonymousController(AppDbContext objDbContext)
+    {
+        return new SettingsController(objDbContext)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
+        };
+    }
+
+    [Fact]
+    public async Task Get_ComLogo_DevolveOEnderecoDaImagemEmVezDosDados()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        (_, string sUnitSlug) = CreateCompanyWithLogo(objDbContext);
+        SettingsController objController = CreateAnonymousController(objDbContext);
+
+        ActionResult<SettingsDto> objResult = await objController.Get(sUnitSlug, null, null, CancellationToken.None);
+
+        SettingsDto objSettings = Assert.IsType<SettingsDto>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
+        Assert.Equal($"/settings/image/exemplo-matriz/logo?v={PortalImage.Version(LogoPng)}", objSettings.Logo);
+        Assert.Null(objSettings.Favicon);
+        Assert.Null(objSettings.Banner);
+        Assert.Equal("exemplo-matriz", objSettings.Unit);
+    }
+
+    [Fact]
+    public async Task GetImage_VersaoAtual_DevolveOArquivoGuardadoPorUmAno()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        (_, string sUnitSlug) = CreateCompanyWithLogo(objDbContext);
+        SettingsController objController = CreateAnonymousController(objDbContext);
+
+        IActionResult objResult = await objController.GetImage(
+            sUnitSlug, "logo", PortalImage.Version(LogoPng), CancellationToken.None);
+
+        FileContentResult objFile = Assert.IsType<FileContentResult>(objResult);
+        Assert.Equal("image/png", objFile.ContentType);
+        Assert.Equal(Convert.FromBase64String("iVBORw0KGgo="), objFile.FileContents);
+        Assert.Equal("public, max-age=31536000, immutable", objController.Response.Headers.CacheControl.ToString());
+        Assert.Contains("sandbox", objController.Response.Headers["Content-Security-Policy"].ToString());
+    }
+
+    [Fact]
+    public async Task GetImage_VersaoAntiga_EntregaAAtualSemGuardarParaSempre()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        (_, string sUnitSlug) = CreateCompanyWithLogo(objDbContext);
+        SettingsController objController = CreateAnonymousController(objDbContext);
+
+        IActionResult objResult = await objController.GetImage(sUnitSlug, "logo", "versao-velha", CancellationToken.None);
+
+        Assert.IsType<FileContentResult>(objResult);
+        Assert.Equal("no-cache", objController.Response.Headers.CacheControl.ToString());
+    }
+
+    [Theory]
+    [InlineData("exemplo-matriz", "banner")] // empresa sem banner
+    [InlineData("exemplo-matriz", "senha")] // tipo que não existe
+    [InlineData("nada", "logo")] // unidade que não existe
+    public async Task GetImage_SemImagem_Retorna404(string sUnitSlug, string sKind)
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        CreateCompanyWithLogo(objDbContext);
+        SettingsController objController = CreateAnonymousController(objDbContext);
+
+        IActionResult objResult = await objController.GetImage(sUnitSlug, sKind, null, CancellationToken.None);
+
+        Assert.IsType<NotFoundResult>(objResult);
+    }
+
+    [Fact]
+    public async Task GetImage_UnidadeDesativada_Retorna404()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        (_, string sUnitSlug) = CreateCompanyWithLogo(objDbContext);
+        objDbContext.Units.Single().Active = false;
+        objDbContext.SaveChanges();
+        SettingsController objController = CreateAnonymousController(objDbContext);
+
+        IActionResult objResult = await objController.GetImage(sUnitSlug, "logo", null, CancellationToken.None);
+
+        Assert.IsType<NotFoundResult>(objResult);
+    }
+
+    [Theory]
+    [InlineData("data:image/png;base64,iVBORw0KGgo=", true, "image/png")]
+    [InlineData("data:image/svg+xml;base64,PHN2Zy8+", true, "image/svg+xml")]
+    [InlineData("data:text/html;base64,PGgxPg==", false, "")] // não é imagem
+    [InlineData("data:image/png,naoebase64", false, "")]
+    [InlineData("data:image/png;base64,%%%", false, "")]
+    [InlineData("https://exemplo.com/logo.png", false, "")]
+    public void PortalImage_TryDecode_SoAceitaImagemEmBase64(string sDataUrl, bool bEsperado, string sTipo)
+    {
+        bool bOk = PortalImage.TryDecode(sDataUrl, out _, out string sContentType);
+
+        Assert.Equal(bEsperado, bOk);
+        Assert.Equal(sTipo, sContentType);
+    }
+
+    [Fact]
+    public async Task GetAdmin_AdminDaEmpresa_DevolveAsImagensInteirasSemPrecisarDeUnidade()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext);
+        objDbContext.PortalSettings.Add(new PortalSettings { IDCompany = objCompany.Id, Ssid = "Exemplo", Logo = LogoPng });
+        objDbContext.SaveChanges();
+        SettingsController objController = new SettingsController(objDbContext);
+        TestHelpers.SetUser(objController, objCompany.Id);
+
+        ActionResult<SettingsDto> objResult = await objController.GetAdmin(null, CancellationToken.None);
+
+        SettingsDto objSettings = Assert.IsType<SettingsDto>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
+        Assert.Equal(LogoPng, objSettings.Logo);
+        Assert.Equal("Exemplo", objSettings.Ssid);
+    }
+
+    [Fact]
+    public async Task GetAdmin_EmpresaSemTemaGravado_DevolveOPadraoNeutro()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        CreateCompany(objDbContext);
+        SettingsController objController = new SettingsController(objDbContext);
+        TestHelpers.SetUser(objController, null); // super admin
+
+        ActionResult<SettingsDto> objResult = await objController.GetAdmin("exemplo", CancellationToken.None);
+
+        SettingsDto objSettings = Assert.IsType<SettingsDto>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
+        Assert.Equal("#4b5563", objSettings.Colors.Brand);
+        Assert.Equal("#1f2937", objSettings.Colors.BrandDark);
+        Assert.Null(objSettings.Logo);
+    }
+
+    [Fact]
+    public async Task GetAdmin_SuperAdminSemEmpresa_Retorna400EEmpresaInexistente404()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        SettingsController objController = new SettingsController(objDbContext);
+        TestHelpers.SetUser(objController, null); // super admin
+
+        Assert.IsType<BadRequestObjectResult>((await objController.GetAdmin(null, CancellationToken.None)).Result);
+        Assert.IsType<NotFoundObjectResult>((await objController.GetAdmin("nada", CancellationToken.None)).Result);
     }
 }

@@ -1,6 +1,12 @@
 # Proposta — Portal já abre com o tema da Regional (sem passar pelo padrão)
 
-> **Status (2026-10-01): aguardando o "ok" nas decisões (seção 5).** Nada foi implementado ainda.
+> **Status (09/10/2026): substituída — não será implementada.** Desde 08/10 todas as lojas usam o mesmo
+> endereço (a loja sai do ponto de acesso), então fixar o tema de uma empresa no endereço deixaria as outras
+> com a cor errada. No lugar dela: o portal não mostra nada até o tema certo chegar (no máximo 4 s; depois
+> abre no neutro), o tema veio de ~100 KB para ~1 KB (imagens em endereço próprio, guardadas no celular)
+> e o celular guarda o tema por loja para quem volta. Empresa sem tema abre num padrão neutro.
+>
+> *Antes:* aguardando o "ok" nas decisões (seção 5).
 > Já publicado à parte: o exemplo do telefone no portal virou **(93) 90000-0000** (front `4b16fec`).
 
 ## 1. Entendimento do pedido
@@ -30,7 +36,7 @@ O que está na produção (consulta só de leitura, 01/10):
 | Empresa | Logo | Favicon | Banner | Endereço do portal |
 | --- | --- | --- | --- | --- |
 | **Regional** (unidade Itaituba) | **121 KB** | 4 KB | 61 KB | `vps11702.panel.icontainer.online` |
-| Dôce Cafeteria (Matriz) | 38 KB | 1 KB | 119 KB | *(nenhum)* |
+| Empresa de teste (Matriz) | 38 KB | 1 KB | 119 KB | *(nenhum)* |
 
 **Por que pisca:** a resposta do `/settings` da Regional tem uns **186 KB** (as três imagens em texto). O
 portal desenha a tela padrão e só troca quando essa resposta inteira chega — num Wi-Fi fraco, isso é

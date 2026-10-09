@@ -82,7 +82,7 @@ O `consoleId` é exatamente o pedaço do link que o cliente mandou:
 
 Cada unidade passa a ter um **modo de conexão**:
 
-- **`Local`** — o que existe hoje (Dôce Cafeteria continua igual, sem mexer em nada).
+- **`Local`** — o que existe hoje (a empresa de teste continua igual, sem mexer em nada).
 - **`Cloud`** — o caminho novo, para quem não tem IP público (Itaituba).
 
 Campos novos em `CompanyUnifi` (viram colunas `Unifi_*` em `Units`, migration não destrutiva):
@@ -124,7 +124,7 @@ Campos novos em `CompanyUnifi` (viram colunas `Unifi_*` em `Units`, migration n�
 
 > 🔐 **Alerta de escopo da chave (descoberto no teste real).** A chave do Site Manager é da **conta**,
 > não do console. A chave usada no teste dá acesso `owner`/`admin` a **43 consoles** do integrador —
-> incluindo clientes que não são nossos e a própria Dôce Cafeteria.
+> incluindo clientes que não são nossos e a própria empresa de teste.
 >
 > Guardar uma chave dessas no nosso banco significa que um vazamento do nosso servidor entrega a rede
 > de dezenas de empresas. **Isso é risco de terceiro que não queremos carregar.** Antes de ir para

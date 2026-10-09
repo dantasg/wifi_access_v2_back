@@ -41,9 +41,9 @@ public class AuthorizeControllerTests
     }
 
     /// <summary>Cria empresa + unidade (com a controladora) e devolve a unidade.</summary>
-    private static Unit CreateUnit(AppDbContext objDbContext, string sUnitSlug = "doce-matriz")
+    private static Unit CreateUnit(AppDbContext objDbContext, string sUnitSlug = "exemplo-matriz")
     {
-        Company objCompany = new Company { Name = "Dôce Cafeteria", Slug = "doce" };
+        Company objCompany = new Company { Name = "Loja Exemplo", Slug = "exemplo" };
         objDbContext.Companies.Add(objCompany);
         Unit objUnit = new Unit
         {
@@ -58,7 +58,7 @@ public class AuthorizeControllerTests
     }
 
     private static AuthorizeRequest CreateRequest(
-        string? sUnit = "doce-matriz", string? sMac = "AA:BB:CC:DD:EE:FF", bool consentimento = true)
+        string? sUnit = "exemplo-matriz", string? sMac = "AA:BB:CC:DD:EE:FF", bool consentimento = true)
     {
         return new AuthorizeRequest(
             Nome: "Ana Beatriz Souza",
@@ -69,8 +69,8 @@ public class AuthorizeControllerTests
             Unit: sUnit,
             Mac: sMac,
             Ap: "11:22:33:44:55:66",
-            Ssid: "Doce",
-            Url: "https://www.doce.com.br");
+            Ssid: "Exemplo",
+            Url: "https://www.exemplo.com.br");
     }
 
     private static AuthorizeController CreateController(AppDbContext objDbContext, IUnifiClient objUnifiClient)
@@ -171,7 +171,7 @@ public class AuthorizeControllerTests
         OkObjectResult objOk = Assert.IsType<OkObjectResult>(objResult.Result);
         AuthorizeResponse objResponse = Assert.IsType<AuthorizeResponse>(objOk.Value);
         Assert.True(objResponse.Authorized);
-        Assert.Equal("https://www.doce.com.br", objResponse.Redirect);
+        Assert.Equal("https://www.exemplo.com.br", objResponse.Redirect);
 
         Assert.Equal("AA:BB:CC:DD:EE:FF", objUnifiClient.SMacAutorizado);
         Assert.Same(objUnit.Unifi, objUnifiClient.ObjConfigRecebida);
@@ -235,7 +235,7 @@ public class AuthorizeControllerTests
         objDbContext.PortalSettings.Add(new PortalSettings
         {
             IDCompany = objUnit.IDCompany,
-            RedirectUrl = "https://instagram.com/doce",
+            RedirectUrl = "https://instagram.com/exemplo",
         });
         objDbContext.SaveChanges();
         AuthorizeController objController = CreateController(objDbContext, new FakeUnifiClient());
@@ -246,7 +246,7 @@ public class AuthorizeControllerTests
         OkObjectResult objOk = Assert.IsType<OkObjectResult>(objResult.Result);
         AuthorizeResponse objResponse = Assert.IsType<AuthorizeResponse>(objOk.Value);
         // A URL da empresa vence a URL enviada pela UniFi no request.
-        Assert.Equal("https://instagram.com/doce", objResponse.Redirect);
+        Assert.Equal("https://instagram.com/exemplo", objResponse.Redirect);
     }
 
     [Fact]
@@ -254,11 +254,11 @@ public class AuthorizeControllerTests
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Unit objUnit = CreateUnit(objDbContext);
-        objUnit.RedirectUrl = "https://instagram.com/doce-matriz";
+        objUnit.RedirectUrl = "https://instagram.com/exemplo-matriz";
         objDbContext.PortalSettings.Add(new PortalSettings
         {
             IDCompany = objUnit.IDCompany,
-            RedirectUrl = "https://instagram.com/doce",
+            RedirectUrl = "https://instagram.com/exemplo",
         });
         objDbContext.SaveChanges();
         AuthorizeController objController = CreateController(objDbContext, new FakeUnifiClient());
@@ -268,7 +268,7 @@ public class AuthorizeControllerTests
 
         AuthorizeResponse objResponse = Assert.IsType<AuthorizeResponse>(
             Assert.IsType<OkObjectResult>(objResult.Result).Value);
-        Assert.Equal("https://instagram.com/doce-matriz", objResponse.Redirect);
+        Assert.Equal("https://instagram.com/exemplo-matriz", objResponse.Redirect);
     }
 
     [Fact]
@@ -276,7 +276,7 @@ public class AuthorizeControllerTests
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Unit objUnit = CreateUnit(objDbContext);
-        objUnit.RedirectUrl = "https://instagram.com/doce-matriz";
+        objUnit.RedirectUrl = "https://instagram.com/exemplo-matriz";
         objDbContext.SaveChanges();
         AuthorizeController objController = CreateController(objDbContext, new FakeUnifiClient());
 
@@ -286,7 +286,7 @@ public class AuthorizeControllerTests
         AuthorizeResponse objResponse = Assert.IsType<AuthorizeResponse>(
             Assert.IsType<OkObjectResult>(objResult.Result).Value);
         // Vence também a URL que a UniFi mandou no request.
-        Assert.Equal("https://instagram.com/doce-matriz", objResponse.Redirect);
+        Assert.Equal("https://instagram.com/exemplo-matriz", objResponse.Redirect);
     }
 
     [Fact]
@@ -316,7 +316,7 @@ public class AuthorizeControllerTests
 
         OkObjectResult objOk = Assert.IsType<OkObjectResult>(objResult.Result);
         AuthorizeResponse objResponse = Assert.IsType<AuthorizeResponse>(objOk.Value);
-        Assert.Equal("https://www.doce.com.br", objResponse.Redirect);
+        Assert.Equal("https://www.exemplo.com.br", objResponse.Redirect);
     }
 
     [Fact]

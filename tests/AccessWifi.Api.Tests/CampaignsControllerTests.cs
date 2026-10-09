@@ -196,15 +196,15 @@ public class CampaignsControllerTests
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objRegional = CreateCompany(objDbContext, "regional", CampaignKind.Birthday);
-        Company objDoce = CreateCompany(objDbContext, "doce", CampaignKind.Birthday);
+        Company objExemplo = CreateCompany(objDbContext, "exemplo", CampaignKind.Birthday);
         CampaignDetailDto objDaRegional = Ok(await CreateController(objDbContext, objRegional.Id).Create(
             new SaveCampaignRequest(CampaignKind.Birthday, "", Aniversario()), null, CancellationToken.None));
-        CampaignsController objAdminDoce = CreateController(objDbContext, objDoce.Id);
+        CampaignsController objAdminExemplo = CreateController(objDbContext, objExemplo.Id);
 
-        Assert.IsType<NotFoundObjectResult>((await objAdminDoce.Get(objDaRegional.Id, null, CancellationToken.None)).Result);
-        Assert.IsType<NotFoundObjectResult>((await objAdminDoce.Pause(objDaRegional.Id, null, CancellationToken.None)).Result);
+        Assert.IsType<NotFoundObjectResult>((await objAdminExemplo.Get(objDaRegional.Id, null, CancellationToken.None)).Result);
+        Assert.IsType<NotFoundObjectResult>((await objAdminExemplo.Pause(objDaRegional.Id, null, CancellationToken.None)).Result);
         // Mesmo mandando ?company=regional: o admin de empresa fica preso à própria.
-        Assert.IsType<NotFoundObjectResult>((await objAdminDoce.Get(objDaRegional.Id, "regional", CancellationToken.None)).Result);
+        Assert.IsType<NotFoundObjectResult>((await objAdminExemplo.Get(objDaRegional.Id, "regional", CancellationToken.None)).Result);
     }
 
     [Fact]

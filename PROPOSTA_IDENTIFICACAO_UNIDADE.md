@@ -78,7 +78,7 @@ Cada unidade ganha um subdomínio, e o front descobre a unidade pelo próprio en
 
 ```
 itaituba.wifi.seudominio.com.br   → unidade "itaituba"
-doce-matriz.wifi.seudominio.com.br → unidade "doce-matriz"
+exemplo-matriz.wifi.seudominio.com.br → unidade "exemplo-matriz"
 ```
 
 No front, uma linha: se não houver `?unit=`, usa o primeiro pedaço do hostname.

@@ -12,9 +12,9 @@ namespace AccessWifi.Api.Tests;
 
 public class UnitsControllerTests
 {
-    private static Company CreateCompany(AppDbContext objDbContext, string sSlug = "doce")
+    private static Company CreateCompany(AppDbContext objDbContext, string sSlug = "exemplo")
     {
-        Company objCompany = new Company { Name = "Dôce Cafeteria", Slug = sSlug };
+        Company objCompany = new Company { Name = "Loja Exemplo", Slug = sSlug };
         objDbContext.Companies.Add(objCompany);
         objDbContext.SaveChanges();
         return objCompany;
@@ -55,7 +55,7 @@ public class UnitsControllerTests
         }
     }
 
-    private static CreateUnitRequest CreateRequest(Guid objCompanyId, string sSlug = "doce-matriz")
+    private static CreateUnitRequest CreateRequest(Guid objCompanyId, string sSlug = "exemplo-matriz")
     {
         return new CreateUnitRequest(
             IDCompany: objCompanyId,
@@ -82,7 +82,7 @@ public class UnitsControllerTests
 
         OkObjectResult objOk = Assert.IsType<OkObjectResult>(objResult.Result);
         UnitDto objUnit = Assert.IsType<UnitDto>(objOk.Value);
-        Assert.Equal("doce-matriz", objUnit.Slug);
+        Assert.Equal("exemplo-matriz", objUnit.Slug);
         Assert.Equal("https://192.168.1.1", objUnit.Unifi.Host);
 
         // A senha fica só na entidade (o DTO não tem a propriedade) e é guardada CIFRADA.
@@ -111,7 +111,7 @@ public class UnitsControllerTests
     public async Task Create_SlugDuplicadoGlobalmente_Retorna400()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
-        Company objCompanyA = CreateCompany(objDbContext, "doce");
+        Company objCompanyA = CreateCompany(objDbContext, "exemplo");
         Company objCompanyB = CreateCompany(objDbContext, "outra");
         UnitsController objController = CreateController(objDbContext);
         await objController.Create(CreateRequest(objCompanyA.Id, "matriz"), CancellationToken.None);
@@ -177,12 +177,12 @@ public class UnitsControllerTests
         UnitsController objController = CreateController(objDbContext);
 
         ActionResult<UnitDto> objResult = await objController.Create(
-            CreateRequest(objCompany.Id) with { RedirectUrl = "  https://instagram.com/doce-matriz  " },
+            CreateRequest(objCompany.Id) with { RedirectUrl = "  https://instagram.com/exemplo-matriz  " },
             CancellationToken.None);
 
         UnitDto objDto = Assert.IsType<UnitDto>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
-        Assert.Equal("https://instagram.com/doce-matriz", objDto.RedirectUrl);
-        Assert.Equal("https://instagram.com/doce-matriz", objDbContext.Units.Single().RedirectUrl);
+        Assert.Equal("https://instagram.com/exemplo-matriz", objDto.RedirectUrl);
+        Assert.Equal("https://instagram.com/exemplo-matriz", objDbContext.Units.Single().RedirectUrl);
     }
 
     [Fact]
@@ -204,8 +204,8 @@ public class UnitsControllerTests
         Company objCompany = CreateCompany(objDbContext);
         Unit objUnit = new Unit
         {
-            IDCompany = objCompany.Id, Name = "Matriz", Slug = "doce-matriz",
-            RedirectUrl = "https://instagram.com/doce-matriz",
+            IDCompany = objCompany.Id, Name = "Matriz", Slug = "exemplo-matriz",
+            RedirectUrl = "https://instagram.com/exemplo-matriz",
         };
         objDbContext.Units.Add(objUnit);
         objDbContext.SaveChanges();
@@ -214,7 +214,7 @@ public class UnitsControllerTests
         await objController.Update(
             objUnit.Id, new UpdateUnitRequest("Matriz Centro", true, null), CancellationToken.None);
 
-        Assert.Equal("https://instagram.com/doce-matriz", objUnit.RedirectUrl);
+        Assert.Equal("https://instagram.com/exemplo-matriz", objUnit.RedirectUrl);
         Assert.Equal("Matriz Centro", objUnit.Name);
     }
 
@@ -225,8 +225,8 @@ public class UnitsControllerTests
         Company objCompany = CreateCompany(objDbContext);
         Unit objUnit = new Unit
         {
-            IDCompany = objCompany.Id, Name = "Matriz", Slug = "doce-matriz",
-            RedirectUrl = "https://instagram.com/doce-matriz",
+            IDCompany = objCompany.Id, Name = "Matriz", Slug = "exemplo-matriz",
+            RedirectUrl = "https://instagram.com/exemplo-matriz",
         };
         objDbContext.Units.Add(objUnit);
         objDbContext.SaveChanges();
@@ -244,7 +244,7 @@ public class UnitsControllerTests
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
-        Unit objUnit = new Unit { IDCompany = objCompany.Id, Name = "Matriz", Slug = "doce-matriz" };
+        Unit objUnit = new Unit { IDCompany = objCompany.Id, Name = "Matriz", Slug = "exemplo-matriz" };
         objDbContext.Units.Add(objUnit);
         objDbContext.SaveChanges();
         UnitsController objController = CreateController(objDbContext);
@@ -282,7 +282,7 @@ public class UnitsControllerTests
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Company objCompany = CreateCompany(objDbContext);
-        Unit objUnit = new Unit { IDCompany = objCompany.Id, Name = "Matriz", Slug = "doce-matriz", Email = "a@a.com" };
+        Unit objUnit = new Unit { IDCompany = objCompany.Id, Name = "Matriz", Slug = "exemplo-matriz", Email = "a@a.com" };
         objDbContext.Units.Add(objUnit);
         objDbContext.SaveChanges();
 
@@ -298,10 +298,10 @@ public class UnitsControllerTests
     public async Task GetAll_SuperAdminComFiltroDeEmpresa_SoTrazAsUnidadesDaEmpresa()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
-        Company objCompanyA = CreateCompany(objDbContext, "doce");
+        Company objCompanyA = CreateCompany(objDbContext, "exemplo");
         Company objCompanyB = CreateCompany(objDbContext, "outra");
         UnitsController objController = CreateController(objDbContext);
-        await objController.Create(CreateRequest(objCompanyA.Id, "doce-um"), CancellationToken.None);
+        await objController.Create(CreateRequest(objCompanyA.Id, "exemplo-um"), CancellationToken.None);
         await objController.Create(CreateRequest(objCompanyB.Id, "outra-um"), CancellationToken.None);
         TestHelpers.SetUser(objController, null); // super admin
 
@@ -311,17 +311,17 @@ public class UnitsControllerTests
         List<UnitDto> objUnits =
             Assert.IsType<List<UnitDto>>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
         UnitDto objUnit = Assert.Single(objUnits);
-        Assert.Equal("doce-um", objUnit.Slug);
+        Assert.Equal("exemplo-um", objUnit.Slug);
     }
 
     [Fact]
     public async Task GetAll_AdminDeEmpresa_SoVeAsUnidadesDaPropriaEmpresaIgnorandoFiltro()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
-        Company objCompanyA = CreateCompany(objDbContext, "doce");
+        Company objCompanyA = CreateCompany(objDbContext, "exemplo");
         Company objCompanyB = CreateCompany(objDbContext, "outra");
         UnitsController objController = CreateController(objDbContext);
-        await objController.Create(CreateRequest(objCompanyA.Id, "doce-um"), CancellationToken.None);
+        await objController.Create(CreateRequest(objCompanyA.Id, "exemplo-um"), CancellationToken.None);
         await objController.Create(CreateRequest(objCompanyB.Id, "outra-um"), CancellationToken.None);
         TestHelpers.SetCompanyUser(objController, objDbContext, objCompanyA.Id); // admin da empresa A
 
@@ -332,7 +332,7 @@ public class UnitsControllerTests
         List<UnitDto> objUnits =
             Assert.IsType<List<UnitDto>>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
         UnitDto objUnit = Assert.Single(objUnits);
-        Assert.Equal("doce-um", objUnit.Slug);
+        Assert.Equal("exemplo-um", objUnit.Slug);
     }
 
     // ------------------------------------------------------------------ Modo nuvem (D1/D2/D3/D7)

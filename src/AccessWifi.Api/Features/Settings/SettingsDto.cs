@@ -26,6 +26,20 @@ public record SettingsDto(
             RedirectUrl: objSettings.RedirectUrl,
             Unit: sUnitSlug);
     }
+
+    /// <summary>
+    /// Leitura do portal: as imagens vão como endereço (<see cref="PortalImage"/>), não como dados. A
+    /// resposta cai de ~100 KB para ~1 KB, e o tema chega antes ao celular do visitante.
+    /// </summary>
+    public static SettingsDto ForPortal(PortalSettings objSettings, string sUnitSlug)
+    {
+        return FromEntity(objSettings, sUnitSlug) with
+        {
+            Logo = PortalImage.Url(sUnitSlug, PortalImage.Logo, objSettings.Logo),
+            Favicon = PortalImage.Url(sUnitSlug, PortalImage.Favicon, objSettings.Favicon),
+            Banner = PortalImage.Url(sUnitSlug, PortalImage.Banner, objSettings.Banner),
+        };
+    }
 }
 
 public record ThemeColorsDto(

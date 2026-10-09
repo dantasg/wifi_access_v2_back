@@ -32,16 +32,20 @@ namespace Models.DataBase
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     }
 
-    /// <summary>Paleta editável no admin — espelha ThemeColors de src/theme/theme.ts do front.</summary>
+    /// <summary>
+    /// Paleta editável no admin — espelha ThemeColors de src/theme/theme.ts do front. Os padrões são
+    /// neutros (branco, cinza e botão escuro): empresa nova sem tema salvo não parece marca de ninguém.
+    /// Os mesmos valores estão em <c>neutralColors</c> no front.
+    /// </summary>
     public class ThemeColors
     {
-        public string Brand { get; set; } = "#c8a46d";
-        public string BrandDark { get; set; } = "#8a6d3c";
-        public string Surface { get; set; } = "#f3ebdd";
-        public string Card { get; set; } = "#fffdf8";
-        public string Field { get; set; } = "#fbf7ef";
-        public string Ink { get; set; } = "#3a3128";
-        public string Muted { get; set; } = "#9a8c78";
-        public string Line { get; set; } = "#e7ddcc";
+        public string Brand { get; set; } = "#4b5563";
+        public string BrandDark { get; set; } = "#1f2937";
+        public string Surface { get; set; } = "#f3f4f6";
+        public string Card { get; set; } = "#ffffff";
+        public string Field { get; set; } = "#f9fafb";
+        public string Ink { get; set; } = "#111827";
+        public string Muted { get; set; } = "#6b7280";
+        public string Line { get; set; } = "#e5e7eb";
     }
 }

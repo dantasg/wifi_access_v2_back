@@ -118,15 +118,15 @@ public class PortalHostTests
         // Não quebra nada que já esteja configurado com "?unit=".
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         CreateUnit(objDbContext, "itaituba", HostItaituba);
-        CreateUnit(objDbContext, "doce-matriz", "doce.wifi.exemplo.com.br", "doce");
+        CreateUnit(objDbContext, "exemplo-matriz", "exemplo.wifi.exemplo.com.br", "exemplo");
         SettingsController objController = new SettingsController(objDbContext);
 
         ActionResult<SettingsDto> objResult =
-            await objController.Get("doce-matriz", HostItaituba, null, CancellationToken.None);
+            await objController.Get("exemplo-matriz", HostItaituba, null, CancellationToken.None);
 
         SettingsDto objSettings =
             Assert.IsType<SettingsDto>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
-        Assert.Equal("doce-matriz", objSettings.Unit);
+        Assert.Equal("exemplo-matriz", objSettings.Unit);
     }
 
     [Fact]
@@ -159,7 +159,7 @@ public class PortalHostTests
     {
         // Unidades sem host ficam com "" no banco: um host vazio não pode "achar" qualquer uma.
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
-        CreateUnit(objDbContext, "doce-matriz", "", "doce");
+        CreateUnit(objDbContext, "exemplo-matriz", "", "exemplo");
         SettingsController objController = new SettingsController(objDbContext);
 
         ActionResult<SettingsDto> objResult =
@@ -175,7 +175,7 @@ public class PortalHostTests
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
         Unit objUnit = CreateUnit(objDbContext, "itaituba", HostItaituba);
-        CreateUnit(objDbContext, "doce-matriz", "doce.wifi.exemplo.com.br", "doce");
+        CreateUnit(objDbContext, "exemplo-matriz", "exemplo.wifi.exemplo.com.br", "exemplo");
         AuthorizeController objController = new AuthorizeController(
             objDbContext, new FakeUnifiClient(), NullLogger<AuthorizeController>.Instance);
 

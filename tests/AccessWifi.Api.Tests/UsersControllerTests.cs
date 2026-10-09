@@ -26,7 +26,7 @@ public class UsersControllerTests
 
     private static Company CreateCompany(AppDbContext objDbContext)
     {
-        Company objCompany = new Company { Name = "Dôce Cafeteria", Slug = "doce" };
+        Company objCompany = new Company { Name = "Loja Exemplo", Slug = "exemplo" };
         objDbContext.Companies.Add(objCompany);
         objDbContext.SaveChanges();
         return objCompany;
@@ -53,7 +53,7 @@ public class UsersControllerTests
 
         UserDto objUser = Assert.IsType<UserDto>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
         Assert.False(objUser.Active);
-        Assert.Equal("Dôce Cafeteria", objUser.CompanyName);
+        Assert.Equal("Loja Exemplo", objUser.CompanyName);
         Assert.False(objDbContext.Users.Single(user => user.Id == objAdmin.Id).Active);
     }
 

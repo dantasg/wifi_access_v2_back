@@ -32,7 +32,7 @@ O que está gravado na produção agora:
 | Empresa | URL "geral" | Unidades |
 | --- | --- | --- |
 | Lojas Regional | `https://www.instagram.com/lojasregionalitaituba/` | Itaituba |
-| Dôce Cafeteria | *(vazio — vai para a URL da UniFi)* | Matriz |
+| Empresa de teste | *(vazio — vai para a URL da UniFi)* | Matriz |
 
 ---
 

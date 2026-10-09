@@ -59,7 +59,7 @@ public class AdminControllerTests
     public async Task Login_CredenciaisValidas_DevolveTokenRoleEEmpresa()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
-        Company objCompany = CreateCompany(objDbContext, "doce");
+        Company objCompany = CreateCompany(objDbContext, "exemplo");
         CreateUser(objDbContext, "admin", objCompany.Id);
         AdminController objController = CreateController(objDbContext);
 
@@ -71,7 +71,7 @@ public class AdminControllerTests
         Assert.NotEmpty(objResponse.Token);
         Assert.Equal("admin", objResponse.Role);
         Assert.NotNull(objResponse.Company);
-        Assert.Equal("doce", objResponse.Company.Slug);
+        Assert.Equal("exemplo", objResponse.Company.Slug);
     }
 
     [Fact]
@@ -107,7 +107,7 @@ public class AdminControllerTests
     public async Task Login_EmpresaInativa_Retorna401()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
-        Company objCompany = CreateCompany(objDbContext, "doce");
+        Company objCompany = CreateCompany(objDbContext, "exemplo");
         objCompany.Active = false;
         objDbContext.SaveChanges();
         CreateUser(objDbContext, "admin", objCompany.Id);
@@ -123,7 +123,7 @@ public class AdminControllerTests
     public async Task Login_UsuarioInativo_Retorna401MesmoComSenhaCorreta()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
-        CreateUser(objDbContext, "admin", CreateCompany(objDbContext, "doce").Id);
+        CreateUser(objDbContext, "admin", CreateCompany(objDbContext, "exemplo").Id);
         objDbContext.Users.Single().Active = false;
         objDbContext.SaveChanges();
         AdminController objController = CreateController(objDbContext);
@@ -139,7 +139,7 @@ public class AdminControllerTests
     public async Task Refresh_UsuarioDesativadoDepoisDoLogin_Retorna401()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
-        CreateUser(objDbContext, "admin", CreateCompany(objDbContext, "doce").Id);
+        CreateUser(objDbContext, "admin", CreateCompany(objDbContext, "exemplo").Id);
         AdminController objController = CreateController(objDbContext);
         LoginResponse objLogin = Assert.IsType<LoginResponse>(Assert.IsType<OkObjectResult>(
             (await objController.Login(new LoginRequest("admin", "senha-forte"), CancellationToken.None)).Result).Value);
@@ -244,10 +244,10 @@ public class AdminControllerTests
     public async Task GetLeads_AdminDeEmpresa_VeOsLeadsDeTodasAsSuasUnidades()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
-        Company objCompanyA = CreateCompany(objDbContext, "doce");
+        Company objCompanyA = CreateCompany(objDbContext, "exemplo");
         Company objCompanyB = CreateCompany(objDbContext, "outra");
-        Unit objUnitA1 = CreateUnit(objDbContext, objCompanyA.Id, "doce-um");
-        Unit objUnitA2 = CreateUnit(objDbContext, objCompanyA.Id, "doce-dois");
+        Unit objUnitA1 = CreateUnit(objDbContext, objCompanyA.Id, "exemplo-um");
+        Unit objUnitA2 = CreateUnit(objDbContext, objCompanyA.Id, "exemplo-dois");
         Unit objUnitB = CreateUnit(objDbContext, objCompanyB.Id, "outra-um");
         objDbContext.Leads.Add(new Lead { IDUnit = objUnitA1.Id, Nome = "Da Unidade Um" });
         objDbContext.Leads.Add(new Lead { IDUnit = objUnitA2.Id, Nome = "Da Unidade Dois" });
@@ -269,9 +269,9 @@ public class AdminControllerTests
     public async Task GetLeads_ComFiltroDeUnidade_SoVeOsLeadsDaqueleSlug()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
-        Company objCompany = CreateCompany(objDbContext, "doce");
-        Unit objUnit1 = CreateUnit(objDbContext, objCompany.Id, "doce-um");
-        Unit objUnit2 = CreateUnit(objDbContext, objCompany.Id, "doce-dois");
+        Company objCompany = CreateCompany(objDbContext, "exemplo");
+        Unit objUnit1 = CreateUnit(objDbContext, objCompany.Id, "exemplo-um");
+        Unit objUnit2 = CreateUnit(objDbContext, objCompany.Id, "exemplo-dois");
         objDbContext.Leads.Add(new Lead { IDUnit = objUnit1.Id, Nome = "Da Unidade Um" });
         objDbContext.Leads.Add(new Lead { IDUnit = objUnit2.Id, Nome = "Da Unidade Dois" });
         objDbContext.SaveChanges();
@@ -279,21 +279,21 @@ public class AdminControllerTests
         TestHelpers.SetCompanyUser(objController, objDbContext, objCompany.Id);
 
         ActionResult<List<LeadDto>> objResult =
-            await objController.GetLeads(null, "doce-dois", CancellationToken.None);
+            await objController.GetLeads(null, "exemplo-dois", CancellationToken.None);
 
         List<LeadDto> objLeads =
             Assert.IsType<List<LeadDto>>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
         LeadDto objLead = Assert.Single(objLeads);
         Assert.Equal("Da Unidade Dois", objLead.Nome);
-        Assert.Equal("doce-dois", objLead.UnitSlug);
+        Assert.Equal("exemplo-dois", objLead.UnitSlug);
     }
 
     [Fact]
     public async Task GetLeads_TrazOPrimeiroCadastroSeparadoDoUltimoAcesso()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
-        Company objCompany = CreateCompany(objDbContext, "doce");
-        Unit objUnit = CreateUnit(objDbContext, objCompany.Id, "doce-um");
+        Company objCompany = CreateCompany(objDbContext, "exemplo");
+        Unit objUnit = CreateUnit(objDbContext, objCompany.Id, "exemplo-um");
         DateTime dtPrimeiro = new DateTime(2026, 9, 21, 12, 0, 0, DateTimeKind.Utc);
         DateTime dtUltimo = new DateTime(2026, 9, 29, 11, 26, 0, DateTimeKind.Utc);
         objDbContext.Leads.Add(new Lead { IDUnit = objUnit.Id, Nome = "Voltou", CreatedAt = dtPrimeiro, Timestamp = dtUltimo });
@@ -327,11 +327,11 @@ public class AdminControllerTests
     public async Task GetLeads_SuperAdminComSlug_VeOsLeadsDaEmpresaIndicada()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();
-        Company objCompanyA = CreateCompany(objDbContext, "doce");
+        Company objCompanyA = CreateCompany(objDbContext, "exemplo");
         Company objCompanyB = CreateCompany(objDbContext, "outra");
-        Unit objUnitA = CreateUnit(objDbContext, objCompanyA.Id, "doce-um");
+        Unit objUnitA = CreateUnit(objDbContext, objCompanyA.Id, "exemplo-um");
         Unit objUnitB = CreateUnit(objDbContext, objCompanyB.Id, "outra-um");
-        objDbContext.Leads.Add(new Lead { IDUnit = objUnitA.Id, Nome = "Da Dôce" });
+        objDbContext.Leads.Add(new Lead { IDUnit = objUnitA.Id, Nome = "Da Exemplo" });
         objDbContext.Leads.Add(new Lead { IDUnit = objUnitB.Id, Nome = "Da Outra" });
         objDbContext.SaveChanges();
         AdminController objController = CreateController(objDbContext);

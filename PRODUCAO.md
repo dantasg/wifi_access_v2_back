@@ -366,8 +366,6 @@ e `216.22.13.216`.
 
 - **Domínio próprio.** O atual é do provedor e não acompanha uma troca de provedor. Desde 08/10/2026 não
   é mais preciso um endereço por loja (a loja sai do ponto de acesso, §7).
-- **Dôce Cafeteria foi apagada em 01/10/2026** (empresa, unidade e tema; não tinha cadastros) para ser
-  cadastrada de novo. Backup de antes: `/var/backups/accesswifi/doce-antes-de-apagar-20261001-134811.dump`.
 - **Relatório mensal e campanhas por e-mail não saem ainda.** Falta a conta de envio (painel → Configurações
   do sistema, §6) e o e-mail da unidade Itaituba (painel → Unidades → Editar). Os avisos (§7) usam uma
   configuração própria.
