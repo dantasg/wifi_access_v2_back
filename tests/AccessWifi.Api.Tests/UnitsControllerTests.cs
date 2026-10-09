@@ -496,4 +496,56 @@ public class UnitsControllerTests
         NotFoundObjectResult objNotFound = Assert.IsType<NotFoundObjectResult>(objResult.Result);
         Assert.Equal("Unidade não encontrada.", Assert.IsType<ErrorResponse>(objNotFound.Value).Error);
     }
+
+    // ---- DDD da loja (exemplo de telefone no portal) ----
+
+    [Fact]
+    public async Task Create_ComDdd_GravaSoOsDigitos()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext);
+        UnitsController objController = CreateController(objDbContext);
+
+        ActionResult<UnitDto> objResult = await objController.Create(
+            CreateRequest(objCompany.Id) with { Ddd = " (91) " }, CancellationToken.None);
+
+        UnitDto objDto = Assert.IsType<UnitDto>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
+        Assert.Equal("91", objDto.Ddd);
+        Assert.Equal("91", objDbContext.Units.Single().Ddd);
+    }
+
+    [Theory]
+    [InlineData("20")] // não existe
+    [InlineData("9")]
+    [InlineData("911")]
+    public async Task Create_DddInexistente_Retorna400(string sDdd)
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext);
+        UnitsController objController = CreateController(objDbContext);
+
+        ActionResult<UnitDto> objResult = await objController.Create(
+            CreateRequest(objCompany.Id) with { Ddd = sDdd }, CancellationToken.None);
+
+        BadRequestObjectResult objBadRequest = Assert.IsType<BadRequestObjectResult>(objResult.Result);
+        Assert.Contains("DDD", Assert.IsType<ErrorResponse>(objBadRequest.Value).Error);
+        Assert.Empty(objDbContext.Units);
+    }
+
+    [Fact]
+    public async Task Update_DddNuloMantemEVazioVoltaAUsarODaEmpresa()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext);
+        Unit objUnit = new Unit { IDCompany = objCompany.Id, Name = "Matriz", Slug = "exemplo-matriz", Ddd = "93" };
+        objDbContext.Units.Add(objUnit);
+        objDbContext.SaveChanges();
+        UnitsController objController = CreateController(objDbContext);
+
+        await objController.Update(objUnit.Id, new UpdateUnitRequest("Matriz", true, null), CancellationToken.None);
+        Assert.Equal("93", objDbContext.Units.Single().Ddd);
+
+        await objController.Update(objUnit.Id, new UpdateUnitRequest("Matriz", true, null, Ddd: ""), CancellationToken.None);
+        Assert.Equal("", objDbContext.Units.Single().Ddd);
+    }
 }

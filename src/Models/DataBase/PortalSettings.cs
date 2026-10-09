@@ -29,6 +29,12 @@ namespace Models.DataBase
         /// </summary>
         public string? RedirectUrl { get; set; }
 
+        /// <summary>
+        /// DDD do exemplo de telefone no portal ("(91) 90000-0000"). Vale para as unidades sem DDD
+        /// próprio (<see cref="Unit.Ddd"/>). Vazio = o exemplo mostra "(DDD)".
+        /// </summary>
+        public string Ddd { get; set; } = string.Empty;
+
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     }
 

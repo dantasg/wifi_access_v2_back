@@ -64,6 +64,7 @@ namespace Models.Persistence
                 // Mesmo limite da URL "Geral" da empresa (PortalSettings.RedirectUrl).
                 objUnit.Property(unit => unit.RedirectUrl).HasMaxLength(2048);
                 objUnit.Property(unit => unit.Email).HasMaxLength(200);
+                objUnit.Property(unit => unit.Ddd).HasMaxLength(2);
                 objUnit.Property(unit => unit.DevicesSyncError).HasMaxLength(300);
                 objUnit.HasOne<Company>()
                     .WithMany()
@@ -173,6 +174,7 @@ namespace Models.Persistence
             {
                 objSettings.Property(settings => settings.Ssid).HasMaxLength(32);
                 objSettings.Property(settings => settings.RedirectUrl).HasMaxLength(2048);
+                objSettings.Property(settings => settings.Ddd).HasMaxLength(2);
                 objSettings.HasIndex(settings => settings.IDCompany).IsUnique();
                 objSettings.HasOne<Company>()
                     .WithMany()

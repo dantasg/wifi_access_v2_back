@@ -174,7 +174,8 @@ public partial class UnitsController : ControllerBase
         }
 
         string? sRedirectError = ApplyRedirectUrl(objUnit, objRequest.RedirectUrl)
-            ?? ApplyEmail(objUnit, objRequest.Email);
+            ?? ApplyEmail(objUnit, objRequest.Email)
+            ?? ApplyDdd(objUnit, objRequest.Ddd);
         if (sRedirectError is not null)
         {
             return BadRequest(new ErrorResponse(sRedirectError));
@@ -221,7 +222,8 @@ public partial class UnitsController : ControllerBase
         }
 
         string? sRedirectError = ApplyRedirectUrl(objUnit, objRequest.RedirectUrl)
-            ?? ApplyEmail(objUnit, objRequest.Email);
+            ?? ApplyEmail(objUnit, objRequest.Email)
+            ?? ApplyDdd(objUnit, objRequest.Ddd);
         if (sRedirectError is not null)
         {
             return BadRequest(new ErrorResponse(sRedirectError));
@@ -360,6 +362,25 @@ public partial class UnitsController : ControllerBase
         }
 
         objUnit.RedirectUrl = sRedirectUrl.Trim();
+        return null;
+    }
+
+    /// <summary>DDD da loja no exemplo de telefone do portal. Nulo mantém o atual; "" volta a usar o da empresa.</summary>
+    private static string? ApplyDdd(Unit objUnit, string? sDdd)
+    {
+        string? sDigitos = DddRules.Normalize(sDdd);
+        if (sDigitos is null)
+        {
+            return null;
+        }
+
+        string? sErro = DddRules.Validate(sDigitos);
+        if (sErro is not null)
+        {
+            return sErro;
+        }
+
+        objUnit.Ddd = sDigitos;
         return null;
     }
 

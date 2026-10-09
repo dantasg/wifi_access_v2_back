@@ -64,7 +64,7 @@ public partial class SettingsController : ControllerBase
 
         // Devolve o slug resolvido: quando a unidade veio pelo host, é assim que o front
         // descobre o que mandar depois no /authorize.
-        return Ok(SettingsDto.ForPortal(objSettings, objUnit.Slug));
+        return Ok(SettingsDto.ForPortal(objSettings, objUnit));
     }
 
     /// <summary>
@@ -180,6 +180,11 @@ public partial class SettingsController : ControllerBase
         objSettings.RedirectUrl = string.IsNullOrWhiteSpace(objRequest.RedirectUrl)
             ? null
             : objRequest.RedirectUrl.Trim();
+        // Nulo = manter (um painel aberto antes desta versão não apaga o DDD ao salvar).
+        if (objRequest.Ddd is not null)
+        {
+            objSettings.Ddd = DddRules.Normalize(objRequest.Ddd)!;
+        }
         objSettings.UpdatedAt = DateTime.UtcNow;
 
         await _objDbContext.SaveChangesAsync(objCancellationToken);
@@ -282,7 +287,8 @@ public partial class SettingsController : ControllerBase
             return $"Tempo de acesso deve ficar entre 1 e {MaxAccessMinutes} minutos.";
         }
 
-        // URL "Geral" da empresa: mesma regra da URL própria de cada unidade.
-        return RedirectUrlRules.Validate(objRequest.RedirectUrl);
+        // URL "Geral" da empresa: mesma regra da URL própria de cada unidade. O DDD também.
+        return RedirectUrlRules.Validate(objRequest.RedirectUrl)
+            ?? DddRules.Validate(DddRules.Normalize(objRequest.Ddd));
     }
 }

@@ -412,6 +412,72 @@ public class SettingsControllerTests
         Assert.Null(objSettings.Logo);
     }
 
+    // ---- DDD do exemplo de telefone no portal ----
+
+    [Fact]
+    public async Task Put_ComDdd_GravaEOPortalDaUnidadeSemDddRecebeODaEmpresa()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext);
+        string sUnitSlug = CreateUnit(objDbContext, objCompany.Id, "exemplo-matriz");
+        SettingsController objController = CreateAnonymousController(objDbContext);
+        TestHelpers.SetUser(objController, objCompany.Id);
+
+        await objController.Put(CreateDto() with { Ddd = "(93)" }, null, CancellationToken.None);
+
+        Assert.Equal("93", objDbContext.PortalSettings.Single().Ddd);
+        ActionResult<SettingsDto> objResult = await objController.Get(sUnitSlug, null, null, CancellationToken.None);
+        SettingsDto objPortal = Assert.IsType<SettingsDto>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
+        Assert.Equal("93", objPortal.Ddd);
+    }
+
+    [Fact]
+    public async Task Get_UnidadeComDddProprio_RecebeODelaEONaoODaEmpresa()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext);
+        objDbContext.Units.Add(new Unit { IDCompany = objCompany.Id, Name = "Outra cidade", Slug = "exemplo-outra", Ddd = "91" });
+        objDbContext.PortalSettings.Add(new PortalSettings { IDCompany = objCompany.Id, Ssid = "Exemplo", Ddd = "93" });
+        objDbContext.SaveChanges();
+        SettingsController objController = CreateAnonymousController(objDbContext);
+
+        ActionResult<SettingsDto> objResult = await objController.Get("exemplo-outra", null, null, CancellationToken.None);
+
+        SettingsDto objPortal = Assert.IsType<SettingsDto>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
+        Assert.Equal("91", objPortal.Ddd);
+    }
+
+    [Fact]
+    public async Task Put_DddNulo_MantemOGravado()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext);
+        objDbContext.PortalSettings.Add(new PortalSettings { IDCompany = objCompany.Id, Ssid = "Exemplo", Ddd = "93" });
+        objDbContext.SaveChanges();
+        SettingsController objController = new SettingsController(objDbContext);
+        TestHelpers.SetUser(objController, objCompany.Id);
+
+        await objController.Put(CreateDto(), null, CancellationToken.None);
+
+        Assert.Equal("93", objDbContext.PortalSettings.Single().Ddd);
+    }
+
+    [Fact]
+    public async Task Put_DddInexistente_Retorna400()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext);
+        SettingsController objController = new SettingsController(objDbContext);
+        TestHelpers.SetUser(objController, objCompany.Id);
+
+        ActionResult<SettingsDto> objResult =
+            await objController.Put(CreateDto() with { Ddd = "20" }, null, CancellationToken.None);
+
+        BadRequestObjectResult objBadRequest = Assert.IsType<BadRequestObjectResult>(objResult.Result);
+        Assert.Contains("DDD", Assert.IsType<ErrorResponse>(objBadRequest.Value).Error);
+        Assert.Empty(objDbContext.PortalSettings);
+    }
+
     [Fact]
     public async Task GetAdmin_SuperAdminSemEmpresa_Retorna400EEmpresaInexistente404()
     {

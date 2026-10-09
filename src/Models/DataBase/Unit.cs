@@ -33,6 +33,12 @@ namespace Models.DataBase
         public string Email { get; set; } = "";
 
         /// <summary>
+        /// DDD da loja no exemplo de telefone do portal, para lojas da mesma empresa em estados diferentes.
+        /// Vazio = usa o da empresa (<see cref="PortalSettings.Ddd"/>).
+        /// </summary>
+        public string Ddd { get; set; } = "";
+
+        /// <summary>
         /// Quando o último relatório mensal desta unidade foi enviado (UTC). Marcador de idempotência:
         /// o serviço não reenvia no mesmo mês. Nulo = nunca enviado.
         /// </summary>

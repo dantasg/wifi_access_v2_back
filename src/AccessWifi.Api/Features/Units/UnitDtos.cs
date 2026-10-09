@@ -41,7 +41,9 @@ namespace AccessWifi.Api.Features.Units
         // Pontos de acesso lidos na nuvem da UniFi: é por eles que o portal sabe de qual loja é a visita.
         int DeviceCount = 0,
         DateTime? DevicesSyncedAt = null,
-        string DevicesSyncError = "")
+        string DevicesSyncError = "",
+        // DDD do exemplo de telefone no portal. Vazio = usa o da empresa (Configurações).
+        string Ddd = "")
     {
         public static UnitDto FromEntity(Unit objUnit, int iDeviceCount = 0)
         {
@@ -49,7 +51,7 @@ namespace AccessWifi.Api.Features.Units
                 objUnit.Id, objUnit.IDCompany, objUnit.Name, objUnit.Slug, objUnit.Active,
                 objUnit.CreatedAt, objUnit.PortalHost, UnitUnifiDto.FromEntity(objUnit.Unifi),
                 objUnit.RedirectUrl, objUnit.Email, objUnit.LastReportSentAt,
-                iDeviceCount, objUnit.DevicesSyncedAt, objUnit.DevicesSyncError);
+                iDeviceCount, objUnit.DevicesSyncedAt, objUnit.DevicesSyncError, objUnit.Ddd);
         }
     }
 
@@ -76,15 +78,16 @@ namespace AccessWifi.Api.Features.Units
         string? ApiKey = null,
         string? SiteId = null);
 
-    // PortalHost, RedirectUrl e Email: nulo = manter o atual; "" limpa (sem URL própria, a unidade usa
-    // a "Geral" da empresa; sem e-mail, a unidade não recebe relatório nem campanhas).
+    // PortalHost, RedirectUrl, Email e Ddd: nulo = manter o atual; "" limpa (sem URL própria, a unidade usa
+    // a "Geral" da empresa; sem e-mail, a unidade não recebe relatório nem campanhas; sem DDD, usa o da
+    // empresa).
     public record CreateUnitRequest(
         Guid IDCompany, string Name, string Slug, UnitUnifiRequest? Unifi, string? PortalHost = null,
-        string? RedirectUrl = null, string? Email = null);
+        string? RedirectUrl = null, string? Email = null, string? Ddd = null);
 
     public record UpdateUnitRequest(
         string Name, bool Active, UnitUnifiRequest? Unifi, string? PortalHost = null,
-        string? RedirectUrl = null, string? Email = null);
+        string? RedirectUrl = null, string? Email = null, string? Ddd = null);
 
     /// <summary>Resultado do botão "Testar conexão" (D7). Sucesso falso não é erro HTTP.</summary>
     public record UnifiTestResponse(bool Success, string Message);
