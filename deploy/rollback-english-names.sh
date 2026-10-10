@@ -11,8 +11,10 @@
 # Uso — no Git Bash, a partir da raiz do repositório do BACK:
 #   ./deploy/rollback-english-names.sh
 #
-# Funciona também se o deploy já tiver voltado os programas sozinho (aí só acerta o banco). Se a cópia
-# "anterior" no servidor não for a versão de antes da troca, para sem mexer em nada.
+# Funciona também se o deploy já tiver voltado os programas sozinho (aí só acerta o banco). Os programas de
+# antes vêm da cópia "antes-do-ingles" (guardada em 09/10/2026 antes da publicação seguinte, para a reversão
+# continuar valendo) ou, se ela não existir, da cópia "anterior". Se nenhuma for a versão de antes da troca,
+# ou se o banco já tiver migration mais nova que a EnglishColumnNames, para sem mexer em nada.
 # =============================================================================
 set -euo pipefail
 
@@ -29,17 +31,23 @@ SITE=/etc/icontainer/apps/nginx/nginx/www/sites/vps11702.panel.icontainer.online
 PREVIOUS_BACK="21a12e6"
 
 echo "    no ar agora: $(cat /opt/accesswifi/VERSAO 2>/dev/null || echo desconhecida)"
-SWAP_BINARIES=0
-if [ -d /opt/accesswifi/api.anterior ]; then
-  if grep -q "back $PREVIOUS_BACK" /opt/accesswifi/VERSAO.anterior 2>/dev/null; then
-    SWAP_BINARIES=1
-  else
-    echo "    ✗ a cópia anterior não é a de antes da troca ($(cat /opt/accesswifi/VERSAO.anterior 2>/dev/null || echo sem registro))."
-    echo "      Nada foi alterado. Veja PRODUCAO.md antes de reverter à mão."
-    exit 1
-  fi
-elif ! grep -q "back $PREVIOUS_BACK" /opt/accesswifi/VERSAO 2>/dev/null; then
-  echo "    ✗ sem cópia anterior e a versão no ar não é a de antes da troca. Nada foi alterado."
+# Sufixo da cópia com os programas de antes da troca; vazio = os programas no ar já são os de antes.
+FROM=""
+if grep -q "back $PREVIOUS_BACK" /opt/accesswifi/VERSAO 2>/dev/null; then
+  FROM=""
+elif [ -d /opt/accesswifi/api.antes-do-ingles ] && grep -q "back $PREVIOUS_BACK" /opt/accesswifi/VERSAO.antes-do-ingles 2>/dev/null; then
+  FROM="antes-do-ingles"
+elif [ -d /opt/accesswifi/api.anterior ] && grep -q "back $PREVIOUS_BACK" /opt/accesswifi/VERSAO.anterior 2>/dev/null; then
+  FROM="anterior"
+else
+  echo "    ✗ nenhuma cópia no servidor é a versão de antes da troca ($PREVIOUS_BACK). Nada foi alterado."
+  echo "      Veja PRODUCAO.md antes de reverter à mão."
+  exit 1
+fi
+# O Down abaixo só desfaz a EnglishColumnNames: com migration mais nova, os programas de antes não servem.
+LAST_MIGRATION=$(sudo -u postgres psql -d accesswifi -Atc 'SELECT max("MigrationId") FROM "__EFMigrationsHistory"')
+if [[ "$LAST_MIGRATION" > "20261009185541_EnglishColumnNames" ]]; then
+  echo "    ✗ o banco já tem migration mais nova ($LAST_MIGRATION). Nada foi alterado."
   exit 1
 fi
 
@@ -97,20 +105,20 @@ COMMIT;
 SQL
 echo "    ✓ banco: colunas com os nomes de antes"
 
-if [ $SWAP_BINARIES = 1 ]; then
+if [ -n "$FROM" ]; then
   for s in api worker; do
     rm -rf /opt/accesswifi/$s.revertida
     mv /opt/accesswifi/$s /opt/accesswifi/$s.revertida
-    mv /opt/accesswifi/$s.anterior /opt/accesswifi/$s
+    mv /opt/accesswifi/$s.$FROM /opt/accesswifi/$s
     echo "    ✓ $s: versão de antes"
   done
-  if [ -d "$SITE/index.anterior" ]; then
+  if [ -d "$SITE/index.$FROM" ]; then
     rm -rf "$SITE/index.revertido"
     mv "$SITE/index" "$SITE/index.revertido"
-    mv "$SITE/index.anterior" "$SITE/index"
+    mv "$SITE/index.$FROM" "$SITE/index"
     echo "    ✓ portal: versão de antes"
   fi
-  if [ -f /opt/accesswifi/VERSAO.anterior ]; then mv /opt/accesswifi/VERSAO.anterior /opt/accesswifi/VERSAO; fi
+  if [ -f /opt/accesswifi/VERSAO.$FROM ]; then mv /opt/accesswifi/VERSAO.$FROM /opt/accesswifi/VERSAO; fi
 fi
 
 systemctl start accesswifi-api accesswifi-worker

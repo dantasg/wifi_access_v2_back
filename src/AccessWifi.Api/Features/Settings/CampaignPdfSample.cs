@@ -14,8 +14,9 @@ public static class CampaignPdfSample
 {
     public const string CampaignName = "Aniversariantes da semana (exemplo)";
 
+    // Sem artigo antes do nome da empresa: "a Lojas Regional", mas "o Lojão", "o Guará".
     private const string SampleMessage =
-        "Feliz aniversário, {primeiro_nome}! 🎉 A {empresa} deseja um dia incrível para você.";
+        "Feliz aniversário, {primeiro_nome}! 🎉 Desejamos um dia incrível para você. Um abraço da equipe {empresa}.";
 
     private static readonly (string sName, string sInstagram, int iAge)[] s_arrCustomers =
     [
