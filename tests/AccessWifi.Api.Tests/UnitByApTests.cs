@@ -383,6 +383,35 @@ public class UnitByApTests
     }
 
     [Fact]
+    public async Task SyncButton_ReadsOnlyTheCompanyChosenInThePanel()
+    {
+        using TestEnvironment objEnv = new TestEnvironment();
+        (Unit objItaituba, Unit objCameta) = CreateStores(objEnv.ObjDb);
+        Company objOther = CreateCompany(objEnv.ObjDb, "lojao-dos-plasticos");
+        Company objEmpty = CreateCompany(objEnv.ObjDb, "guara-acqua-park");
+        Unit objOtherUnit = CreateCloudUnit(objEnv.ObjDb, objOther, "lojao-matriz", "console-do-lojao");
+        objEnv.ObjCloud.ObjConsoles[ConsoleItaituba] = [(ApItaituba, "AP Salão", "U6 Lite")];
+        objEnv.ObjCloud.ObjConsoles[ConsoleCameta] = [(ApCameta, "AP", "U6 Lite")];
+        objEnv.ObjCloud.ObjConsoles["console-do-lojao"] = [("11:11:11:11:11:11", "AP", "U6 Lite")];
+        UnitsController objController = new UnitsController(
+            objEnv.ObjDb, TestHelpers.CreateEncryptor(), new FakeUnifiClient(), NullLogger<UnitsController>.Instance,
+            objEnv.Sync());
+
+        ActionResult<UnitDeviceSyncResponse> objResult = await objController.SyncDevices(objOther.Id, CancellationToken.None);
+
+        Assert.Equal(new UnitDeviceSyncResponse(1, 1, 0), Assert.IsType<OkObjectResult>(objResult.Result).Value);
+        Assert.True(objEnv.ObjDb.UnitDevices.Any(device => device.IDUnit == objOtherUnit.Id));
+        Assert.False(objEnv.ObjDb.UnitDevices.Any(device => device.IDUnit == objItaituba.Id || device.IDUnit == objCameta.Id));
+
+        // Empresa sem unidade: nada é lido na nuvem.
+        int iCallsBefore = objEnv.ObjCloud.ICalls;
+        ActionResult<UnitDeviceSyncResponse> objEmptyResult = await objController.SyncDevices(objEmpty.Id, CancellationToken.None);
+
+        Assert.Equal(new UnitDeviceSyncResponse(0, 0, 0), Assert.IsType<OkObjectResult>(objEmptyResult.Result).Value);
+        Assert.Equal(iCallsBefore, objEnv.ObjCloud.ICalls);
+    }
+
+    [Fact]
     public async Task Sync_IgnoresLocalAndInactiveUnits()
     {
         using TestEnvironment objEnv = new TestEnvironment();

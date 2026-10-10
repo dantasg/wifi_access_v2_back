@@ -112,19 +112,34 @@ public partial class UnitsController : ControllerBase
     }
 
     /// <summary>
-    /// Lê agora, na nuvem da UniFi, os pontos de acesso de todas as unidades no modo nuvem (o serviço já
-    /// faz isso sozinho a cada 5 minutos; o botão é para não esperar depois de instalar uma loja).
+    /// Lê agora, na nuvem da UniFi, os pontos de acesso das unidades no modo nuvem da empresa escolhida no
+    /// topo do painel (?company={id da empresa}); sem empresa, de todas. O serviço já faz isso sozinho a
+    /// cada 5 minutos; o botão é para não esperar depois de instalar uma loja.
     /// </summary>
     [HttpPost("devices/sync")]
     [Authorize(Roles = ClaimsExtensions.RoleSuperAdmin)]
-    public async Task<ActionResult<UnitDeviceSyncResponse>> SyncDevices(CancellationToken objCancellationToken)
+    public async Task<ActionResult<UnitDeviceSyncResponse>> SyncDevices(
+        [FromQuery(Name = "company")] Guid? objCompanyId, CancellationToken objCancellationToken)
     {
         if (_objDeviceSync is null)
         {
             return Ok(new UnitDeviceSyncResponse(0, 0, 0));
         }
 
-        UnitDeviceSync.Result objResult = await _objDeviceSync.SyncAsync(null, objCancellationToken);
+        List<Guid>? objUnitIds = null;
+        if (objCompanyId is not null)
+        {
+            objUnitIds = await _objDbContext.Units.AsNoTracking()
+                .Where(unit => unit.IDCompany == objCompanyId)
+                .Select(unit => unit.Id)
+                .ToListAsync(objCancellationToken);
+            if (objUnitIds.Count == 0)
+            {
+                return Ok(new UnitDeviceSyncResponse(0, 0, 0));
+            }
+        }
+
+        UnitDeviceSync.Result objResult = await _objDeviceSync.SyncAsync(objUnitIds, objCancellationToken);
         return Ok(new UnitDeviceSyncResponse(objResult.Units, objResult.Devices, objResult.Failures));
     }
 
