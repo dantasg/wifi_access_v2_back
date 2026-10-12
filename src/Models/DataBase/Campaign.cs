@@ -164,6 +164,15 @@ namespace Models.DataBase
         public string FileName { get; set; } = "";
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime? SentAt { get; set; }
+
+        /// <summary>
+        /// Reenvio pedido pela tela (botão "Reenviar" da unidade): o mesmo PDF da execução para o e-mail que a
+        /// unidade tem hoje. Não mexe nos clientes nem nos números da execução.
+        /// </summary>
+        public bool IsResend { get; set; }
+
+        /// <summary>Quem pediu o reenvio (vazio nos envios do disparo).</summary>
+        public string RequestedBy { get; set; } = "";
     }
 
     /// <summary>Ações sobre a campanha ou uma execução (ativar, pausar, retomar, cancelar), com quem fez.</summary>

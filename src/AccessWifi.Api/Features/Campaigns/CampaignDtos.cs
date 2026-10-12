@@ -123,14 +123,17 @@ namespace AccessWifi.Api.Features.Campaigns
         string? Error,
         string FileName,
         DateTime CreatedAt,
-        DateTime? SentAt)
+        DateTime? SentAt,
+        bool IsResend,
+        string RequestedBy)
     {
         public static CampaignDeliveryDto FromEntity(CampaignDelivery objDelivery)
         {
             return new CampaignDeliveryDto(
                 objDelivery.Id, objDelivery.IDUnit, objDelivery.UnitName, objDelivery.Email, objDelivery.Status,
                 objDelivery.RecipientCount, objDelivery.Attempts, objDelivery.NextAttemptAt, objDelivery.Error,
-                objDelivery.FileName, objDelivery.CreatedAt, objDelivery.SentAt);
+                objDelivery.FileName, objDelivery.CreatedAt, objDelivery.SentAt, objDelivery.IsResend,
+                objDelivery.RequestedBy);
         }
     }
 

@@ -481,8 +481,11 @@ public class CampaignsController : ControllerBase
             Guid[] arrUnits = objScope.UnitIds;
             objQuery = objQuery.Where(delivery => delivery.IDUnit != null && arrUnits.Contains(delivery.IDUnit.Value));
         }
+        // Os reenvios aparecem logo abaixo do envio do disparo da mesma unidade.
         List<CampaignDelivery> objDeliveries = await objQuery
             .OrderBy(delivery => delivery.UnitName)
+            .ThenBy(delivery => delivery.IsResend)
+            .ThenBy(delivery => delivery.CreatedAt)
             .ToListAsync(objCancellationToken);
         return Ok(objDeliveries.Select(CampaignDeliveryDto.FromEntity).ToList());
     }
@@ -518,6 +521,87 @@ public class CampaignsController : ControllerBase
         // A unidade pode ter mudado de nome: o PDF mostra o nome de quando saiu.
         objData = objData with { UnitName = objDelivery.UnitName };
         return File(CampaignPdf.Build(objData), "application/pdf", objDelivery.FileName);
+    }
+
+    /// <summary>
+    /// Reenvia o PDF de uma unidade (botão "Reenviar"): o mesmo PDF da execução, para o e-mail que a unidade
+    /// tem hoje (igual ou não ao do disparo). Quem manda é o serviço, em alguns segundos, com as mesmas
+    /// tentativas do disparo. Não mexe nos clientes nem nos números da execução; fica registrado como reenvio.
+    /// </summary>
+    [HttpPost("runs/{runId:guid}/deliveries/{deliveryId:guid}/resend")]
+    public async Task<ActionResult<CampaignDeliveryDto>> ResendDelivery(
+        Guid runId, Guid deliveryId, [FromQuery(Name = "company")] string? sCompanySlug,
+        CancellationToken objCancellationToken)
+    {
+        (CampaignRun? objRun, ActionResult? objError) = await FindRunAsync(runId, sCompanySlug, objCancellationToken);
+        if (objRun is null)
+        {
+            return objError!;
+        }
+        CampaignDelivery? objDelivery = await _objDbContext.CampaignDeliveries.AsNoTracking()
+            .FirstOrDefaultAsync(delivery => delivery.Id == deliveryId && delivery.IDRun == runId, objCancellationToken);
+        AccessScope objScope = await AccessScope.LoadAsync(_objDbContext, User, objCancellationToken);
+        if (objDelivery is null || !objScope.Allows(objDelivery.IDUnit))
+        {
+            return NotFound(new ErrorResponse("Envio não encontrado."));
+        }
+        if (objRun.Status is not (CampaignRunStatus.Completed or CampaignRunStatus.Cancelled))
+        {
+            return BadRequest(new ErrorResponse("Só dá para reenviar depois que a execução terminar."));
+        }
+
+        Unit? objUnit = objDelivery.IDUnit is Guid objUnitId
+            ? await _objDbContext.Units.AsNoTracking()
+                .FirstOrDefaultAsync(unit => unit.Id == objUnitId, objCancellationToken)
+            : null;
+        if (objUnit is null)
+        {
+            return BadRequest(new ErrorResponse("Esses clientes estão sem unidade: não há para quem reenviar."));
+        }
+        string sEmail = objUnit.Email.Trim();
+        if (sEmail.Length == 0)
+        {
+            return BadRequest(new ErrorResponse(
+                $"A unidade {objUnit.Name} não tem e-mail cadastrado (Unidades → editar → e-mail)."));
+        }
+
+        string[] arrStatuses = CampaignDeliveryDocument.HistoryStatuses;
+        int iCustomers = await _objDbContext.CampaignRecipients.CountAsync(
+            recipient => recipient.IDRun == runId && recipient.IDUnit == objUnit.Id && arrStatuses.Contains(recipient.Status),
+            objCancellationToken);
+        if (iCustomers == 0)
+        {
+            return BadRequest(new ErrorResponse(
+                "Este envio não tem clientes (a lista pode já ter sido apagada pela regra de retenção da LGPD)."));
+        }
+        bool bWaiting = await _objDbContext.CampaignDeliveries.AnyAsync(
+            delivery => delivery.IDRun == runId && delivery.IDUnit == objUnit.Id && delivery.IsResend
+                && delivery.Status == CampaignDeliveryStatus.Pending,
+            objCancellationToken);
+        if (bWaiting)
+        {
+            return BadRequest(new ErrorResponse("Já tem um reenvio desta unidade saindo. Aguarde alguns segundos."));
+        }
+
+        DateTime dtNowUtc = DateTime.UtcNow;
+        (Guid? objUserId, string sUsername) = await CurrentUserAsync(objCancellationToken);
+        CampaignDelivery objResend = new CampaignDelivery
+        {
+            IDRun = runId,
+            IDUnit = objUnit.Id,
+            UnitName = objUnit.Name,
+            Email = sEmail,
+            RecipientCount = iCustomers,
+            FileName = objDelivery.FileName,
+            CreatedAt = dtNowUtc,
+            NextAttemptAt = dtNowUtc,
+            IsResend = true,
+            RequestedBy = sUsername,
+        };
+        _objDbContext.CampaignDeliveries.Add(objResend);
+        AddEvent(objRun.IDCampaign, objRun.Id, CampaignEventAction.DeliveryResent, objUserId, sUsername, dtNowUtc);
+        await _objDbContext.SaveChangesAsync(objCancellationToken);
+        return Ok(CampaignDeliveryDto.FromEntity(objResend));
     }
 
     /// <summary>Todos os destinatários da execução em CSV (abre no Excel: BOM + CRLF).</summary>

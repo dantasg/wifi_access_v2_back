@@ -59,7 +59,7 @@ public class EmailsController : ControllerBase
             }
             objQuery = objQuery.Where(email => email.IDUnit == objUnitId);
         }
-        if (sKind is SentEmailKind.Report or SentEmailKind.Campaign)
+        if (sKind is SentEmailKind.Report or SentEmailKind.Campaign or SentEmailKind.CampaignResend)
         {
             objQuery = objQuery.Where(email => email.Kind == sKind);
         }
@@ -100,7 +100,8 @@ public class EmailsController : ControllerBase
             return objError!;
         }
 
-        if (objEmail.Kind == SentEmailKind.Campaign && objEmail.IDCampaignRun is Guid objRunId)
+        if (objEmail.Kind is (SentEmailKind.Campaign or SentEmailKind.CampaignResend)
+            && objEmail.IDCampaignRun is Guid objRunId)
         {
             CampaignRun? objRun = await _objDbContext.CampaignRuns.AsNoTracking()
                 .FirstOrDefaultAsync(run => run.Id == objRunId && run.IDCompany == objEmail.IDCompany, objCancellationToken);

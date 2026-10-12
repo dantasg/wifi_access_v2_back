@@ -117,6 +117,9 @@ namespace Models.DataBase
         public const string RunPaused = "RunPaused";
         public const string RunResumed = "RunResumed";
         public const string RunCancelled = "RunCancelled";
+
+        /// <summary>Pediram o reenvio do PDF de uma unidade (botão "Reenviar" no detalhe da execução).</summary>
+        public const string DeliveryResent = "DeliveryResent";
     }
 
     public static class CampaignRecipientStatus

@@ -341,8 +341,11 @@ namespace Models.Persistence
                 objDelivery.Property(delivery => delivery.Status).HasMaxLength(20);
                 objDelivery.Property(delivery => delivery.Error).HasMaxLength(500);
                 objDelivery.Property(delivery => delivery.FileName).HasMaxLength(200);
-                // Uma entrega por unidade em cada execução.
-                objDelivery.HasIndex(delivery => new { delivery.IDRun, delivery.IDUnit }).IsUnique();
+                objDelivery.Property(delivery => delivery.RequestedBy).HasMaxLength(60);
+                // Uma entrega do disparo por unidade em cada execução; os reenvios ficam de fora.
+                objDelivery.HasIndex(delivery => new { delivery.IDRun, delivery.IDUnit })
+                    .IsUnique()
+                    .HasFilter("\"IsResend\" = false");
                 objDelivery.HasOne<CampaignRun>()
                     .WithMany()
                     .HasForeignKey(delivery => delivery.IDRun)

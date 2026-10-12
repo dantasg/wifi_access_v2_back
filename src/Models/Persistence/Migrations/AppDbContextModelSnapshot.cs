@@ -158,11 +158,19 @@ namespace Models.Persistence.Migrations
                     b.Property<Guid?>("IDUnit")
                         .HasColumnType("uuid");
 
+                    b.Property<bool>("IsResend")
+                        .HasColumnType("boolean");
+
                     b.Property<DateTime?>("NextAttemptAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("RecipientCount")
                         .HasColumnType("integer");
+
+                    b.Property<string>("RequestedBy")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
 
                     b.Property<DateTime?>("SentAt")
                         .HasColumnType("timestamp with time zone");
@@ -182,7 +190,8 @@ namespace Models.Persistence.Migrations
                     b.HasIndex("IDUnit");
 
                     b.HasIndex("IDRun", "IDUnit")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("\"IsResend\" = false");
 
                     b.ToTable("CampaignDeliveries");
                 });

@@ -719,4 +719,129 @@ public class CampaignEngineTests
 
         Assert.Equal("Versão 1", Assert.Single(RecipientsOf(objDbContext, objCampaign.Id)).Message);
     }
+
+    // ------------------------------------------------- Reenvio (botão "Reenviar" da unidade)
+
+    /// <summary>
+    /// O disparo do teste roda no relógio de 29/09; o pedido de reenvio usa o relógio de verdade. A campanha
+    /// para de agendar, para o tick de agora só mandar o reenvio.
+    /// </summary>
+    private static (CampaignRun Run, CampaignDelivery Original) FinishedRun(Scenario objScenario)
+    {
+        Campaign objCampaign = objScenario.Db.Campaigns.Single();
+        objCampaign.Status = CampaignStatus.Paused;
+        objCampaign.NextRunAt = null;
+        objScenario.Db.SaveChanges();
+        return (objScenario.Db.CampaignRuns.AsNoTracking().Single(),
+            objScenario.Db.CampaignDeliveries.AsNoTracking().Single());
+    }
+
+    private static AccessWifi.Api.Controllers.CampaignsController ResendController(Scenario objScenario)
+    {
+        AccessWifi.Api.Controllers.CampaignsController objController = new(objScenario.Db);
+        TestHelpers.SetCompanyUser(objController, objScenario.Db, objScenario.Company.Id, "gerente");
+        return objController;
+    }
+
+    [Fact]
+    public async Task Resend_UnitHadNoEmail_GoesToTodaysEmail_AndRunNumbersStay()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Scenario objScenario = CreateScenario(objDbContext);
+        objDbContext.Units.Single().Email = "";
+        objDbContext.SaveChanges();
+        AddCustomer(objScenario, "91900000001", "Ana", dtBirth: new DateOnly(1998, 9, 29));
+        AddCampaign(objScenario, CampaignKind.Birthday, MessageConfig());
+        CampaignEngine objEngine = CreateEngine(objScenario);
+        await objEngine.TickAsync(s_dtNine.AddSeconds(3));
+        (CampaignRun objRun, CampaignDelivery objOriginal) = FinishedRun(objScenario);
+        Assert.Equal(CampaignDeliveryStatus.Failed, objOriginal.Status);
+
+        // O e-mail da unidade foi cadastrado depois do disparo; o reenvio vai para ele.
+        objDbContext.Units.Single().Email = "novo.gerente@regional.com.br";
+        objDbContext.SaveChanges();
+        AccessWifi.Api.Controllers.CampaignsController objController = ResendController(objScenario);
+        ActionResult<AccessWifi.Api.Features.Campaigns.CampaignDeliveryDto> objResult =
+            await objController.ResendDelivery(objRun.Id, objOriginal.Id, null, CancellationToken.None);
+        AccessWifi.Api.Features.Campaigns.CampaignDeliveryDto objResend =
+            Assert.IsType<AccessWifi.Api.Features.Campaigns.CampaignDeliveryDto>(Assert.IsType<OkObjectResult>(objResult.Result).Value);
+        Assert.True(objResend.IsResend);
+        Assert.Equal("novo.gerente@regional.com.br", objResend.Email);
+        Assert.Equal("gerente", objResend.RequestedBy);
+        Assert.Equal(CampaignDeliveryStatus.Pending, objResend.Status);
+        // Clique duplo: o segundo pedido espera o primeiro sair.
+        BadRequestObjectResult objTwice = Assert.IsType<BadRequestObjectResult>(
+            (await objController.ResendDelivery(objRun.Id, objOriginal.Id, null, CancellationToken.None)).Result);
+        Assert.Contains("Aguarde", Assert.IsType<AccessWifi.Api.Features.ErrorResponse>(objTwice.Value).Error);
+
+        await objEngine.TickAsync(DateTime.UtcNow.AddSeconds(1));
+
+        FakeEmailSender.Email objSent = Assert.Single(objScenario.Email.Sent);
+        Assert.Equal("novo.gerente@regional.com.br", objSent.To);
+        Assert.Contains("Itaituba", objSent.Subject);
+        Assert.Equal(objOriginal.FileName, objSent.AttachmentName);
+        Assert.Equal("%PDF", System.Text.Encoding.ASCII.GetString(objSent.Attachment!, 0, 4));
+        CampaignDelivery objDone = objDbContext.CampaignDeliveries.AsNoTracking().Single(delivery => delivery.IsResend);
+        Assert.Equal(CampaignDeliveryStatus.Sent, objDone.Status);
+        Assert.Equal(1, objDone.RecipientCount);
+
+        // O disparo e os números da execução ficam como foram.
+        Assert.Equal(CampaignDeliveryStatus.Failed,
+            objDbContext.CampaignDeliveries.AsNoTracking().Single(delivery => !delivery.IsResend).Status);
+        CampaignRun objAfter = objDbContext.CampaignRuns.AsNoTracking().Single();
+        Assert.Equal(1, objAfter.FailedCount);
+        Assert.Equal(0, objAfter.SentCount);
+        Assert.Equal(CampaignRecipientStatus.Failed, objDbContext.CampaignRecipients.AsNoTracking().Single().Status);
+
+        // Registrado como reenvio: Correio eletrônico (com o PDF remontado), histórico e detalhe da execução.
+        SentEmail objRecord = Assert.Single(objDbContext.SentEmails.AsNoTracking());
+        Assert.Equal(SentEmailKind.CampaignResend, objRecord.Kind);
+        Assert.Equal("novo.gerente@regional.com.br", objRecord.ToEmail);
+        AccessWifi.Api.Controllers.EmailsController objEmails = new(objDbContext);
+        TestHelpers.SetUser(objEmails, null, "root");
+        Assert.IsType<FileContentResult>(await objEmails.Attachment(objRecord.Id, "regional", CancellationToken.None));
+        CampaignEvent objEvent = Assert.Single(objDbContext.CampaignEvents.AsNoTracking()
+            .Where(evt => evt.Action == CampaignEventAction.DeliveryResent));
+        Assert.Equal("gerente", objEvent.Username);
+        Assert.Equal(objRun.Id, objEvent.IDRun);
+        List<AccessWifi.Api.Features.Campaigns.CampaignDeliveryDto> objList = Assert.IsType<List<AccessWifi.Api.Features.Campaigns.CampaignDeliveryDto>>(
+            Assert.IsType<OkObjectResult>((await objController.Deliveries(objRun.Id, null, CancellationToken.None)).Result).Value);
+        Assert.Equal(new[] { false, true }, objList.Select(delivery => delivery.IsResend));
+    }
+
+    [Fact]
+    public async Task Resend_OfCancelledRun_SmtpFails_RetriesLikeTheDispatch()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Scenario objScenario = CreateScenario(objDbContext);
+        AddCustomer(objScenario, "91900000001", "Ana", dtBirth: new DateOnly(1998, 9, 29));
+        AddCampaign(objScenario, CampaignKind.Birthday, MessageConfig());
+        CampaignEngine objEngine = CreateEngine(objScenario);
+        await objEngine.TickAsync(s_dtNine.AddSeconds(3));
+        (CampaignRun objRun, CampaignDelivery objOriginal) = FinishedRun(objScenario);
+        // Execução que terminou cancelada: o reenvio do que já tinha saído também vale.
+        objDbContext.CampaignRuns.Single().Status = CampaignRunStatus.Cancelled;
+        objDbContext.SaveChanges();
+        objScenario.Email.Sent.Clear();
+        objScenario.Email.FailTimes = 1;
+
+        Assert.IsType<OkObjectResult>(
+            (await ResendController(objScenario).ResendDelivery(objRun.Id, objOriginal.Id, null, CancellationToken.None)).Result);
+        DateTime dtNow = DateTime.UtcNow.AddSeconds(1);
+        await objEngine.TickAsync(dtNow);
+
+        CampaignDelivery objWaiting = objDbContext.CampaignDeliveries.AsNoTracking().Single(delivery => delivery.IsResend);
+        Assert.Equal(CampaignDeliveryStatus.Pending, objWaiting.Status);
+        Assert.Equal(1, objWaiting.Attempts);
+        Assert.Equal(dtNow.AddMinutes(5), objWaiting.NextAttemptAt);
+        Assert.DoesNotContain(objDbContext.SentEmails.AsNoTracking(), email => email.Kind == SentEmailKind.CampaignResend);
+
+        await objEngine.TickAsync(dtNow.AddMinutes(6));
+
+        Assert.Equal(UnitEmail, Assert.Single(objScenario.Email.Sent).To);
+        Assert.Equal(CampaignDeliveryStatus.Sent,
+            objDbContext.CampaignDeliveries.AsNoTracking().Single(delivery => delivery.IsResend).Status);
+        Assert.Equal(CampaignRunStatus.Cancelled, objDbContext.CampaignRuns.AsNoTracking().Single().Status);
+        Assert.Equal(1, objDbContext.CampaignRuns.AsNoTracking().Single().SentCount);
+    }
 }

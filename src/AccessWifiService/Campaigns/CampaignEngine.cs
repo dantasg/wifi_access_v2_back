@@ -70,6 +70,8 @@ namespace AccessWifiService.Campaigns
             {
                 await ProcessRunAsync(objRunId, dtNowUtc, objCancellationToken);
             }
+
+            await ProcessResendsAsync(dtNowUtc, objCancellationToken);
         }
 
         // ------------------------------------------------------------------ Agenda
@@ -434,7 +436,8 @@ namespace AccessWifiService.Campaigns
             await CreateDeliveriesAsync(objRun, objCampaign, dtNowUtc, objCancellationToken);
 
             List<CampaignDelivery> objExpired = await _objDbContext.CampaignDeliveries
-                .Where(delivery => delivery.IDRun == objRunId && delivery.Status == CampaignDeliveryStatus.Pending
+                .Where(delivery => delivery.IDRun == objRunId && !delivery.IsResend
+                    && delivery.Status == CampaignDeliveryStatus.Pending
                     && (delivery.NextAttemptAt == null || delivery.NextAttemptAt <= dtNowUtc))
                 .OrderBy(delivery => delivery.UnitName)
                 .ToListAsync(objCancellationToken);
@@ -659,6 +662,109 @@ namespace AccessWifiService.Campaigns
 
         private static string CustomersText(int iTotal) => iTotal == 1 ? "1 cliente" : $"{iTotal} clientes";
 
+        // ------------------------------------------------------------------ Reenvios
+
+        /// <summary>
+        /// Reenvios pedidos pela tela (botão "Reenviar" da unidade): o mesmo PDF e o mesmo e-mail da execução,
+        /// para o endereço gravado no pedido, com as mesmas tentativas do disparo. Não mexe nos clientes nem
+        /// nos números da execução.
+        /// </summary>
+        private async Task ProcessResendsAsync(DateTime dtNowUtc, CancellationToken objCancellationToken)
+        {
+            List<Guid> objDue = await _objDbContext.CampaignDeliveries.AsNoTracking()
+                .Where(delivery => delivery.IsResend && delivery.Status == CampaignDeliveryStatus.Pending
+                    && (delivery.NextAttemptAt == null || delivery.NextAttemptAt <= dtNowUtc))
+                .OrderBy(delivery => delivery.CreatedAt)
+                .Select(delivery => delivery.Id)
+                .ToListAsync(objCancellationToken);
+            foreach (Guid objDeliveryId in objDue)
+            {
+                await SendResendAsync(objDeliveryId, dtNowUtc, objCancellationToken);
+            }
+        }
+
+        private async Task SendResendAsync(Guid objDeliveryId, DateTime dtNowUtc, CancellationToken objCancellationToken)
+        {
+            _objDbContext.ChangeTracker.Clear();
+            CampaignDelivery objDelivery = await _objDbContext.CampaignDeliveries
+                .FirstAsync(delivery => delivery.Id == objDeliveryId, objCancellationToken);
+            CampaignRun objRun = await _objDbContext.CampaignRuns.AsNoTracking()
+                .FirstAsync(run => run.Id == objDelivery.IDRun, objCancellationToken);
+            CampaignPdfData objData = await CampaignDeliveryDocument.LoadAsync(
+                _objDbContext, objRun, objDelivery.IDUnit, CampaignDeliveryDocument.HistoryStatuses, objCancellationToken);
+            if (objData.Rows.Count == 0)
+            {
+                // A regra de retenção (LGPD) apagou a lista entre o pedido e o envio.
+                objDelivery.Status = CampaignDeliveryStatus.Cancelled;
+                objDelivery.NextAttemptAt = null;
+                objDelivery.Error = "A lista de clientes desta execução já foi apagada pela regra de retenção (LGPD).";
+                await _objDbContext.SaveChangesAsync(objCancellationToken);
+                return;
+            }
+
+            string? sError = null;
+            string sSubject = Subject(objData);
+            string sBody = Body(objData);
+            try
+            {
+                byte[] arrPdf = CampaignPdf.Build(objData);
+                await _objEmailSender.SendAsync(
+                    objDelivery.Email, sSubject, sBody, arrPdf, objDelivery.FileName, objCancellationToken);
+            }
+            catch (Exception objException) when (objException is not OperationCanceledException)
+            {
+                sError = objException.Message;
+            }
+
+            objDelivery.Attempts++;
+            objDelivery.RecipientCount = objData.Rows.Count;
+            if (sError is null)
+            {
+                objDelivery.Status = CampaignDeliveryStatus.Sent;
+                objDelivery.SentAt = dtNowUtc;
+                objDelivery.Error = null;
+                objDelivery.NextAttemptAt = null;
+                _objDbContext.SentEmails.Add(new SentEmail
+                {
+                    IDCompany = objRun.IDCompany,
+                    IDUnit = objDelivery.IDUnit,
+                    UnitName = objDelivery.UnitName,
+                    Kind = SentEmailKind.CampaignResend,
+                    ToEmail = objDelivery.Email,
+                    Subject = sSubject,
+                    Body = sBody,
+                    AttachmentName = objDelivery.FileName,
+                    SentAt = dtNowUtc,
+                    IDCampaignRun = objRun.Id,
+                });
+                await _objDbContext.SaveChangesAsync(objCancellationToken);
+                _objLogger.LogInformation(
+                    "Campanha {Campanha}: reenvio do PDF com {Total} cliente(s) para {Email} (unidade {Unidade}), pedido por {Usuario}.",
+                    objData.CampaignName, objData.Rows.Count, objDelivery.Email, objDelivery.UnitName, objDelivery.RequestedBy);
+                return;
+            }
+
+            objDelivery.Error = sError.Length <= 500 ? sError : sError[..500];
+            int iMax = Math.Max(1, _objOptions.EmailMaxAttempts);
+            if (objDelivery.Attempts >= iMax)
+            {
+                objDelivery.Status = CampaignDeliveryStatus.Failed;
+                objDelivery.NextAttemptAt = null;
+                _objLogger.LogError(
+                    "Campanha {Campanha}: reenvio para {Email} (unidade {Unidade}) desistido após {Tentativas} tentativas: {Erro}",
+                    objData.CampaignName, objDelivery.Email, objDelivery.UnitName, objDelivery.Attempts, sError);
+            }
+            else
+            {
+                objDelivery.NextAttemptAt = dtNowUtc.AddMinutes(Math.Max(1, _objOptions.EmailRetryMinutes));
+                _objLogger.LogWarning(
+                    "Campanha {Campanha}: reenvio para {Email} (unidade {Unidade}) falhou (tentativa {Tentativa} de {Maximo}), tenta de novo às {Proxima:HH:mm} UTC: {Erro}",
+                    objData.CampaignName, objDelivery.Email, objDelivery.UnitName, objDelivery.Attempts, iMax,
+                    objDelivery.NextAttemptAt, sError);
+            }
+            await _objDbContext.SaveChangesAsync(objCancellationToken);
+        }
+
         /// <summary>Execuções canceladas: os pendentes viram "cancelado" (em blocos), e os e-mails que não saíram também.</summary>
         private async Task FinalizeCancelledRunsAsync(DateTime dtNowUtc, CancellationToken objCancellationToken)
         {
@@ -667,7 +773,8 @@ namespace AccessWifiService.Campaigns
                     && (_objDbContext.CampaignRecipients.Any(recipient =>
                             recipient.IDRun == run.Id && recipient.Status == CampaignRecipientStatus.Pending)
                         || _objDbContext.CampaignDeliveries.Any(delivery =>
-                            delivery.IDRun == run.Id && delivery.Status == CampaignDeliveryStatus.Pending)))
+                            delivery.IDRun == run.Id && !delivery.IsResend
+                            && delivery.Status == CampaignDeliveryStatus.Pending)))
                 .Select(run => run.Id)
                 .ToListAsync(objCancellationToken);
 
@@ -698,8 +805,10 @@ namespace AccessWifiService.Campaigns
                     await _objDbContext.SaveChangesAsync(objCancellationToken);
                 }
 
+                // Os reenvios pedidos depois do cancelamento seguem: são de clientes que já estavam na lista.
                 List<CampaignDelivery> objNotSent = await _objDbContext.CampaignDeliveries
-                    .Where(delivery => delivery.IDRun == objRunId && delivery.Status == CampaignDeliveryStatus.Pending)
+                    .Where(delivery => delivery.IDRun == objRunId && !delivery.IsResend
+                        && delivery.Status == CampaignDeliveryStatus.Pending)
                     .ToListAsync(objCancellationToken);
                 foreach (CampaignDelivery objDelivery in objNotSent)
                 {

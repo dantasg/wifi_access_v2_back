@@ -271,6 +271,73 @@ public class CampaignsControllerTests
     }
 
     [Fact]
+    public async Task ResendDelivery_OnlyFinishedRun_UnitWithEmail_AndOwnUnits()
+    {
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Company objCompany = CreateCompany(objDbContext, arrKinds: CampaignKind.Birthday);
+        Unit objItaituba = new Unit { IDCompany = objCompany.Id, Name = "Itaituba", Slug = "itaituba", Email = "gerente@regional.com.br" };
+        Unit objCastanhal = new Unit { IDCompany = objCompany.Id, Name = "Castanhal", Slug = "castanhal", Email = "" };
+        Customer objAna = new Customer { IDCompany = objCompany.Id, Phone = "93991234567", Name = "Ana", IDLastUnit = objItaituba.Id };
+        Customer objBia = new Customer { IDCompany = objCompany.Id, Phone = "91991234567", Name = "Bia", IDLastUnit = objCastanhal.Id };
+        objDbContext.AddRange(objItaituba, objCastanhal, objAna, objBia);
+        objDbContext.SaveChanges();
+        CampaignsController objAdmin = CreateController(objDbContext, objCompany.Id);
+        CampaignDetailDto objCampaign = Ok(await objAdmin.Create(
+            new SaveCampaignRequest(CampaignKind.Birthday, "", Birthday()), null, CancellationToken.None));
+        CampaignRun objRun = new CampaignRun
+        {
+            IDCampaign = objCampaign.Id, IDCompany = objCompany.Id, Status = CampaignRunStatus.Running,
+            IDCampaignVersion = objDbContext.CampaignVersions.Single().Id, VersionNumber = 1,
+            LocalDate = new DateOnly(2026, 10, 12),
+        };
+        CampaignDelivery objToItaituba = new CampaignDelivery
+        {
+            IDRun = objRun.Id, IDUnit = objItaituba.Id, UnitName = "Itaituba", Email = "gerente@regional.com.br",
+            Status = CampaignDeliveryStatus.Sent, RecipientCount = 1, FileName = "campanha-aniversario-itaituba-2026-10-12.pdf",
+        };
+        CampaignDelivery objToCastanhal = new CampaignDelivery
+        {
+            IDRun = objRun.Id, IDUnit = objCastanhal.Id, UnitName = "Castanhal", Status = CampaignDeliveryStatus.Failed,
+            RecipientCount = 1, FileName = "campanha-aniversario-castanhal-2026-10-12.pdf",
+        };
+        objDbContext.AddRange(objRun, objToItaituba, objToCastanhal,
+            new CampaignRecipient
+            {
+                IDRun = objRun.Id, IDCustomer = objAna.Id, IDUnit = objItaituba.Id, Phone = objAna.Phone, Name = objAna.Name,
+                EventDate = new DateOnly(2026, 10, 12), Status = CampaignRecipientStatus.Sent,
+            },
+            new CampaignRecipient
+            {
+                IDRun = objRun.Id, IDCustomer = objBia.Id, IDUnit = objCastanhal.Id, Phone = objBia.Phone, Name = objBia.Name,
+                EventDate = new DateOnly(2026, 10, 12), Status = CampaignRecipientStatus.Failed,
+            });
+        objDbContext.SaveChanges();
+
+        // Em andamento: o próprio disparo ainda está mandando.
+        Assert.Contains("terminar", ErrorMessage(await objAdmin.ResendDelivery(objRun.Id, objToItaituba.Id, null, CancellationToken.None)));
+        objDbContext.CampaignRuns.Single().Status = CampaignRunStatus.Completed;
+        objDbContext.SaveChanges();
+
+        // Unidade que continua sem e-mail: avisa onde cadastrar.
+        Assert.Contains("não tem e-mail", ErrorMessage(await objAdmin.ResendDelivery(objRun.Id, objToCastanhal.Id, null, CancellationToken.None)));
+
+        // Usuário de unidade só reenvia o que é das unidades dele.
+        CampaignsController objUnitUser = new CampaignsController(objDbContext);
+        TestHelpers.SetCompanyUser(objUnitUser, objDbContext, objCompany.Id, "loja.castanhal", objCastanhal.Id);
+        Assert.IsType<NotFoundObjectResult>(
+            (await objUnitUser.ResendDelivery(objRun.Id, objToItaituba.Id, null, CancellationToken.None)).Result);
+
+        // Super admin, pela empresa escolhida no topo do painel.
+        CampaignsController objSuper = CreateController(objDbContext, null, "root");
+        CampaignDeliveryDto objResend = Ok(await objSuper.ResendDelivery(
+            objRun.Id, objToItaituba.Id, objCompany.Slug, CancellationToken.None));
+        Assert.True(objResend.IsResend);
+        Assert.Equal("root", objResend.RequestedBy);
+        Assert.Equal("gerente@regional.com.br", objResend.Email);
+        Assert.Equal(1, objResend.RecipientCount);
+    }
+
+    [Fact]
     public async Task Run_PauseResumeCancel_OnlyInRightStatuses()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();

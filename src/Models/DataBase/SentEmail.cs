@@ -8,6 +8,9 @@ namespace Models.DataBase
 
         /// <summary>PDF de uma execução de campanha, com os clientes da unidade.</summary>
         public const string Campaign = "Campaign";
+
+        /// <summary>O mesmo PDF de campanha, reenviado pela tela para o e-mail que a unidade tem hoje.</summary>
+        public const string CampaignResend = "CampaignResend";
     }
 
     /// <summary>
