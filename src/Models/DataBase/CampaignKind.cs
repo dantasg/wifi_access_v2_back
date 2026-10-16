@@ -19,6 +19,13 @@ namespace Models.DataBase
         public const string Filtered = "Filtered";
 
         /// <summary>
+        /// Demonstração (botão do super admin na tela de Campanhas, PROPOSTA_DEMONSTRACAO_CAMPANHA.md): todos os
+        /// clientes de uma unidade, com uma mensagem padrão, para o e-mail dela. Não é um tipo de campanha: fica
+        /// fora de <see cref="All"/>, então não se libera, não se cria e não dispara sozinha.
+        /// </summary>
+        public const string Demo = "Demo";
+
+        /// <summary>
         /// Ordem de prioridade (menor = mais importante). Com o limite de 1 mensagem por cliente por
         /// dia (D11), quando dois disparos caem no mesmo dia vale o de maior prioridade. A de
         /// boas-vindas saiu do sistema (D22).
@@ -45,6 +52,7 @@ namespace Models.DataBase
             SignupAnniversary => "aniversario-de-cadastro",
             WeMissYou => "sentimos-sua-falta",
             FrequentCustomer => "cliente-frequente",
+            Demo => "todos-os-clientes",
             _ => "campanha",
         };
 
@@ -61,6 +69,8 @@ namespace Models.DataBase
             WeMissYou => "Sentimos sua falta",
             FrequentCustomer => "Cliente frequente",
             Filtered => "Campanha filtrada",
+            // O PDF e o e-mail da demonstração saem como os de uma campanha de verdade (decisão de 16/10/2026).
+            Demo => "Todos os clientes",
             _ => sKind,
         };
     }

@@ -51,6 +51,7 @@ namespace Models.Campaigns
             CampaignKind.SignupAnniversary => "Cadastro",
             CampaignKind.FrequentCustomer => "Visitas",
             CampaignKind.WeMissYou => "Última visita",
+            CampaignKind.Demo => "Última visita",
             _ => "",
         };
 

@@ -59,7 +59,7 @@ public class EmailsController : ControllerBase
             }
             objQuery = objQuery.Where(email => email.IDUnit == objUnitId);
         }
-        if (sKind is SentEmailKind.Report or SentEmailKind.Campaign or SentEmailKind.CampaignResend)
+        if (sKind is SentEmailKind.Report or SentEmailKind.Campaign or SentEmailKind.CampaignResend or SentEmailKind.CampaignDemo)
         {
             objQuery = objQuery.Where(email => email.Kind == sKind);
         }
@@ -119,6 +119,24 @@ public class EmailsController : ControllerBase
             // A unidade pode ter mudado de nome: o PDF mostra o nome de quando saiu.
             objData = objData with { UnitName = objEmail.UnitName };
             return File(CampaignPdf.Build(objData), "application/pdf", objEmail.AttachmentName);
+        }
+
+        // Demonstração: não tem execução gravada; o PDF é montado de novo com os clientes que a unidade tem hoje.
+        if (objEmail.Kind == SentEmailKind.CampaignDemo && objEmail.IDUnit is Guid objDemoUnitId)
+        {
+            Unit? objUnit = await _objDbContext.Units.AsNoTracking()
+                .FirstOrDefaultAsync(unit => unit.Id == objDemoUnitId && unit.IDCompany == objEmail.IDCompany, objCancellationToken);
+            if (objUnit is null)
+            {
+                return NotFound(new ErrorResponse("A unidade desta demonstração não existe mais."));
+            }
+            string sTimeZone = await _objDbContext.Companies.AsNoTracking()
+                .Where(company => company.Id == objEmail.IDCompany).Select(company => company.TimeZone)
+                .FirstAsync(objCancellationToken);
+            DateOnly dtSent = CompanyTimeZone.Today(CompanyTimeZone.Resolve(sTimeZone), objEmail.SentAt);
+            CampaignPdfData objDemo = await CampaignDemo.LoadAsync(_objDbContext, objUnit, dtSent, objCancellationToken);
+            objDemo = objDemo with { UnitName = objEmail.UnitName };
+            return File(CampaignPdf.Build(objDemo), "application/pdf", objEmail.AttachmentName);
         }
 
         if (objEmail.Kind == SentEmailKind.Report && objEmail.IDUnit is Guid objUnitId

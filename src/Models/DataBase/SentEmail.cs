@@ -11,6 +11,12 @@ namespace Models.DataBase
 
         /// <summary>O mesmo PDF de campanha, reenviado pela tela para o e-mail que a unidade tem hoje.</summary>
         public const string CampaignResend = "CampaignResend";
+
+        /// <summary>
+        /// Demonstração pedida pelo super admin: o PDF de campanha com todos os clientes da unidade
+        /// (PROPOSTA_DEMONSTRACAO_CAMPANHA.md). O e-mail sai igual ao de uma campanha; só o sistema marca.
+        /// </summary>
+        public const string CampaignDemo = "CampaignDemo";
     }
 
     /// <summary>
