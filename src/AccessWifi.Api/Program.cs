@@ -115,6 +115,16 @@ builder.Services.AddRateLimiter(objLimiterOptions =>
                 PermitLimit = 5,
                 Window = TimeSpan.FromMinutes(1),
             }));
+    // Avisos da UniFi (captura temporária): cada loja manda do próprio IP; 120/min cobre muitos celulares
+    // conectando juntos e ainda barra quem tentar encher o banco.
+    objLimiterOptions.AddPolicy("unifi-webhook", objHttpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            objHttpContext.Connection.RemoteIpAddress ?? IPAddress.Loopback,
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 120,
+                Window = TimeSpan.FromMinutes(1),
+            }));
 });
 
 // ---------------------------------------------------------------- Serviços da app

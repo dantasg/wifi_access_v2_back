@@ -34,6 +34,9 @@ namespace Models.Persistence
         public DbSet<CampaignDelivery> CampaignDeliveries => Set<CampaignDelivery>();
         public DbSet<CampaignEvent> CampaignEvents => Set<CampaignEvent>();
 
+        // ------------------------------------------------------------ Temporária: avisos da UniFi (22/10/2026)
+        public DbSet<UnifiWebhookCapture> UnifiWebhookCaptures => Set<UnifiWebhookCapture>();
+
         protected override void OnModelCreating(ModelBuilder objModelBuilder)
         {
             objModelBuilder.Entity<Configuration>(objConfiguration =>
@@ -355,6 +358,18 @@ namespace Models.Persistence
                     .WithMany()
                     .HasForeignKey(delivery => delivery.IDUnit)
                     .OnDelete(DeleteBehavior.SetNull);
+            });
+
+            objModelBuilder.Entity<UnifiWebhookCapture>(objCapture =>
+            {
+                objCapture.Property(capture => capture.Method).HasMaxLength(10);
+                objCapture.Property(capture => capture.Label).HasMaxLength(60);
+                objCapture.Property(capture => capture.QueryString).HasMaxLength(2000);
+                objCapture.Property(capture => capture.HeadersJson).HasColumnType("jsonb");
+                objCapture.Property(capture => capture.ContentType).HasMaxLength(200);
+                objCapture.Property(capture => capture.BodyJson).HasColumnType("jsonb");
+                objCapture.Property(capture => capture.RemoteIp).HasMaxLength(64);
+                objCapture.HasIndex(capture => capture.ReceivedAt);
             });
 
             objModelBuilder.Entity<CampaignEvent>(objEvent =>
