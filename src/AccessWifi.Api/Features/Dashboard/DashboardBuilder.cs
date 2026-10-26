@@ -30,8 +30,11 @@ public class DashboardBuilder
         _objDbContext = objDbContext;
     }
 
+    /// <summary>Estadia acima disto fica fora da média do tempo na loja: quase sempre é funcionário ou aparelho da loja (D7).</summary>
+    public const int MaxStaySecondsForAverage = 4 * 60 * 60;
+
     /// <summary>Conexão do período, só com o que as contas usam.</summary>
-    private record LoadedVisit(Guid IDUnit, Guid? IDCustomer, DateOnly LocalDate, int LocalHour, string Ap);
+    private record LoadedVisit(Guid IDUnit, Guid? IDCustomer, DateTime At, DateOnly LocalDate, int LocalHour, string Ap, int? StaySeconds);
 
     /// <summary>Contas de um período (o pedido e o anterior usam as mesmas).</summary>
     private sealed class Period
@@ -90,7 +93,11 @@ public class DashboardBuilder
                 Rate(objCurrent.Returning.Count, objCurrent.Visitors.Count),
                 Rate(objPrevious.Returning.Count, objPrevious.Visitors.Count)),
             iBase,
-            iActive);
+            iActive,
+            new DashboardAverageDto(
+                AverageStayMinutes(objCurrent.Visits),
+                AverageStayMinutes(objPrevious.Visits),
+                LastStays(objCurrent.Visits).Count));
 
         Dictionary<DateOnly, int> objVisitsByDay = objCurrent.Visits
             .GroupBy(visit => visit.LocalDate)
@@ -155,7 +162,7 @@ public class DashboardBuilder
 
         List<LoadedVisit> objVisits = await _objDbContext.Visits.AsNoTracking()
             .Where(visit => arrUnits.Contains(visit.IDUnit) && visit.LocalDate >= dtFrom && visit.LocalDate <= dtTo)
-            .Select(visit => new LoadedVisit(visit.IDUnit, visit.IDCustomer, visit.LocalDate, visit.LocalHour, visit.Ap))
+            .Select(visit => new LoadedVisit(visit.IDUnit, visit.IDCustomer, visit.At, visit.LocalDate, visit.LocalHour, visit.Ap, visit.StaySeconds))
             .ToListAsync(objCancellationToken);
 
         // Clientes novos: a 1ª visita a alguma unidade da visão caiu no período.
@@ -240,6 +247,9 @@ public class DashboardBuilder
         Dictionary<Guid, int> objVisits = objCurrent.Visits
             .GroupBy(visit => visit.IDUnit)
             .ToDictionary(group => group.Key, group => group.Count());
+        Dictionary<Guid, double?> objStays = objCurrent.Visits
+            .GroupBy(visit => visit.IDUnit)
+            .ToDictionary(group => group.Key, group => AverageStayMinutes(group));
 
         return objUnits
             .Select(unit =>
@@ -255,7 +265,8 @@ public class DashboardBuilder
                     Rate(iReturning, iVisitors),
                     objUnitCount?.Customers ?? 0,
                     objUnitCount?.Active ?? 0,
-                    objUnitCount?.Last);
+                    objUnitCount?.Last,
+                    objStays.GetValueOrDefault(unit.Id));
             })
             .OrderByDescending(row => row.Connections)
             .ThenBy(row => row.Name)
@@ -345,6 +356,25 @@ public class DashboardBuilder
     private static (DateTime StartUtc, DateTime EndUtc) Bounds(DateOnly dtFrom, DateOnly dtTo, TimeZoneInfo objZone) =>
         (TimeZoneInfo.ConvertTimeToUtc(dtFrom.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified), objZone),
          TimeZoneInfo.ConvertTimeToUtc(dtTo.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified), objZone));
+
+    /// <summary>
+    /// O tempo de cada cliente, uma vez só: o da última visita dele com tempo medido (a mais nova vale, D7). Estadia
+    /// acima de 4 horas fica de fora (quase sempre funcionário ou aparelho da loja). Visita sem cliente não entra.
+    /// </summary>
+    private static List<int> LastStays(IEnumerable<LoadedVisit> objVisits) =>
+        objVisits
+            .Where(visit => visit.IDCustomer is not null && visit.StaySeconds is not null)
+            .GroupBy(visit => visit.IDCustomer!.Value)
+            .Select(group => group.OrderByDescending(visit => visit.LocalDate).ThenByDescending(visit => visit.At).First().StaySeconds!.Value)
+            .Where(iSeconds => iSeconds <= MaxStaySecondsForAverage)
+            .ToList();
+
+    /// <summary>Média, em minutos com uma casa, do tempo de cada cliente (<see cref="LastStays"/>); null = nenhum medido.</summary>
+    private static double? AverageStayMinutes(IEnumerable<LoadedVisit> objVisits)
+    {
+        List<int> objSeconds = LastStays(objVisits);
+        return objSeconds.Count == 0 ? null : Math.Round(objSeconds.Average() / 60.0, 1);
+    }
 
     private static double? Rate(int iPart, int iTotal) =>
         iTotal == 0 ? null : Math.Round(100.0 * iPart / iTotal, 1);

@@ -53,6 +53,19 @@ namespace Models.DataBase
         /// <summary>Motivo da última leitura que falhou ("" = deu certo). Os aparelhos já lidos continuam valendo.</summary>
         public string DevicesSyncError { get; set; } = "";
 
+        /// <summary>
+        /// Impressão (SHA-256, em hexadecimal) do código secreto do endereço que recebe os avisos da UniFi (Alarm
+        /// Manager) desta unidade: <c>/webhooks/unifi/{código}</c>. "" = sem endereço. O código em si só aparece uma
+        /// vez, quando é gerado no painel (PROPOSTA_VISITAS_UNIFI.md, D1).
+        /// </summary>
+        public string UnifiWebhookHash { get; set; } = "";
+
+        /// <summary>Quando o endereço dos avisos foi gerado (UTC). Nulo = nunca.</summary>
+        public DateTime? UnifiWebhookCreatedAt { get; set; }
+
+        /// <summary>Último aviso da UniFi aceito para esta unidade (UTC). Nulo = nenhum ainda.</summary>
+        public DateTime? UnifiWebhookLastAt { get; set; }
+
         public bool Active { get; set; } = true;
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

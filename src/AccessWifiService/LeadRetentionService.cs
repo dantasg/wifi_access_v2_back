@@ -15,6 +15,8 @@ namespace AccessWifiService
     ///   <item>a lista de destinatários das execuções de campanha com mais de
     ///   "Retention:CampaignRecipientMonths" (padrão 12, D16). O resumo de cada execução e as versões
     ///   das campanhas ficam.</item>
+    ///   <item>os sinais dos aparelhos na rede de clientes (avisos da UniFi) com mais de "Retention:WifiPresenceDays"
+    ///   (padrão 90, PROPOSTA_VISITAS_UNIFI.md D9). O tempo na loja de cada visita fica na visita.</item>
     /// </list>
     /// 0 ou negativo desliga a regra correspondente.
     /// </summary>
@@ -24,6 +26,7 @@ namespace AccessWifiService
         private readonly ILogger<LeadRetentionService> _objLogger;
         private readonly int _iRetentionMonths;
         private readonly int _iRecipientMonths;
+        private readonly int _iPresenceDays;
 
         public LeadRetentionService(
             AppDbContext objDbContext, IConfiguration objConfiguration, ILogger<LeadRetentionService> objLogger)
@@ -32,6 +35,7 @@ namespace AccessWifiService
             _objLogger = objLogger;
             _iRetentionMonths = objConfiguration.GetValue("Retention:LeadMonths", 24);
             _iRecipientMonths = objConfiguration.GetValue("Retention:CampaignRecipientMonths", 12);
+            _iPresenceDays = objConfiguration.GetValue("Retention:WifiPresenceDays", 90);
         }
 
         /// <param name="dtNowUtc">Referência de "agora" em UTC (as datas são gravadas em UTC).</param>
@@ -75,6 +79,22 @@ namespace AccessWifiService
                     _objLogger.LogInformation(
                         "Retenção: {Count} destinatário(s) de execuções anteriores a {Cutoff:yyyy-MM-dd} removidos.",
                         objRecipients.Count, dtCutoffUtc);
+                }
+            }
+
+            if (_iPresenceDays > 0)
+            {
+                DateTime dtCutoffUtc = dtNowUtc.AddDays(-_iPresenceDays);
+                List<WifiPresence> objPresences = await _objDbContext.WifiPresences
+                    .Where(presence => presence.LastSeenAt < dtCutoffUtc)
+                    .ToListAsync(objCancellationToken);
+                if (objPresences.Count > 0)
+                {
+                    _objDbContext.WifiPresences.RemoveRange(objPresences);
+                    await _objDbContext.SaveChangesAsync(objCancellationToken);
+                    _objLogger.LogInformation(
+                        "Retenção: {Count} registro(s) de sinais de aparelhos anteriores a {Cutoff:yyyy-MM-dd} removidos.",
+                        objPresences.Count, dtCutoffUtc);
                 }
             }
         }

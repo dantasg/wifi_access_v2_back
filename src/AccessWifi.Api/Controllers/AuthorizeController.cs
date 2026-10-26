@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Models.DataBase;
+using Models.Visits;
 
 namespace AccessWifi.Api.Controllers;
 
@@ -122,7 +123,7 @@ public class AuthorizeController : ControllerBase
         // Conexão do dashboard (PROPOSTA_DASHBOARD.md, D3): só a que a UniFi liberou.
         if (!bUnifiFailed)
         {
-            await RegisterVisitAsync(objUnit, objRequest.Ap, objCustomer, objCancellationToken);
+            await RegisterVisitAsync(objUnit, objRequest.Ap, objRequest.Mac, objCustomer, objCancellationToken);
         }
 
         if (bUnifiFailed)
@@ -191,25 +192,49 @@ public class AuthorizeController : ControllerBase
     /// <summary>
     /// Registra a conexão liberada para o dashboard (PROPOSTA_DASHBOARD.md, D3). Gravação própria, depois do
     /// cliente: se falhar, o cliente já está salvo e o visitante segue para o redirecionamento — só fica no log.
+    /// Com o cliente conhecido, é uma visita por cliente, unidade e dia, também com as visitas que vieram pelos avisos
+    /// da UniFi (PROPOSTA_VISITAS_UNIFI.md, D3); e os sinais do aparelho no dia passam a ser deste cliente.
     /// </summary>
     private async Task RegisterVisitAsync(
-        Unit objUnit, string? sAp, RegisteredCustomer objCustomer, CancellationToken objCancellationToken)
+        Unit objUnit, string? sAp, string sMac, RegisteredCustomer objCustomer, CancellationToken objCancellationToken)
     {
         try
         {
             DateTime dtLocal = TimeZoneInfo.ConvertTimeFromUtc(
                 DateTime.SpecifyKind(objCustomer.AtUtc, DateTimeKind.Utc), objCustomer.Zone);
-            _objDbContext.Visits.Add(new Visit
+            DateOnly dtDay = DateOnly.FromDateTime(dtLocal);
+
+            Visit? objVisit = objCustomer.IDCustomer is Guid objCustomerId
+                ? await UnifiVisitTracker.FindDayVisitAsync(_objDbContext, objUnit.Id, objCustomerId, dtDay, objCancellationToken)
+                : null;
+            if (objVisit is null)
             {
-                IDUnit = objUnit.Id,
-                IDCustomer = objCustomer.IDCustomer,
-                At = objCustomer.AtUtc,
-                LocalDate = DateOnly.FromDateTime(dtLocal),
-                LocalHour = dtLocal.Hour,
-                NewInCompany = objCustomer.NewInCompany,
-                NewInUnit = objCustomer.NewInUnit,
-                Ap = MacAddress.Normalize(sAp),
-            });
+                objVisit = new Visit
+                {
+                    IDUnit = objUnit.Id,
+                    IDCustomer = objCustomer.IDCustomer,
+                    At = objCustomer.AtUtc,
+                    LocalDate = dtDay,
+                    LocalHour = dtLocal.Hour,
+                    NewInCompany = objCustomer.NewInCompany,
+                    NewInUnit = objCustomer.NewInUnit,
+                    Ap = MacAddress.Normalize(sAp),
+                    Source = VisitSource.Portal,
+                };
+                _objDbContext.Visits.Add(objVisit);
+            }
+
+            string sDevice = MacAddress.Normalize(sMac);
+            WifiPresence? objPresence = objCustomer.IDCustomer is null || sDevice.Length == 0
+                ? null
+                : await _objDbContext.WifiPresences.FirstOrDefaultAsync(
+                    presence => presence.IDUnit == objUnit.Id && presence.Mac == sDevice && presence.LocalDate == dtDay,
+                    objCancellationToken);
+            if (objPresence is not null)
+            {
+                objPresence.IDCustomer = objCustomer.IDCustomer;
+                UnifiVisitTracker.ApplyStay(objVisit, objPresence);
+            }
             await _objDbContext.SaveChangesAsync(objCancellationToken);
         }
         catch (Exception objException) when (objException is not OperationCanceledException)

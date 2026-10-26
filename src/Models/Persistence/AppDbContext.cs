@@ -37,6 +37,10 @@ namespace Models.Persistence
         // ------------------------------------------------------------ Temporária: avisos da UniFi (22/10/2026)
         public DbSet<UnifiWebhookCapture> UnifiWebhookCaptures => Set<UnifiWebhookCapture>();
 
+        // ------------------------------------------------------------ Visitas pela UniFi (PROPOSTA_VISITAS_UNIFI.md)
+        public DbSet<WifiPresence> WifiPresences => Set<WifiPresence>();
+        public DbSet<UnitIgnoredDevice> UnitIgnoredDevices => Set<UnitIgnoredDevice>();
+
         protected override void OnModelCreating(ModelBuilder objModelBuilder)
         {
             objModelBuilder.Entity<Configuration>(objConfiguration =>
@@ -70,6 +74,11 @@ namespace Models.Persistence
                 objUnit.Property(unit => unit.Email).HasMaxLength(200);
                 objUnit.Property(unit => unit.AreaCode).HasMaxLength(2);
                 objUnit.Property(unit => unit.DevicesSyncError).HasMaxLength(300);
+                // O aviso da UniFi acha a unidade pela impressão do código do endereço.
+                objUnit.Property(unit => unit.UnifiWebhookHash).HasMaxLength(64);
+                objUnit.HasIndex(unit => unit.UnifiWebhookHash)
+                    .IsUnique()
+                    .HasFilter("\"UnifiWebhookHash\" <> ''");
                 objUnit.HasOne<Company>()
                     .WithMany()
                     .HasForeignKey(unit => unit.IDCompany)
@@ -116,6 +125,7 @@ namespace Models.Persistence
             objModelBuilder.Entity<Visit>(objVisit =>
             {
                 objVisit.Property(visit => visit.Ap).HasMaxLength(17);
+                objVisit.Property(visit => visit.Source).HasConversion<string>().HasMaxLength(10);
                 // O dashboard filtra por unidade e período (dia no fuso da empresa).
                 objVisit.HasIndex(visit => new { visit.IDUnit, visit.LocalDate });
                 objVisit.HasIndex(visit => visit.IDCustomer);
@@ -370,6 +380,39 @@ namespace Models.Persistence
                 objCapture.Property(capture => capture.BodyJson).HasColumnType("jsonb");
                 objCapture.Property(capture => capture.RemoteIp).HasMaxLength(64);
                 objCapture.HasIndex(capture => capture.ReceivedAt);
+            });
+
+            objModelBuilder.Entity<WifiPresence>(objPresence =>
+            {
+                objPresence.Property(presence => presence.Mac).HasMaxLength(17);
+                objPresence.Property(presence => presence.Ap).HasMaxLength(17);
+                objPresence.Property(presence => presence.Hostname).HasMaxLength(100);
+                objPresence.Ignore(presence => presence.StaySeconds);
+                // Um registro por aparelho, unidade e dia.
+                objPresence.HasIndex(presence => new { presence.IDUnit, presence.Mac, presence.LocalDate }).IsUnique();
+                // A tela da unidade lista os aparelhos dos últimos dias; a retenção apaga pelos mais antigos.
+                objPresence.HasIndex(presence => new { presence.IDUnit, presence.LocalDate });
+                objPresence.HasIndex(presence => presence.LastSeenAt);
+                objPresence.HasOne<Unit>()
+                    .WithMany()
+                    .HasForeignKey(presence => presence.IDUnit)
+                    .OnDelete(DeleteBehavior.Cascade);
+                objPresence.HasOne<Customer>()
+                    .WithMany()
+                    .HasForeignKey(presence => presence.IDCustomer)
+                    .OnDelete(DeleteBehavior.SetNull);
+            });
+
+            objModelBuilder.Entity<UnitIgnoredDevice>(objIgnored =>
+            {
+                objIgnored.HasKey(ignored => new { ignored.IDUnit, ignored.Mac });
+                objIgnored.Property(ignored => ignored.Mac).HasMaxLength(17);
+                objIgnored.Property(ignored => ignored.Label).HasMaxLength(100);
+                objIgnored.Property(ignored => ignored.Username).HasMaxLength(60);
+                objIgnored.HasOne<Unit>()
+                    .WithMany()
+                    .HasForeignKey(ignored => ignored.IDUnit)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
             objModelBuilder.Entity<CampaignEvent>(objEvent =>

@@ -9,17 +9,21 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Models.DataBase;
 using Models.Persistence;
+using Models.Visits;
 
 namespace AccessWifi.Api.Controllers;
 
 /// <summary>
-/// TEMPORÁRIO (22/10/2026): recebe o webhook do Alarm Manager da UniFi ("cliente conectou") e guarda tudo como
-/// chegou em UnifiWebhookCaptures, para analisarmos o conteúdo antes de desenhar o registro de visitas sem
-/// portal. Não processa nada nem muda nenhum dado do sistema.
+/// Recebe os avisos do Alarm Manager da UniFi ("cliente conectou/desconectou") e transforma em visitas e tempo na
+/// loja (PROPOSTA_VISITAS_UNIFI.md, <see cref="UnifiVisitTracker"/>).
 ///
-/// Endereço: /webhooks/unifi/{código}?unit=nome-da-loja. O código secreto vem de UnifiWebhook:CaptureToken
-/// (no servidor, /etc/accesswifi/accesswifi.env); sem ele configurado, a rota não existe (404). Código errado
-/// também é 404, para não confirmar que a rota existe.
+/// Endereço: /webhooks/unifi/{código}. O código acha a unidade: cada unidade tem o seu, gerado no painel e guardado
+/// só como impressão (<see cref="Unit.UnifiWebhookHash"/>, D1). O código da captura de 22/10/2026
+/// (UnifiWebhook:CaptureToken, no /etc/accesswifi/accesswifi.env) continua aceito com "?unit=slug", para a Itaituba
+/// não precisar trocar o endereço. Código errado é 404, para não confirmar que a rota existe.
+///
+/// TEMPORÁRIO: enquanto o aviso de desconexão não for analisado, tudo o que chega também é guardado como chegou em
+/// UnifiWebhookCaptures (até <see cref="MaxCaptures"/> linhas).
 /// </summary>
 [ApiController]
 [Route("webhooks/unifi")]
@@ -53,15 +57,21 @@ public partial class UnifiWebhookController : ControllerBase
     public async Task<IActionResult> Capture(
         string token, [FromQuery(Name = "unit")] string? sLabel, CancellationToken objCancellationToken)
     {
-        if (!IsValidToken(token))
+        string sCleanLabel = (sLabel ?? "").Trim().ToLowerInvariant();
+        if (!LabelRegex().IsMatch(sCleanLabel))
         {
-            return NotFound();
+            sCleanLabel = "";
         }
 
-        if (await _objDbContext.UnifiWebhookCaptures.CountAsync(objCancellationToken) >= MaxCaptures)
+        Unit? objUnit = await FindUnitAsync(token, objCancellationToken);
+        bool bCaptureToken = IsCaptureToken(token);
+        if (objUnit is null && bCaptureToken && sCleanLabel.Length > 0)
         {
-            _objLogger.LogWarning("Captura de avisos da UniFi cheia ({Max}); aviso ignorado.", MaxCaptures);
-            return Ok(new { ok = true });
+            objUnit = await _objDbContext.Units.FirstOrDefaultAsync(unit => unit.Slug == sCleanLabel, objCancellationToken);
+        }
+        if (objUnit is null && !bCaptureToken)
+        {
+            return NotFound();
         }
 
         string sBody;
@@ -70,18 +80,69 @@ public partial class UnifiWebhookController : ControllerBase
             sBody = await objReader.ReadToEndAsync(objCancellationToken);
         }
 
+        await SaveCaptureAsync(sBody, objUnit is null ? sCleanLabel : objUnit.Slug, objCancellationToken);
+
+        if (objUnit is not null && objUnit.Active)
+        {
+            await HandleAsync(objUnit, sBody, objCancellationToken);
+        }
+        return Ok(new { ok = true });
+    }
+
+    /// <summary>
+    /// Processa o aviso. Nunca derruba a resposta: o que der errado fica no log (a UniFi não tem o que fazer com um
+    /// erro nosso). Uma segunda tentativa cobre dois avisos do mesmo aparelho chegando juntos (registro do dia criado
+    /// pelos dois ao mesmo tempo).
+    /// </summary>
+    private async Task HandleAsync(Unit objUnit, string sBody, CancellationToken objCancellationToken)
+    {
+        UnifiNotice? objNotice = UnifiNotice.Parse(sBody);
+        DateTime dtNowUtc = DateTime.UtcNow;
+        for (int iAttempt = 1; iAttempt <= 2; iAttempt++)
+        {
+            try
+            {
+                Unit objTracked = await _objDbContext.Units.FirstAsync(unit => unit.Id == objUnit.Id, objCancellationToken);
+                objTracked.UnifiWebhookLastAt = dtNowUtc;
+                if (objNotice is null)
+                {
+                    await _objDbContext.SaveChangesAsync(objCancellationToken);
+                    return;
+                }
+                await UnifiVisitTracker.HandleAsync(_objDbContext, objTracked, objNotice, dtNowUtc, objCancellationToken);
+                await _objDbContext.SaveChangesAsync(objCancellationToken);
+                return;
+            }
+            catch (Exception objException) when (objException is not OperationCanceledException)
+            {
+                _objDbContext.ChangeTracker.Clear();
+                if (iAttempt == 2)
+                {
+                    // Sem dado pessoal no log: só a unidade e o motivo técnico.
+                    _objLogger.LogWarning(objException, "Aviso da UniFi não processado na unidade {Slug}.", objUnit.Slug);
+                }
+            }
+        }
+    }
+
+    private async Task SaveCaptureAsync(string sBody, string sLabel, CancellationToken objCancellationToken)
+    {
+        if (await _objDbContext.UnifiWebhookCaptures.CountAsync(objCancellationToken) >= MaxCaptures)
+        {
+            return;
+        }
+
         JsonObject objHeaders = [];
         foreach (KeyValuePair<string, Microsoft.Extensions.Primitives.StringValues> objHeader in Request.Headers)
         {
             objHeaders[objHeader.Key] = objHeader.Value.ToString();
         }
 
-        string sCleanLabel = (sLabel ?? "").Trim().ToLowerInvariant();
         _objDbContext.UnifiWebhookCaptures.Add(new UnifiWebhookCapture
         {
             ReceivedAt = DateTime.UtcNow,
             Method = Request.Method,
-            Label = LabelRegex().IsMatch(sCleanLabel) ? sCleanLabel : "",
+            Label = sLabel,
             QueryString = Truncate(Request.QueryString.Value ?? "", 2000),
             HeadersJson = objHeaders.ToJsonString(),
             ContentType = Truncate(Request.ContentType ?? "", 200),
@@ -90,11 +151,27 @@ public partial class UnifiWebhookController : ControllerBase
             RemoteIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "",
         });
         await _objDbContext.SaveChangesAsync(objCancellationToken);
-        return Ok(new { ok = true });
+        _objDbContext.ChangeTracker.Clear();
     }
 
-    /// <summary>Compara em tempo constante, para o código não poder ser adivinhado pelo tempo de resposta.</summary>
-    private bool IsValidToken(string sToken)
+    /// <summary>A unidade dona do código (pela impressão; o código em si não fica no banco).</summary>
+    private async Task<Unit?> FindUnitAsync(string sToken, CancellationToken objCancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(sToken) || sToken.Length < 20)
+        {
+            return null;
+        }
+        string sHash = HashToken(sToken);
+        return await _objDbContext.Units.AsNoTracking()
+            .FirstOrDefaultAsync(unit => unit.UnifiWebhookHash == sHash, objCancellationToken);
+    }
+
+    /// <summary>Impressão do código do endereço: SHA-256 em hexadecimal minúsculo.</summary>
+    public static string HashToken(string sToken) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sToken))).ToLowerInvariant();
+
+    /// <summary>Código da captura de 22/10/2026. Compara em tempo constante, para não poder ser adivinhado pelo tempo de resposta.</summary>
+    private bool IsCaptureToken(string sToken)
     {
         string sExpected = _objConfiguration["UnifiWebhook:CaptureToken"] ?? "";
         if (sExpected.Length < 20 || string.IsNullOrEmpty(sToken))

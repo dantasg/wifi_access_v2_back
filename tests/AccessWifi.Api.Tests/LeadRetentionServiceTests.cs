@@ -50,6 +50,24 @@ public class LeadRetentionServiceTests
     }
 
     [Fact]
+    public async Task Purge_DeletesWifiSignalsAfter90Days_TheVisitKeepsItsStay()
+    {
+        // PROPOSTA_VISITAS_UNIFI.md, D9.
+        using AppDbContext objDbContext = TestHelpers.CreateDbContext();
+        Guid objUnitId = Guid.NewGuid();
+        objDbContext.WifiPresences.AddRange(
+            new WifiPresence { IDUnit = objUnitId, Mac = "aa:bb:cc:dd:ee:01", LastSeenAt = s_dtNow.AddDays(-91) },
+            new WifiPresence { IDUnit = objUnitId, Mac = "aa:bb:cc:dd:ee:02", LastSeenAt = s_dtNow.AddDays(-89) });
+        objDbContext.Visits.Add(new Visit { IDUnit = objUnitId, At = s_dtNow.AddDays(-91), StaySeconds = 900 });
+        objDbContext.SaveChanges();
+
+        await CreateService(objDbContext).PurgeExpiredLeadsAsync(s_dtNow, CancellationToken.None);
+
+        Assert.Equal("aa:bb:cc:dd:ee:02", Assert.Single(objDbContext.WifiPresences).Mac);
+        Assert.Equal(900, Assert.Single(objDbContext.Visits).StaySeconds);
+    }
+
+    [Fact]
     public async Task Purge_DeletesCustomerAway24Months()
     {
         using AppDbContext objDbContext = TestHelpers.CreateDbContext();

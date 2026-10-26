@@ -86,12 +86,20 @@ public class PortalVisitsTests
     }
 
     [Fact]
-    public async Task Returned_SameStore_IsNotNew()
+    public async Task Returned_SameStore_IsNotNew_AndTheSameDayCountsOnce()
     {
         using AppDbContext objDb = TestHelpers.CreateDbContext();
         CreateStores(objDb);
 
+        // PROPOSTA_VISITAS_UNIFI.md, D3: uma visita por cliente, unidade e dia.
         await ConnectAsync(objDb, MakeRequest("itaituba"));
+        await ConnectAsync(objDb, MakeRequest("itaituba"));
+        Visit objFirst = Assert.Single(objDb.Visits);
+        Assert.True(objFirst.NewInCompany);
+
+        // Volta no dia seguinte: outra visita, e já não é cliente novo.
+        objFirst.LocalDate = objFirst.LocalDate.AddDays(-1);
+        objDb.SaveChanges();
         await ConnectAsync(objDb, MakeRequest("itaituba"));
 
         List<Visit> objVisits = objDb.Visits.OrderBy(visit => visit.Id).ToList();

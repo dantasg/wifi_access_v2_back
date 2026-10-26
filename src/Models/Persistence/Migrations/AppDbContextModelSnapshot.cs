@@ -898,6 +898,17 @@ namespace Models.Persistence.Migrations
                         .HasMaxLength(40)
                         .HasColumnType("character varying(40)");
 
+                    b.Property<DateTime?>("UnifiWebhookCreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UnifiWebhookHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime?>("UnifiWebhookLastAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.HasKey("Id");
 
                     b.HasIndex("IDCompany");
@@ -908,6 +919,10 @@ namespace Models.Persistence.Migrations
 
                     b.HasIndex("Slug")
                         .IsUnique();
+
+                    b.HasIndex("UnifiWebhookHash")
+                        .IsUnique()
+                        .HasFilter("\"UnifiWebhookHash\" <> ''");
 
                     b.ToTable("Units");
                 });
@@ -939,6 +954,33 @@ namespace Models.Persistence.Migrations
                     b.HasIndex("Mac");
 
                     b.ToTable("UnitDevices");
+                });
+
+            modelBuilder.Entity("Models.DataBase.UnitIgnoredDevice", b =>
+                {
+                    b.Property<Guid>("IDUnit")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Mac")
+                        .HasMaxLength(17)
+                        .HasColumnType("character varying(17)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.HasKey("IDUnit", "Mac");
+
+                    b.ToTable("UnitIgnoredDevices");
                 });
 
             modelBuilder.Entity("Models.DataBase.Visit", b =>
@@ -975,6 +1017,14 @@ namespace Models.Persistence.Migrations
                     b.Property<bool>("NewInUnit")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<int?>("StaySeconds")
+                        .HasColumnType("integer");
+
                     b.HasKey("Id");
 
                     b.HasIndex("IDCustomer");
@@ -982,6 +1032,73 @@ namespace Models.Persistence.Migrations
                     b.HasIndex("IDUnit", "LocalDate");
 
                     b.ToTable("Visits");
+                });
+
+            modelBuilder.Entity("Models.DataBase.WifiPresence", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Ap")
+                        .IsRequired()
+                        .HasMaxLength(17)
+                        .HasColumnType("character varying(17)");
+
+                    b.Property<int>("ClosedSeconds")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Connects")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Disconnects")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("FirstSeenAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Hostname")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<Guid?>("IDCustomer")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("IDUnit")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("LastSeenAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly>("LocalDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Mac")
+                        .IsRequired()
+                        .HasMaxLength(17)
+                        .HasColumnType("character varying(17)");
+
+                    b.Property<DateTime>("StayStartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IDCustomer");
+
+                    b.HasIndex("LastSeenAt");
+
+                    b.HasIndex("IDUnit", "LocalDate");
+
+                    b.HasIndex("IDUnit", "Mac", "LocalDate")
+                        .IsUnique();
+
+                    b.ToTable("WifiPresences");
                 });
 
             modelBuilder.Entity("Models.DataBase.AdminUser", b =>
@@ -1290,7 +1407,30 @@ namespace Models.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Models.DataBase.UnitIgnoredDevice", b =>
+                {
+                    b.HasOne("Models.DataBase.Unit", null)
+                        .WithMany()
+                        .HasForeignKey("IDUnit")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Models.DataBase.Visit", b =>
+                {
+                    b.HasOne("Models.DataBase.Customer", null)
+                        .WithMany()
+                        .HasForeignKey("IDCustomer")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Models.DataBase.Unit", null)
+                        .WithMany()
+                        .HasForeignKey("IDUnit")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Models.DataBase.WifiPresence", b =>
                 {
                     b.HasOne("Models.DataBase.Customer", null)
                         .WithMany()

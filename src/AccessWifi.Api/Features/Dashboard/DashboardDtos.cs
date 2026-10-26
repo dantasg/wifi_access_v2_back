@@ -41,11 +41,20 @@ namespace AccessWifi.Api.Features.Dashboard
         // Clientes da visão até o fim do período.
         int CustomerBase,
         // Clientes com visita nos últimos 30 dias (contados até agora).
-        int Active30d);
+        int Active30d,
+        // Tempo médio na loja, em minutos, pelos avisos da UniFi (PROPOSTA_VISITAS_UNIFI.md, D6/D7): cada cliente conta
+        // uma vez, com o tempo da última visita dele no período.
+        DashboardAverageDto AvgStayMinutes);
 
     public record DashboardCompareDto(int Current, int Previous);
 
     public record DashboardRateDto(double? Current, double? Previous);
+
+    /// <summary>
+    /// Média do período e do anterior (null = nenhum cliente medido). Measured: quantos clientes entraram na média do
+    /// período (cada um com o tempo da última visita medida, até 4 horas).
+    /// </summary>
+    public record DashboardAverageDto(double? Current, double? Previous, int Measured);
 
     public record DashboardDayDto(DateOnly Date, int Connections, int NewCustomers, int Returning);
 
@@ -63,7 +72,9 @@ namespace AccessWifi.Api.Features.Dashboard
         double? ReturnRate,
         int Customers,
         int Active30d,
-        DateTime? LastVisitAt);
+        DateTime? LastVisitAt,
+        // Tempo médio na loja no período, em minutos (cada cliente uma vez, a última visita vale); null = ninguém medido.
+        double? AvgStayMinutes);
 
     public record DashboardApDto(string Mac, string Name, string Model, int Connections);
 
