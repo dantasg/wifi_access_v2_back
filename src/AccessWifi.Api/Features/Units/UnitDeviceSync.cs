@@ -17,6 +17,9 @@ public class UnitDeviceSync
 {
     public record Result(int Units, int Devices, int Failures);
 
+    /// <summary>Aparelho que não veio na leitura da nuvem continua identificando a loja por este tempo.</summary>
+    public static readonly TimeSpan KeepMissingFor = TimeSpan.FromDays(7);
+
     // O worker, a leitura na hora do portal e o botão do painel gravam a mesma tabela: um de cada vez.
     private static readonly SemaphoreSlim s_objLock = new SemaphoreSlim(1, 1);
 
@@ -160,8 +163,18 @@ public class UnitDeviceSync
             }
         }
 
-        // Saiu do console (trocado, levado para outra loja): deixa de identificar esta unidade.
-        _objDbContext.UnitDevices.RemoveRange(objCurrent.Values);
+        // Saiu do console (trocado, levado para outra loja): deixa de identificar esta unidade, mas só depois de
+        // ficar KeepMissingFor sem aparecer. A nuvem às vezes devolve a lista incompleta (em 26/10/2026 veio só o
+        // console da Itaituba, com o AP funcionando), e tirar o AP na hora deixava o portal sem achar a loja.
+        DateTime dtMissingSince = dtNowUtc - KeepMissingFor;
+        List<UnitDevice> objGone = objCurrent.Values.Where(device => device.SyncedAt < dtMissingSince).ToList();
+        _objDbContext.UnitDevices.RemoveRange(objGone);
+        if (objCurrent.Count > objGone.Count)
+        {
+            _objLogger.LogWarning(
+                "Unidade {Slug}: {Count} aparelho(s) não vieram na leitura da nuvem da UniFi; continuam valendo até {Days} dias sem aparecer.",
+                objUnit.Slug, objCurrent.Count - objGone.Count, KeepMissingFor.TotalDays);
+        }
         objUnit.DevicesSyncedAt = dtNowUtc;
         objUnit.DevicesSyncError = "";
     }

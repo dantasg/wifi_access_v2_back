@@ -338,11 +338,13 @@ public class UnitByApTests
     }
 
     [Fact]
-    public async Task Sync_ApRemovedFromConsole_StopsCounting_AndNewOneEnters()
+    public async Task Sync_ApRemovedFromConsole_StopsCountingAfterAWeek_AndNewOneEnters()
     {
         using TestEnvironment objEnv = new TestEnvironment();
         (Unit objItaituba, _) = CreateStores(objEnv.ObjDb);
         AddDevice(objEnv.ObjDb, objItaituba, "8c:30:66:00:00:99");
+        objEnv.ObjDb.UnitDevices.Single(device => device.Mac == "8c:30:66:00:00:99").SyncedAt = DateTime.UtcNow.AddDays(-8);
+        objEnv.ObjDb.SaveChanges();
         AddDevice(objEnv.ObjDb, objItaituba, ApItaituba);
         objEnv.ObjCloud.ObjConsoles[ConsoleItaituba] = [(ApItaituba, "AP Salão", "U6 Lite"), ("8c:30:66:00:00:01", "AP Novo", "U7")];
 
@@ -351,6 +353,23 @@ public class UnitByApTests
         List<string> objMacs = objEnv.ObjDb.UnitDevices.AsNoTracking()
             .Where(device => device.IDUnit == objItaituba.Id).Select(device => device.Mac).OrderBy(sMac => sMac).ToList();
         Assert.Equal(new List<string> { "8c:30:66:00:00:01", ApItaituba }, objMacs);
+    }
+
+    [Fact]
+    public async Task Sync_CloudListsOnlyTheConsole_KeepsTheApsSeenThisWeek()
+    {
+        // 26/10/2026: a nuvem devolveu só o console da Itaituba, com o AP funcionando. O AP não pode sair na hora.
+        using TestEnvironment objEnv = new TestEnvironment();
+        (Unit objItaituba, _) = CreateStores(objEnv.ObjDb);
+        AddDevice(objEnv.ObjDb, objItaituba, ApItaituba);
+        objEnv.ObjDb.UnitDevices.Single(device => device.Mac == ApItaituba).SyncedAt = DateTime.UtcNow.AddDays(-2);
+        objEnv.ObjDb.SaveChanges();
+        objEnv.ObjCloud.ObjConsoles[ConsoleItaituba] = [("58:d6:1f:5e:15:31", "ITAITUBA", "UCG Ultra")];
+
+        await objEnv.Sync().SyncAsync();
+
+        Assert.True(objEnv.ObjDb.UnitDevices.AsNoTracking().Any(device => device.Mac == ApItaituba));
+        Assert.Equal(objItaituba.Id, (await new UnitLocator(objEnv.ObjDb).FindAsync(objEnv.ObjDb.Units, null, SharedHost, ApItaituba))?.Id);
     }
 
     [Fact]
