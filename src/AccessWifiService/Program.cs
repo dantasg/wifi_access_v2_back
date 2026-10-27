@@ -1,5 +1,6 @@
 using AccessWifiService;
 using AccessWifiService.Campaigns;
+using AccessWifiService.SiteContacts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -64,6 +65,12 @@ objBuilder.Services.Configure<CampaignEngineOptions>(
     objBuilder.Configuration.GetSection(CampaignEngineOptions.SectionName));
 objBuilder.Services.AddScoped<CampaignEngine>();
 objBuilder.Services.AddHostedService<CampaignWorker>();
+
+// Contatos do site institucional: aviso por e-mail de cada pedido novo (PROPOSTA_SITE.md, D10).
+objBuilder.Services.Configure<SiteContactOptions>(
+    objBuilder.Configuration.GetSection(SiteContactOptions.SectionName));
+objBuilder.Services.AddScoped<SiteContactNotifier>();
+objBuilder.Services.AddHostedService<SiteContactWorker>();
 
 objBuilder.Build().Run();
 return 0;

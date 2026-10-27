@@ -6,6 +6,7 @@
 #   ./deploy/publicar-producao.sh            API + worker + portal
 #   ./deploy/publicar-producao.sh api        só API e worker (com migrations)
 #   ./deploy/publicar-producao.sh portal     só o portal (o front)
+#   ./deploy/publicar-producao.sh site       só o site institucional (AccessWifi_V2_SITE, em /site/; PROPOSTA_SITE.md)
 #   ./deploy/publicar-producao.sh rotinas    só as rotinas de proteção (backup diário e avisos); não reinicia nada
 #   ./deploy/publicar-producao.sh reverter   volta API, worker e portal para a versão anterior
 #
@@ -31,6 +32,7 @@ DOMINIO="vps11702.panel.icontainer.online"
 
 RAIZ_BACK="$(cd "$(dirname "$0")/.." && pwd)"
 RAIZ_FRONT="$(cd "$RAIZ_BACK/../AccessWifi_V2_FRONT" 2>/dev/null && pwd || true)"
+RAIZ_SITE="$(cd "$RAIZ_BACK/../AccessWifi_V2_SITE" 2>/dev/null && pwd || true)"
 ALVO="${1:-tudo}"
 
 SSH=(ssh -i "$CHAVE" -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 "$SERVIDOR")
@@ -52,16 +54,18 @@ quieto() {
 }
 
 case "$ALVO" in
-  tudo|api|portal|rotinas|reverter) ;;
-  *) falha "Alvo desconhecido: '$ALVO'. Use: tudo | api | portal | rotinas | reverter" ;;
+  tudo|api|portal|site|rotinas|reverter) ;;
+  *) falha "Alvo desconhecido: '$ALVO'. Use: tudo | api | portal | site | rotinas | reverter" ;;
 esac
 
 # O que entra em cada alvo. "rotinas" só instala o backup diário e os avisos: não reinicia nada.
-COM_API=0; COM_PORTAL=0; COM_ROTINAS=0
+# "site" (o site institucional) fica fora do "tudo": tem repositório e ritmo próprios.
+COM_API=0; COM_PORTAL=0; COM_ROTINAS=0; COM_SITE=0
 case "$ALVO" in
   tudo)    COM_API=1; COM_PORTAL=1; COM_ROTINAS=1 ;;
   api)     COM_API=1; COM_ROTINAS=1 ;;
   portal)  COM_PORTAL=1 ;;
+  site)    COM_SITE=1 ;;
   rotinas) COM_ROTINAS=1 ;;
 esac
 
@@ -122,6 +126,12 @@ if [ $COM_PORTAL = 1 ]; then
   repo_limpo "$RAIZ_FRONT" "front"
   VERSAO="$VERSAO${VERSAO:+ · }front $(git -C "$RAIZ_FRONT" log -1 --format=%h)"
 fi
+VERSAO_SITE=""
+if [ $COM_SITE = 1 ]; then
+  [ -n "$RAIZ_SITE" ] || falha "Repositório do site não encontrado ao lado do back ($RAIZ_BACK/../AccessWifi_V2_SITE)."
+  repo_limpo "$RAIZ_SITE" "site"
+  VERSAO_SITE="site $(git -C "$RAIZ_SITE" log -1 --format=%h)"
+fi
 
 PACOTE="$(mktemp -d)"
 trap 'rm -rf "$PACOTE"' EXIT
@@ -163,6 +173,13 @@ if [ $COM_PORTAL = 1 ]; then
   ok "portal"
 fi
 
+if [ $COM_SITE = 1 ]; then
+  etapa "Compilando o site institucional"
+  # O Astro usa o .env.production do site (rota relativa do formulário, noindex enquanto não houver domínio).
+  quieto bash -c 'cd "$1" && npm ci --no-audit --no-fund && npm run build && cp -r dist "$2"' _ "$RAIZ_SITE" "$PACOTE/site"
+  ok "site ($(find "$PACOTE/site" -name '*.html' | wc -l) páginas)"
+fi
+
 # -----------------------------------------------------------------------------
 # 3. Travas de segurança no pacote
 # -----------------------------------------------------------------------------
@@ -177,8 +194,15 @@ if [ -d "$PACOTE/portal" ]; then
   fi
   ok "portal chama a própria origem"
 fi
+if [ -d "$PACOTE/site" ]; then
+  if grep -rlqE 'localhost|127\.0\.0\.1' "$PACOTE/site" --include='*.html' --include='*.js'; then
+    falha "O site aponta para um endereço local — o formulário precisa chamar a rota de produção."
+  fi
+  ok "site sem endereço local"
+fi
 cp "$RAIZ_BACK/deploy/nginx/90-accesswifi-api.conf" "$PACOTE/"
 printf '%s — publicado em %s\n' "$VERSAO" "$(date '+%d/%m/%Y %H:%M')" > "$PACOTE/VERSAO"
+printf '%s — publicado em %s\n' "$VERSAO_SITE" "$(date '+%d/%m/%Y %H:%M')" > "$PACOTE/VERSAO-SITE"
 
 # -----------------------------------------------------------------------------
 # 4. Enviar
@@ -192,7 +216,7 @@ ok "enviado"
 # 5. Aplicar no servidor
 # -----------------------------------------------------------------------------
 etapa "Aplicando no servidor"
-"${SSH[@]}" "ALVO=$ALVO COM_API=$COM_API COM_PORTAL=$COM_PORTAL COM_ROTINAS=$COM_ROTINAS bash -s" <<'REMOTO'
+"${SSH[@]}" "ALVO=$ALVO COM_API=$COM_API COM_PORTAL=$COM_PORTAL COM_ROTINAS=$COM_ROTINAS COM_SITE=$COM_SITE bash -s" <<'REMOTO'
 set -euo pipefail
 P=/tmp/accesswifi-pub
 SITE=/etc/icontainer/apps/nginx/nginx/www/sites/vps11702.panel.icontainer.online
@@ -261,11 +285,23 @@ fi
 if [ "$COM_PORTAL" = 1 ]; then
   rm -rf "$SITE/index.anterior"
   cp -a "$SITE/index" "$SITE/index.anterior"
-  rm -rf "$SITE/index"/*
+  # A pasta site/ é o site institucional (alvo "site"): fica onde está.
+  find "$SITE/index" -mindepth 1 -maxdepth 1 ! -name site -exec rm -rf {} +
   cp -r "$P/portal/." "$SITE/index/"
   chown -R root:root "$SITE/index"
   chmod -R a+rX "$SITE/index"
   ok "portal publicado"
+fi
+
+if [ "$COM_SITE" = 1 ]; then
+  # Mora em index/site/ (o nginx serve /site/ dali, sem cair no portal). A versão atual fica em site.anterior.
+  rm -rf "$SITE/site.anterior"
+  if [ -d "$SITE/index/site" ]; then mv "$SITE/index/site" "$SITE/site.anterior"; fi
+  cp -r "$P/site" "$SITE/index/site"
+  chown -R root:root "$SITE/index/site"
+  chmod -R a+rX "$SITE/index/site"
+  cp "$P/VERSAO-SITE" /opt/accesswifi/VERSAO-SITE
+  ok "site publicado em /site/"
 fi
 
 # O painel pode regenerar a pasta security/ do site; se o nosso arquivo sumiu ou mudou, recoloca.

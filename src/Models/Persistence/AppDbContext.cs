@@ -41,6 +41,9 @@ namespace Models.Persistence
         public DbSet<WifiPresence> WifiPresences => Set<WifiPresence>();
         public DbSet<UnitIgnoredDevice> UnitIgnoredDevices => Set<UnitIgnoredDevice>();
 
+        // ------------------------------------------------------------ Site institucional (PROPOSTA_SITE.md)
+        public DbSet<SiteContact> SiteContacts => Set<SiteContact>();
+
         protected override void OnModelCreating(ModelBuilder objModelBuilder)
         {
             objModelBuilder.Entity<Configuration>(objConfiguration =>
@@ -413,6 +416,37 @@ namespace Models.Persistence
                     .WithMany()
                     .HasForeignKey(ignored => ignored.IDUnit)
                     .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            objModelBuilder.Entity<SiteContact>(objContact =>
+            {
+                objContact.Property(contact => contact.Name).HasMaxLength(100);
+                objContact.Property(contact => contact.Company).HasMaxLength(120);
+                objContact.Property(contact => contact.Phone).HasMaxLength(11);
+                objContact.Property(contact => contact.Email).HasMaxLength(160);
+                objContact.Property(contact => contact.City).HasMaxLength(80);
+                objContact.Property(contact => contact.State).HasMaxLength(2);
+                objContact.Property(contact => contact.Stores).HasMaxLength(10);
+                objContact.Property(contact => contact.UsesUnifi).HasMaxLength(10);
+                objContact.Property(contact => contact.Message).HasMaxLength(1000);
+                objContact.Property(contact => contact.UtmSource).HasMaxLength(200);
+                objContact.Property(contact => contact.UtmMedium).HasMaxLength(200);
+                objContact.Property(contact => contact.UtmCampaign).HasMaxLength(200);
+                objContact.Property(contact => contact.UtmTerm).HasMaxLength(200);
+                objContact.Property(contact => contact.UtmContent).HasMaxLength(200);
+                objContact.Property(contact => contact.Gclid).HasMaxLength(200);
+                objContact.Property(contact => contact.Fbclid).HasMaxLength(200);
+                objContact.Property(contact => contact.LandingPage).HasMaxLength(500);
+                objContact.Property(contact => contact.Referrer).HasMaxLength(500);
+                objContact.Property(contact => contact.Page).HasMaxLength(500);
+                objContact.Property(contact => contact.Status).HasConversion<string>().HasMaxLength(12);
+                objContact.Property(contact => contact.Notes).HasMaxLength(2000);
+                objContact.Property(contact => contact.StatusChangedBy).HasMaxLength(60);
+                objContact.Property(contact => contact.NotifyError).HasMaxLength(500);
+                // A tela lista do mais novo para o mais antigo; a retenção apaga pelos mais antigos.
+                objContact.HasIndex(contact => contact.CreatedAt);
+                // O serviço procura os avisos que ainda não saíram.
+                objContact.HasIndex(contact => contact.NotifiedAt);
             });
 
             objModelBuilder.Entity<CampaignEvent>(objEvent =>

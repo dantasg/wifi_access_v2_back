@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
+using AccessWifi.Api.Controllers;
 using AccessWifi.Api.Features.Units;
 using AccessWifi.Api.Infrastructure.Persistence;
 using AccessWifi.Api.Infrastructure.Security;
@@ -66,6 +67,15 @@ builder.Services.AddCors(objCorsOptions => objCorsOptions.AddDefaultPolicy(objPo
     // ngrok-skip-browser-warning: o front envia sempre (pula o aviso do ngrok free).
     // Sem ele na lista, o preflight falha quando a API é exposta por túnel.
     .WithHeaders("Content-Type", "Authorization", "ngrok-skip-browser-warning")));
+// Formulário do site institucional (PROPOSTA_SITE.md): enquanto o site estiver em /site/ do mesmo endereço, não há
+// CORS. Com o domínio próprio, a origem dele entra em SiteContact:AllowedOrigins (separadas por vírgula). Vazio = só
+// a mesma origem. Vale só para POST /site-contact.
+string[] arrSiteOrigins = (objConfiguration["SiteContact:AllowedOrigins"] ?? "")
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+builder.Services.AddCors(objCorsOptions => objCorsOptions.AddPolicy(SiteContactController.CorsPolicy, objPolicy => objPolicy
+    .WithOrigins(arrSiteOrigins)
+    .WithMethods("POST")
+    .WithHeaders("Content-Type")));
 
 // ------------------------------------------------------------------- JWT (admin)
 JwtOptions objJwtOptions = objConfiguration.GetSection(JwtOptions.SectionName).Get<JwtOptions>()
@@ -123,6 +133,15 @@ builder.Services.AddRateLimiter(objLimiterOptions =>
             _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = 300,
+                Window = TimeSpan.FromMinutes(1),
+            }));
+    // Formulário do site: uma pessoa manda uma vez (talvez duas, se errar algo); 5/min barra robô insistente.
+    objLimiterOptions.AddPolicy("site-contact", objHttpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            objHttpContext.Connection.RemoteIpAddress ?? IPAddress.Loopback,
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
                 Window = TimeSpan.FromMinutes(1),
             }));
 });

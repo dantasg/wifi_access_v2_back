@@ -17,6 +17,8 @@ namespace AccessWifiService
     ///   das campanhas ficam.</item>
     ///   <item>os sinais dos aparelhos na rede de clientes (avisos da UniFi) com mais de "Retention:WifiPresenceDays"
     ///   (padrão 90, PROPOSTA_VISITAS_UNIFI.md D9). O tempo na loja de cada visita fica na visita.</item>
+    ///   <item>os contatos do site institucional com mais de "Retention:SiteContactMonths" (padrão 12,
+    ///   PROPOSTA_SITE.md D11), menos os que viraram cliente.</item>
     /// </list>
     /// 0 ou negativo desliga a regra correspondente.
     /// </summary>
@@ -27,6 +29,7 @@ namespace AccessWifiService
         private readonly int _iRetentionMonths;
         private readonly int _iRecipientMonths;
         private readonly int _iPresenceDays;
+        private readonly int _iSiteContactMonths;
 
         public LeadRetentionService(
             AppDbContext objDbContext, IConfiguration objConfiguration, ILogger<LeadRetentionService> objLogger)
@@ -36,6 +39,7 @@ namespace AccessWifiService
             _iRetentionMonths = objConfiguration.GetValue("Retention:LeadMonths", 24);
             _iRecipientMonths = objConfiguration.GetValue("Retention:CampaignRecipientMonths", 12);
             _iPresenceDays = objConfiguration.GetValue("Retention:WifiPresenceDays", 90);
+            _iSiteContactMonths = objConfiguration.GetValue("Retention:SiteContactMonths", 12);
         }
 
         /// <param name="dtNowUtc">Referência de "agora" em UTC (as datas são gravadas em UTC).</param>
@@ -95,6 +99,23 @@ namespace AccessWifiService
                     _objLogger.LogInformation(
                         "Retenção: {Count} registro(s) de sinais de aparelhos anteriores a {Cutoff:yyyy-MM-dd} removidos.",
                         objPresences.Count, dtCutoffUtc);
+                }
+            }
+
+            if (_iSiteContactMonths > 0)
+            {
+                // D11: quem virou cliente fica (o andamento é a história da venda).
+                DateTime dtCutoffUtc = dtNowUtc.AddMonths(-_iSiteContactMonths);
+                List<SiteContact> objContacts = await _objDbContext.SiteContacts
+                    .Where(contact => contact.CreatedAt < dtCutoffUtc && contact.Status != SiteContactStatus.Client)
+                    .ToListAsync(objCancellationToken);
+                if (objContacts.Count > 0)
+                {
+                    _objDbContext.SiteContacts.RemoveRange(objContacts);
+                    await _objDbContext.SaveChangesAsync(objCancellationToken);
+                    _objLogger.LogInformation(
+                        "Retenção: {Count} contato(s) do site anteriores a {Cutoff:yyyy-MM-dd} removidos.",
+                        objContacts.Count, dtCutoffUtc);
                 }
             }
         }
