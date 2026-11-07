@@ -13,5 +13,11 @@ namespace Models.Email
         public const string SmtpFromEmail = "SMTP_FROM_EMAIL";
         public const string SmtpFromName = "SMTP_FROM_NAME";
         public const string SmtpUseStartTls = "SMTP_USE_STARTTLS";
+
+        /// <summary>
+        /// Para quem vão os alertas do WhatsApp (D9: token inválido, texto recusado, WhatsApp que não pôde ser usado):
+        /// e-mails separados por vírgula. Vazio = ninguém recebe (os alertas ficam só no registro).
+        /// </summary>
+        public const string WhatsAppAlertEmails = "WHATSAPP_ALERT_EMAILS";
     }
 }

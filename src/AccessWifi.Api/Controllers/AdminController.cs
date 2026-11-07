@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Models.Campaigns;
 using Models.DataBase;
 
 namespace AccessWifi.Api.Controllers;
@@ -198,6 +199,19 @@ public class AdminController : ControllerBase
                  lead.BirthDate, lead.Mac, lead.Ap, lead.Ssid,
                  unit.Slug, unit.Name))
             .ToListAsync(objCancellationToken);
+
+        // Quem respondeu "SAIR" no WhatsApp (o cliente é por telefone dentro da empresa). Poucos: vêm todos.
+        Dictionary<string, DateTime> objOptOuts = await _objDbContext.Customers.AsNoTracking()
+            .Where(customer => customer.IDCompany == objCompanyId && customer.WhatsAppOptOutAt != null)
+            .ToDictionaryAsync(customer => customer.Phone, customer => customer.WhatsAppOptOutAt!.Value, objCancellationToken);
+        if (objOptOuts.Count > 0)
+        {
+            objLeads = objLeads
+                .Select(lead => objOptOuts.TryGetValue(CustomerDirectory.NormalizePhone(lead.Phone), out DateTime dtOptOut)
+                    ? lead with { WhatsAppOptOutAt = dtOptOut }
+                    : lead)
+                .ToList();
+        }
 
         return Ok(objLeads);
     }

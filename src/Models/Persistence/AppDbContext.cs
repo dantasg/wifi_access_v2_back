@@ -44,6 +44,15 @@ namespace Models.Persistence
         // ------------------------------------------------------------ Site institucional (PROPOSTA_SITE.md)
         public DbSet<SiteContact> SiteContacts => Set<SiteContact>();
 
+        // ------------------------------------------------------------ WhatsApp (PROPOSTA_WHATSAPP.md)
+        public DbSet<WhatsAppAccountEvent> WhatsAppAccountEvents => Set<WhatsAppAccountEvent>();
+        public DbSet<WhatsAppTemplate> WhatsAppTemplates => Set<WhatsAppTemplate>();
+        public DbSet<WhatsAppMessage> WhatsAppMessages => Set<WhatsAppMessage>();
+        public DbSet<WhatsAppMessageEvent> WhatsAppMessageEvents => Set<WhatsAppMessageEvent>();
+        public DbSet<WhatsAppInboundMessage> WhatsAppInboundMessages => Set<WhatsAppInboundMessage>();
+        public DbSet<WhatsAppWebhookRequest> WhatsAppWebhookRequests => Set<WhatsAppWebhookRequest>();
+        public DbSet<WhatsAppAlert> WhatsAppAlerts => Set<WhatsAppAlert>();
+
         protected override void OnModelCreating(ModelBuilder objModelBuilder)
         {
             objModelBuilder.Entity<Configuration>(objConfiguration =>
@@ -60,6 +69,170 @@ namespace Models.Persistence
                 objCompany.Property(company => company.TimeZone).HasMaxLength(60)
                     .HasDefaultValue(CompanyTimeZone.Default);
                 objCompany.HasIndex(company => company.Slug).IsUnique();
+                objCompany.Property(company => company.WhatsAppChangedBy).HasMaxLength(60);
+                objCompany.OwnsOne(company => company.WhatsApp, objWhatsApp =>
+                {
+                    objWhatsApp.Property(whatsApp => whatsApp.PhoneNumberId).HasMaxLength(30);
+                    objWhatsApp.Property(whatsApp => whatsApp.BusinessAccountId).HasMaxLength(30);
+                    // Os três segredos vão cifrados (AES-GCM, base64), maiores que o texto puro.
+                    objWhatsApp.Property(whatsApp => whatsApp.AccessToken).HasMaxLength(2048);
+                    objWhatsApp.Property(whatsApp => whatsApp.AppSecret).HasMaxLength(512);
+                    objWhatsApp.Property(whatsApp => whatsApp.VerifyToken).HasMaxLength(512);
+                    objWhatsApp.Property(whatsApp => whatsApp.DisplayPhoneNumber).HasMaxLength(40);
+                    objWhatsApp.Property(whatsApp => whatsApp.DisplayName).HasMaxLength(120);
+                    objWhatsApp.Property(whatsApp => whatsApp.QualityRating).HasMaxLength(20);
+                    objWhatsApp.Property(whatsApp => whatsApp.MessagingLimit).HasMaxLength(30);
+                    objWhatsApp.Property(whatsApp => whatsApp.LastError).HasMaxLength(500);
+                });
+            });
+
+            objModelBuilder.Entity<WhatsAppAccountEvent>(objEvent =>
+            {
+                objEvent.Property(evt => evt.Kind).HasMaxLength(30);
+                objEvent.Property(evt => evt.Username).HasMaxLength(60);
+                objEvent.Property(evt => evt.Details).HasMaxLength(1000);
+                objEvent.Property(evt => evt.RequestJson).HasColumnType("jsonb");
+                objEvent.Property(evt => evt.ResponseJson).HasColumnType("jsonb");
+                // A tela mostra o histórico da empresa, do mais novo para o mais antigo.
+                objEvent.HasIndex(evt => new { evt.IDCompany, evt.CreatedAt });
+                objEvent.HasOne<Company>()
+                    .WithMany()
+                    .HasForeignKey(evt => evt.IDCompany)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            objModelBuilder.Entity<WhatsAppTemplate>(objTemplate =>
+            {
+                objTemplate.Property(template => template.Name).HasMaxLength(512);
+                objTemplate.Property(template => template.Language).HasMaxLength(10);
+                objTemplate.Property(template => template.Category).HasMaxLength(30);
+                objTemplate.Property(template => template.BodyText).HasMaxLength(4000);
+                objTemplate.Property(template => template.FooterText).HasMaxLength(60);
+                objTemplate.Property(template => template.ParametersJson).HasColumnType("jsonb");
+                objTemplate.Property(template => template.Status).HasMaxLength(20);
+                objTemplate.Property(template => template.MetaStatus).HasMaxLength(30);
+                objTemplate.Property(template => template.MetaTemplateId).HasMaxLength(30);
+                objTemplate.Property(template => template.Reason).HasMaxLength(1000);
+                objTemplate.Property(template => template.LastError).HasMaxLength(1000);
+                // O nome é único por idioma na conta do WhatsApp da empresa (regra da Meta).
+                objTemplate.HasIndex(template => new { template.IDCompany, template.Name, template.Language }).IsUnique();
+                objTemplate.HasIndex(template => template.IDCampaign);
+                objTemplate.HasOne<Company>()
+                    .WithMany()
+                    .HasForeignKey(template => template.IDCompany)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            objModelBuilder.Entity<WhatsAppMessage>(objMessage =>
+            {
+                objMessage.Property(message => message.Username).HasMaxLength(60);
+                objMessage.Property(message => message.ToPhone).HasMaxLength(20);
+                objMessage.Property(message => message.WaId).HasMaxLength(20);
+                objMessage.Property(message => message.FromPhoneNumberId).HasMaxLength(30);
+                objMessage.Property(message => message.FromDisplayPhone).HasMaxLength(40);
+                objMessage.Property(message => message.TemplateName).HasMaxLength(512);
+                objMessage.Property(message => message.TemplateLanguage).HasMaxLength(10);
+                objMessage.Property(message => message.ParametersJson).HasColumnType("jsonb");
+                objMessage.Property(message => message.Text).HasMaxLength(4000);
+                objMessage.Property(message => message.RequestJson).HasColumnType("jsonb");
+                objMessage.Property(message => message.ResponseJson).HasColumnType("jsonb");
+                objMessage.Property(message => message.MetaMessageId).HasMaxLength(200);
+                objMessage.Property(message => message.MetaMessageStatus).HasMaxLength(40);
+                objMessage.Property(message => message.Status).HasMaxLength(20);
+                objMessage.Property(message => message.ErrorMessage).HasMaxLength(1000);
+                objMessage.Property(message => message.PricingCategory).HasMaxLength(40);
+                objMessage.Property(message => message.PricingType).HasMaxLength(40);
+                // Os avisos da Meta chegam pelo wamid.
+                objMessage.HasIndex(message => message.MetaMessageId)
+                    .IsUnique()
+                    .HasFilter("\"MetaMessageId\" <> ''");
+                objMessage.HasIndex(message => new { message.IDCompany, message.CreatedAt });
+                objMessage.HasIndex(message => message.IDCampaignRun);
+                objMessage.HasIndex(message => message.IDCampaignRecipient);
+                objMessage.HasOne<Company>()
+                    .WithMany()
+                    .HasForeignKey(message => message.IDCompany)
+                    .OnDelete(DeleteBehavior.Cascade);
+                // D10: a mensagem vai embora junto com o cliente (retenção da LGPD).
+                objMessage.HasOne<Customer>()
+                    .WithMany()
+                    .HasForeignKey(message => message.IDCustomer)
+                    .OnDelete(DeleteBehavior.Cascade);
+                // A lista da campanha é apagada antes (12 meses): a mensagem só perde o vínculo.
+                objMessage.HasOne<CampaignRecipient>()
+                    .WithMany()
+                    .HasForeignKey(message => message.IDCampaignRecipient)
+                    .OnDelete(DeleteBehavior.SetNull);
+            });
+
+            objModelBuilder.Entity<WhatsAppMessageEvent>(objEvent =>
+            {
+                objEvent.Property(evt => evt.Status).HasMaxLength(20);
+                objEvent.Property(evt => evt.ErrorMessage).HasMaxLength(1000);
+                objEvent.Property(evt => evt.PricingCategory).HasMaxLength(40);
+                objEvent.Property(evt => evt.PricingType).HasMaxLength(40);
+                objEvent.Property(evt => evt.PayloadJson).HasColumnType("jsonb");
+                objEvent.HasIndex(evt => new { evt.IDWhatsAppMessage, evt.Status });
+                // Vai embora junto com a mensagem (que vai junto com o cliente, D10).
+                objEvent.HasOne<WhatsAppMessage>()
+                    .WithMany()
+                    .HasForeignKey(evt => evt.IDWhatsAppMessage)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            objModelBuilder.Entity<WhatsAppInboundMessage>(objInbound =>
+            {
+                objInbound.Property(inbound => inbound.MetaMessageId).HasMaxLength(200);
+                objInbound.Property(inbound => inbound.FromPhone).HasMaxLength(20);
+                objInbound.Property(inbound => inbound.ProfileName).HasMaxLength(200);
+                objInbound.Property(inbound => inbound.Text).HasMaxLength(4096);
+                objInbound.Property(inbound => inbound.ContextMessageId).HasMaxLength(200);
+                objInbound.Property(inbound => inbound.PayloadJson).HasColumnType("jsonb");
+                // A Meta repete avisos por até 7 dias: a mesma mensagem não entra duas vezes.
+                objInbound.HasIndex(inbound => inbound.MetaMessageId).IsUnique();
+                objInbound.HasIndex(inbound => new { inbound.IDCompany, inbound.SentAt });
+                objInbound.HasIndex(inbound => inbound.IDCustomer);
+                objInbound.HasOne<Company>()
+                    .WithMany()
+                    .HasForeignKey(inbound => inbound.IDCompany)
+                    .OnDelete(DeleteBehavior.Cascade);
+                // D10: a resposta vai embora junto com o cliente.
+                objInbound.HasOne<Customer>()
+                    .WithMany()
+                    .HasForeignKey(inbound => inbound.IDCustomer)
+                    .OnDelete(DeleteBehavior.Cascade);
+                objInbound.HasOne<WhatsAppMessage>()
+                    .WithMany()
+                    .HasForeignKey(inbound => inbound.IDWhatsAppMessage)
+                    .OnDelete(DeleteBehavior.SetNull);
+            });
+
+            objModelBuilder.Entity<WhatsAppWebhookRequest>(objRequest =>
+            {
+                objRequest.Property(request => request.Fields).HasMaxLength(300);
+                objRequest.Property(request => request.Error).HasMaxLength(2000);
+                objRequest.Property(request => request.RemoteIp).HasMaxLength(64);
+                // A limpeza dos 90 dias (D12) e "último aviso recebido" na tela.
+                objRequest.HasIndex(request => new { request.IDCompany, request.ReceivedAt });
+                objRequest.HasIndex(request => request.ReceivedAt);
+                objRequest.HasOne<Company>()
+                    .WithMany()
+                    .HasForeignKey(request => request.IDCompany)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            objModelBuilder.Entity<WhatsAppAlert>(objAlert =>
+            {
+                objAlert.Property(alert => alert.Key).HasMaxLength(200);
+                objAlert.Property(alert => alert.Subject).HasMaxLength(300);
+                objAlert.Property(alert => alert.Body).HasMaxLength(4000);
+                objAlert.Property(alert => alert.Error).HasMaxLength(1000);
+                objAlert.HasIndex(alert => new { alert.IDCompany, alert.Key, alert.CreatedAt });
+                objAlert.HasIndex(alert => alert.SentAt);
+                objAlert.HasOne<Company>()
+                    .WithMany()
+                    .HasForeignKey(alert => alert.IDCompany)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
             objModelBuilder.Entity<Unit>(objUnit =>
@@ -76,6 +249,7 @@ namespace Models.Persistence
                 objUnit.Property(unit => unit.RedirectUrl).HasMaxLength(2048);
                 objUnit.Property(unit => unit.Email).HasMaxLength(200);
                 objUnit.Property(unit => unit.AreaCode).HasMaxLength(2);
+                objUnit.Property(unit => unit.StorePhone).HasMaxLength(11);
                 objUnit.Property(unit => unit.DevicesSyncError).HasMaxLength(300);
                 // O aviso da UniFi acha a unidade pela impressão do código do endereço.
                 objUnit.Property(unit => unit.UnifiWebhookHash).HasMaxLength(64);
@@ -307,6 +481,7 @@ namespace Models.Persistence
             {
                 objRun.Property(run => run.Status).HasMaxLength(20);
                 objRun.Property(run => run.Error).HasMaxLength(1000);
+                objRun.Property(run => run.WhatsAppError).HasMaxLength(1000);
                 // Uma execução por campanha por dia (D1): nem reinício do serviço nem troca de horário
                 // no mesmo dia duplicam o disparo.
                 objRun.HasIndex(run => new { run.IDCampaign, run.LocalDate }).IsUnique();
@@ -333,6 +508,8 @@ namespace Models.Persistence
                 objRecipient.Property(recipient => recipient.Info).HasMaxLength(120);
                 objRecipient.Property(recipient => recipient.Status).HasMaxLength(20);
                 objRecipient.Property(recipient => recipient.Reason).HasMaxLength(300);
+                objRecipient.Property(recipient => recipient.WhatsAppStatus).HasMaxLength(20);
+                objRecipient.Property(recipient => recipient.WhatsAppError).HasMaxLength(300);
                 // D1: um destinatário por cliente (= por telefone) em cada execução.
                 objRecipient.HasIndex(recipient => new { recipient.IDRun, recipient.IDCustomer }).IsUnique();
                 // Os lotes: "pendentes desta execução, em ordem".

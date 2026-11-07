@@ -28,7 +28,8 @@ namespace AccessWifi.Api.Features.Campaigns
         DateTime CreatedAt,
         DateTime? StartedAt,
         DateTime? FinishedAt,
-        string? Error)
+        string? Error,
+        CampaignRunWhatsAppDto? WhatsApp = null)
     {
         public static CampaignRunDto FromEntity(CampaignRun objRun)
         {
@@ -59,6 +60,14 @@ namespace AccessWifi.Api.Features.Campaigns
         }
     }
 
+    /// <summary>
+    /// O WhatsApp automático numa execução (PROPOSTA_WHATSAPP.md, parte 3). Counts: quantos clientes em cada situação
+    /// (Pending, Skipped, Accepted, Sent, Delivered, Read, Failed). VersionNumber: a versão cujo texto saiu.
+    /// WaitUntil: até quando o e-mail ao gestor espera os avisos da Meta.
+    /// </summary>
+    public record CampaignRunWhatsAppDto(
+        IReadOnlyDictionary<string, int> Counts, string? Error, int? VersionNumber, DateTime? WaitUntil);
+
     public record CampaignSummaryDto(
         Guid Id,
         string Kind,
@@ -71,7 +80,15 @@ namespace AccessWifi.Api.Features.Campaigns
         int CurrentVersion,
         DateTime? NextRunAt,
         CampaignRunDto? LastRun,
-        DateTime UpdatedAt);
+        DateTime UpdatedAt,
+        CampaignWhatsAppDto? WhatsApp = null);
+
+    /// <summary>
+    /// O modelo da Meta do texto atual da campanha (PROPOSTA_WHATSAPP.md, parte 2). Só vem quando a empresa tem o
+    /// WhatsApp configurado. FallbackVersion = enquanto o texto atual não está aprovado, sai o texto aprovado
+    /// desta versão anterior (nulo = nenhum aprovado ainda).
+    /// </summary>
+    public record CampaignWhatsAppDto(string Status, string Reason, string TemplateName, int? FallbackVersion);
 
     public record CampaignDetailDto(
         Guid Id,
@@ -106,9 +123,15 @@ namespace AccessWifi.Api.Features.Campaigns
 
     /// <param name="Unit">Unidade cujo gerente recebeu o cliente no PDF (D17).</param>
     /// <param name="Info">A coluna de informação do PDF (ex.: "sex, 16/10 · 29 anos").</param>
+    /// <param name="WhatsAppStatus">A mensagem pelo WhatsApp ("" = execução sem WhatsApp); WhatsAppError, o motivo.</param>
     public record CampaignRecipientDto(
         long Id, string Phone, string Name, string Message, string Status, string? Reason, int? Milestone,
-        DateTime? ProcessedAt, string Unit, string Instagram, string Info, DateOnly? EventDate);
+        DateTime? ProcessedAt, string Unit, string Instagram, string Info, DateOnly? EventDate,
+        string WhatsAppStatus = "", string? WhatsAppError = null,
+        CampaignRecipientReplyDto? LastReply = null, int ReplyCount = 0);
+
+    /// <summary>A última resposta do cliente a esta execução pelo WhatsApp (D10, D14).</summary>
+    public record CampaignRecipientReplyDto(string Text, DateTime SentAt, bool IsOptOut);
 
     /// <summary>O e-mail de uma unidade numa execução: para onde foi, quando, e o motivo de uma falha.</summary>
     public record CampaignDeliveryDto(

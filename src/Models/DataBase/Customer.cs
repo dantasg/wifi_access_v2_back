@@ -42,6 +42,15 @@ namespace Models.DataBase
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+        /// <summary>
+        /// Quando respondeu "SAIR" no WhatsApp (PROPOSTA_WHATSAPP.md, D7): sai só do envio automático e continua no
+        /// PDF do gestor, com o motivo. Nulo = recebe.
+        /// </summary>
+        public DateTime? WhatsAppOptOutAt { get; set; }
+
+        /// <summary>A mensagem "SAIR" que causou a saída (<see cref="WhatsAppInboundMessage"/>).</summary>
+        public long? IDWhatsAppOptOutMessage { get; set; }
     }
 
     /// <summary>Unidades que o cliente já visitou (filtro "clientes da unidade X" das campanhas).</summary>

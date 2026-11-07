@@ -1,4 +1,5 @@
 using AccessWifiService.Campaigns;
+using AccessWifiService.WhatsApp;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -6,6 +7,7 @@ using Microsoft.Extensions.Options;
 using Models.Campaigns;
 using Models.DataBase;
 using Models.Persistence;
+using Models.WhatsApp;
 
 namespace AccessWifi.Api.Tests;
 
@@ -93,6 +95,10 @@ public class CampaignEngineTests
         return new CampaignEngine(
             objScenario.Db,
             objScenario.Email,
+            // Empresa sem WhatsApp: a etapa do WhatsApp não roda (ela tem os próprios testes).
+            new CampaignWhatsAppSender(objScenario.Db, TestHelpers.CreateEncryptor(),
+                new WhatsAppCloudClient(new HttpClient(), new WhatsAppOptions { GraphBaseUrl = "http://127.0.0.1:9/" }),
+                new CampaignWhatsAppOptions(), NullLogger<CampaignWhatsAppSender>.Instance),
             Options.Create(new CampaignEngineOptions
             {
                 TickSeconds = 5, SelectionChunkSize = iBatch, EmailMaxAttempts = 3, EmailRetryMinutes = 5,

@@ -81,6 +81,24 @@ public partial class SystemSettingsController : ControllerBase
         {
             return BadRequest(new ErrorResponse(sError));
         }
+        string? sAlertEmails = null;
+        if (objRequest.WhatsAppAlertEmails is not null)
+        {
+            List<string> objAlertEmails = objRequest.WhatsAppAlertEmails
+                .Split([',', ';', ' ', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            string? sInvalidAlert = objAlertEmails.FirstOrDefault(sEmail => !EmailRegex().IsMatch(sEmail));
+            if (sInvalidAlert is not null)
+            {
+                return BadRequest(new ErrorResponse($"E-mail para alertas do WhatsApp inválido: {sInvalidAlert}"));
+            }
+            if (objAlertEmails.Count > 5)
+            {
+                return BadRequest(new ErrorResponse("No máximo 5 e-mails para os alertas do WhatsApp."));
+            }
+            sAlertEmails = string.Join(", ", objAlertEmails);
+        }
 
         Dictionary<string, string> dicValues = new Dictionary<string, string>
         {
@@ -91,6 +109,10 @@ public partial class SystemSettingsController : ControllerBase
             [ConfigurationKeys.SmtpFromName] = sFromName,
             [ConfigurationKeys.SmtpUseStartTls] = (objSmtp.UseStartTls ?? true) ? "true" : "false",
         };
+        if (sAlertEmails is not null)
+        {
+            dicValues[ConfigurationKeys.WhatsAppAlertEmails] = sAlertEmails;
+        }
         if (objSmtp.Password is not null)
         {
             // A "senha de app" do Gmail aparece com espaços ("abcd efgh ijkl mnop"); o Gmail quer sem.
@@ -163,9 +185,11 @@ public partial class SystemSettingsController : ControllerBase
     private async Task<SystemSettingsDto> LoadAsync(CancellationToken objCancellationToken)
     {
         SmtpOptions objSmtp = await _objConfigurationReader.GetSmtpAsync(objCancellationToken);
-        return new SystemSettingsDto(new SmtpSettingsDto(
-            objSmtp.Host, objSmtp.Port, objSmtp.Username, objSmtp.Password.Length > 0,
-            objSmtp.FromEmail, objSmtp.FromName, objSmtp.UseStartTls));
+        return new SystemSettingsDto(
+            new SmtpSettingsDto(
+                objSmtp.Host, objSmtp.Port, objSmtp.Username, objSmtp.Password.Length > 0,
+                objSmtp.FromEmail, objSmtp.FromName, objSmtp.UseStartTls),
+            await _objConfigurationReader.GetValueAsync(ConfigurationKeys.WhatsAppAlertEmails, objCancellationToken) ?? "");
     }
 
     private static string? Validate(

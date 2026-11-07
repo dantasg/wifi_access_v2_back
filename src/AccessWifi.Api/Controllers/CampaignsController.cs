@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Models.Campaigns;
 using Models.DataBase;
 using Models.Persistence;
+using Models.WhatsApp;
 
 namespace AccessWifi.Api.Controllers;
 
@@ -90,6 +91,9 @@ public class CampaignsController : ControllerBase
                 objCampaigns.Select(item => item.LastRun).OfType<CampaignRun>().ToList(), objScope, objCancellationToken))
             .ToDictionary(run => run.Id);
 
+        Dictionary<Guid, CampaignWhatsAppDto> objWhatsApp = await WhatsAppTemplatesAsync(
+            objCompany, objCampaigns.Select(item => item.Campaign).ToList(), objCancellationToken);
+
         return Ok(objCampaigns
             .OrderBy(item => CampaignKind.Priority(item.Campaign.Kind))
             .ThenBy(item => item.Campaign.Name)
@@ -102,7 +106,8 @@ public class CampaignsController : ControllerBase
                     objCampaign.Status, objEnabled.Contains(objCampaign.Kind), objConfig.Channel, objConfig.SendTime,
                     objCampaign.CurrentVersion, objCampaign.NextRunAt,
                     item.LastRun is null ? null : objLatest[item.LastRun.Id],
-                    objCampaign.UpdatedAt);
+                    objCampaign.UpdatedAt,
+                    objWhatsApp.GetValueOrDefault(objCampaign.Id));
             })
             .ToList());
     }
@@ -427,6 +432,7 @@ public class CampaignsController : ControllerBase
         [FromQuery(Name = "status")] string? sStatus,
         [FromQuery(Name = "page")] int iPage,
         [FromQuery(Name = "pageSize")] int iPageSize,
+        [FromQuery(Name = "whatsApp")] string? sWhatsAppStatus,
         CancellationToken objCancellationToken)
     {
         (CampaignRun? objRun, ActionResult? objError) = await FindRunAsync(runId, sCompanySlug, objCancellationToken);
@@ -444,6 +450,23 @@ public class CampaignsController : ControllerBase
         {
             objQuery = objQuery.Where(recipient => recipient.Status == sStatus);
         }
+        // Filtro do WhatsApp: "Received" junta as situações de quem recebeu (enviada, entregue, lida).
+        if (sWhatsAppStatus == "Received")
+        {
+            objQuery = objQuery.Where(recipient => recipient.WhatsAppStatus == CampaignWhatsAppStatus.Accepted
+                || recipient.WhatsAppStatus == CampaignWhatsAppStatus.Sent
+                || recipient.WhatsAppStatus == CampaignWhatsAppStatus.Delivered
+                || recipient.WhatsAppStatus == CampaignWhatsAppStatus.Read);
+        }
+        else if (sWhatsAppStatus == "NotReceived")
+        {
+            objQuery = objQuery.Where(recipient => recipient.WhatsAppStatus == CampaignWhatsAppStatus.Skipped
+                || recipient.WhatsAppStatus == CampaignWhatsAppStatus.Failed);
+        }
+        else if (!string.IsNullOrWhiteSpace(sWhatsAppStatus))
+        {
+            objQuery = objQuery.Where(recipient => recipient.WhatsAppStatus == sWhatsAppStatus);
+        }
 
         int iTotal = await objQuery.CountAsync(objCancellationToken);
         List<CampaignRecipient> objPage = await objQuery
@@ -452,12 +475,25 @@ public class CampaignsController : ControllerBase
             .Take(iPageSize)
             .ToListAsync(objCancellationToken);
         Dictionary<Guid, string> objUnits = await UnitNamesAsync(objRun.IDCompany, objCancellationToken);
+        // As respostas do WhatsApp a esta execução (D14), dos clientes da página.
+        List<Guid> objCustomerIds = objPage.Select(recipient => recipient.IDCustomer).ToList();
+        ILookup<Guid, WhatsAppInboundMessage> objReplies = objRun.WhatsAppEnabled
+            ? (await _objDbContext.WhatsAppInboundMessages.AsNoTracking()
+                    .Where(inbound => inbound.IDCampaignRun == runId && objCustomerIds.Contains(inbound.IDCustomer))
+                    .ToListAsync(objCancellationToken))
+                .OrderByDescending(inbound => inbound.SentAt)
+                .ToLookup(inbound => inbound.IDCustomer)
+            : Enumerable.Empty<WhatsAppInboundMessage>().ToLookup(inbound => inbound.IDCustomer);
         List<CampaignRecipientDto> objItems = objPage
             .Select(recipient => new CampaignRecipientDto(
                 recipient.Id, recipient.Phone, recipient.Name, recipient.Message, recipient.Status,
                 recipient.Reason, recipient.Milestone, recipient.ProcessedAt,
                 recipient.IDUnit is Guid objUnitId ? objUnits.GetValueOrDefault(objUnitId, "") : "",
-                recipient.Instagram, recipient.Info, recipient.EventDate))
+                recipient.Instagram, recipient.Info, recipient.EventDate, recipient.WhatsAppStatus,
+                recipient.WhatsAppError,
+                objReplies[recipient.IDCustomer].Select(inbound =>
+                    new CampaignRecipientReplyDto(inbound.Text, inbound.SentAt, inbound.IsOptOut)).FirstOrDefault(),
+                objReplies[recipient.IDCustomer].Count()))
             .ToList();
         return Ok(new PagedDto<CampaignRecipientDto>(objItems, iTotal, iPage, iPageSize));
     }
@@ -815,6 +851,65 @@ public class CampaignsController : ControllerBase
     }
 
     /// <summary>Tipos liberados para a empresa e já disponíveis (os "em breve" não contam, D23).</summary>
+    /// <summary>
+    /// O modelo da Meta do texto atual de cada campanha (PROPOSTA_WHATSAPP.md, parte 2), só quando a empresa tem o
+    /// WhatsApp configurado. Texto atual ainda não aprovado: procura o último aprovado nas versões anteriores, que
+    /// é o que sai enquanto isso (§11.2).
+    /// </summary>
+    private async Task<Dictionary<Guid, CampaignWhatsAppDto>> WhatsAppTemplatesAsync(
+        Company objCompany, List<Campaign> objCampaigns, CancellationToken objCancellationToken)
+    {
+        Dictionary<Guid, CampaignWhatsAppDto> objResult = [];
+        if (objCompany.WhatsApp.BusinessAccountId.Length == 0 || objCompany.WhatsApp.AccessToken.Length == 0)
+        {
+            return objResult;
+        }
+
+        List<WhatsAppTemplate> objTemplates = await _objDbContext.WhatsAppTemplates.AsNoTracking()
+            .Where(template => template.IDCompany == objCompany.Id)
+            .ToListAsync(objCancellationToken);
+        List<Campaign> objWhatsAppCampaigns = objCampaigns
+            .Where(campaign => CampaignConfig.FromJson(campaign.ConfigJson).Channel == CampaignChannel.WhatsApp)
+            .ToList();
+
+        // As versões anteriores só das campanhas cujo texto atual ainda não está aprovado.
+        List<Guid> objNeedHistory = objWhatsAppCampaigns
+            .Where(campaign => WhatsAppTemplateLookup.Match(
+                WhatsAppTemplateBuilder.Build(CampaignConfig.FromJson(campaign.ConfigJson).Message, objCompany.Name),
+                objTemplates)?.Status != WhatsAppTemplateStatus.Approved)
+            .Select(campaign => campaign.Id)
+            .ToList();
+        ILookup<Guid, (int iNumber, string sMessage)> objHistory = (await _objDbContext.CampaignVersions.AsNoTracking()
+                .Where(version => objNeedHistory.Contains(version.IDCampaign))
+                .Select(version => new { version.IDCampaign, version.Number, version.ConfigJson })
+                .ToListAsync(objCancellationToken))
+            .OrderByDescending(version => version.Number)
+            .ToLookup(version => version.IDCampaign,
+                version => (version.Number, CampaignConfig.FromJson(version.ConfigJson).Message));
+
+        foreach (Campaign objCampaign in objWhatsAppCampaigns)
+        {
+            List<(int iNumber, string sMessage)> objVersions =
+                [(objCampaign.CurrentVersion, CampaignConfig.FromJson(objCampaign.ConfigJson).Message)];
+            objVersions.AddRange(objHistory[objCampaign.Id].Where(version => version.iNumber != objCampaign.CurrentVersion));
+            WhatsAppCampaignTemplate objFound = WhatsAppTemplateLookup.ForCampaign(objCompany.Name, objVersions, objTemplates);
+
+            WhatsAppTemplate? objCurrent = objFound.Current;
+            objResult[objCampaign.Id] = objCurrent is null
+                ? new CampaignWhatsAppDto(
+                    WhatsAppTemplateStatus.Queued,
+                    objCompany.WhatsApp.CheckPassed
+                        ? "O texto vai para a análise da Meta em até 1 minuto."
+                        : "O texto vai para a análise da Meta depois que a conexão for testada (Configurações → WhatsApp).",
+                    "", objFound.FallbackVersion)
+                : new CampaignWhatsAppDto(
+                    objCurrent.Status,
+                    objCurrent.Status == WhatsAppTemplateStatus.Error ? objCurrent.LastError : objCurrent.Reason,
+                    objCurrent.Name, objFound.FallbackVersion);
+        }
+        return objResult;
+    }
+
     private async Task<HashSet<string>> EnabledKindsAsync(Guid objCompanyId, CancellationToken objCancellationToken) =>
         (await _objDbContext.CompanyCampaignKinds.AsNoTracking()
             .Where(kind => kind.IDCompany == objCompanyId)
@@ -860,6 +955,45 @@ public class CampaignsController : ControllerBase
     /// dele (os totais gravados na execução são da empresa toda).
     /// </summary>
     private async Task<List<CampaignRunDto>> RunDtosAsync(
+        List<CampaignRun> objRuns, AccessScope objScope, CancellationToken objCancellationToken)
+    {
+        List<CampaignRunDto> objDtos = await RunCountsAsync(objRuns, objScope, objCancellationToken);
+        return await WithWhatsAppAsync(objDtos, objRuns, objScope, objCancellationToken);
+    }
+
+    /// <summary>
+    /// O WhatsApp de cada execução que foi com ele (parte 3): quantos clientes em cada situação, contados nos
+    /// destinatários (o usuário de unidade vê só os das unidades dele).
+    /// </summary>
+    private async Task<List<CampaignRunDto>> WithWhatsAppAsync(
+        List<CampaignRunDto> objDtos, List<CampaignRun> objRuns, AccessScope objScope, CancellationToken objCancellationToken)
+    {
+        Guid[] arrRuns = objRuns.Where(run => run.WhatsAppEnabled).Select(run => run.Id).ToArray();
+        if (arrRuns.Length == 0)
+        {
+            return objDtos;
+        }
+
+        var objCounts = await ApplyScope(_objDbContext.CampaignRecipients.AsNoTracking()
+                .Where(recipient => arrRuns.Contains(recipient.IDRun) && recipient.WhatsAppStatus != ""), objScope)
+            .GroupBy(recipient => new { recipient.IDRun, recipient.WhatsAppStatus })
+            .Select(group => new { group.Key.IDRun, group.Key.WhatsAppStatus, Total = group.Count() })
+            .ToListAsync(objCancellationToken);
+        Dictionary<Guid, CampaignRun> objById = objRuns.ToDictionary(run => run.Id);
+        return objDtos
+            .Select(dto => objById[dto.Id] is { WhatsAppEnabled: true } objRun
+                ? dto with
+                {
+                    WhatsApp = new CampaignRunWhatsAppDto(
+                        objCounts.Where(item => item.IDRun == dto.Id)
+                            .ToDictionary(item => item.WhatsAppStatus, item => item.Total),
+                        objRun.WhatsAppError, objRun.WhatsAppVersionNumber, objRun.WhatsAppWaitUntil),
+                }
+                : dto)
+            .ToList();
+    }
+
+    private async Task<List<CampaignRunDto>> RunCountsAsync(
         List<CampaignRun> objRuns, AccessScope objScope, CancellationToken objCancellationToken)
     {
         if (!objScope.IsUnitRestricted || objRuns.Count == 0)

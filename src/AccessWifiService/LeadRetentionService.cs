@@ -14,7 +14,9 @@ namespace AccessWifiService
     ///   das campanhas continua possível;</item>
     ///   <item>a lista de destinatários das execuções de campanha com mais de
     ///   "Retention:CampaignRecipientMonths" (padrão 12, D16). O resumo de cada execução e as versões
-    ///   das campanhas ficam.</item>
+    ///   das campanhas ficam;</item>
+    ///   <item>a cópia dos avisos da Meta (WhatsApp) com mais de "Retention:WhatsAppWebhookDays" (padrão 90, D12) e os
+    ///   alertas do WhatsApp do mesmo período;</item>
     ///   <item>os sinais dos aparelhos na rede de clientes (avisos da UniFi) com mais de "Retention:WifiPresenceDays"
     ///   (padrão 90, PROPOSTA_VISITAS_UNIFI.md D9). O tempo na loja de cada visita fica na visita.</item>
     ///   <item>os contatos do site institucional com mais de "Retention:SiteContactMonths" (padrão 12,
@@ -28,6 +30,7 @@ namespace AccessWifiService
         private readonly ILogger<LeadRetentionService> _objLogger;
         private readonly int _iRetentionMonths;
         private readonly int _iRecipientMonths;
+        private readonly int _iWhatsAppWebhookDays;
         private readonly int _iPresenceDays;
         private readonly int _iSiteContactMonths;
 
@@ -38,6 +41,7 @@ namespace AccessWifiService
             _objLogger = objLogger;
             _iRetentionMonths = objConfiguration.GetValue("Retention:LeadMonths", 24);
             _iRecipientMonths = objConfiguration.GetValue("Retention:CampaignRecipientMonths", 12);
+            _iWhatsAppWebhookDays = objConfiguration.GetValue("Retention:WhatsAppWebhookDays", 90);
             _iPresenceDays = objConfiguration.GetValue("Retention:WifiPresenceDays", 90);
             _iSiteContactMonths = objConfiguration.GetValue("Retention:SiteContactMonths", 12);
         }
@@ -83,6 +87,28 @@ namespace AccessWifiService
                     _objLogger.LogInformation(
                         "Retenção: {Count} destinatário(s) de execuções anteriores a {Cutoff:yyyy-MM-dd} removidos.",
                         objRecipients.Count, dtCutoffUtc);
+                }
+            }
+
+            if (_iWhatsAppWebhookDays > 0)
+            {
+                // D12: a cópia dos avisos da Meta mistura clientes; fica só 90 dias. Os pedaços de cada cliente seguem
+                // a regra do cliente (vão embora com ele). Os alertas já mandados vão junto.
+                DateTime dtCutoffUtc = dtNowUtc.AddDays(-_iWhatsAppWebhookDays);
+                List<WhatsAppWebhookRequest> objRequests = await _objDbContext.WhatsAppWebhookRequests
+                    .Where(request => request.ReceivedAt < dtCutoffUtc)
+                    .ToListAsync(objCancellationToken);
+                List<WhatsAppAlert> objAlerts = await _objDbContext.WhatsAppAlerts
+                    .Where(alert => alert.CreatedAt < dtCutoffUtc)
+                    .ToListAsync(objCancellationToken);
+                if (objRequests.Count > 0 || objAlerts.Count > 0)
+                {
+                    _objDbContext.WhatsAppWebhookRequests.RemoveRange(objRequests);
+                    _objDbContext.WhatsAppAlerts.RemoveRange(objAlerts);
+                    await _objDbContext.SaveChangesAsync(objCancellationToken);
+                    _objLogger.LogInformation(
+                        "Retenção: {Avisos} aviso(s) da Meta e {Alertas} alerta(s) do WhatsApp anteriores a {Cutoff:yyyy-MM-dd} removidos.",
+                        objRequests.Count, objAlerts.Count, dtCutoffUtc);
                 }
             }
 

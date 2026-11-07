@@ -20,6 +20,21 @@ namespace Models.DataBase
         /// (aniversário, visita) é contado nele. Padrão: Belém (-03, sem horário de verão).
         /// </summary>
         public string TimeZone { get; set; } = CompanyTimeZone.Default;
+
+        /// <summary>
+        /// Envio automático das campanhas pelo WhatsApp (o "bitWhatsApp", PROPOSTA_WHATSAPP.md D2). Desligado:
+        /// só o e-mail com o PDF para o gestor, como sempre. Só liga com o último teste de conexão aprovado.
+        /// </summary>
+        public bool WhatsAppEnabled { get; set; }
+
+        /// <summary>Quando o envio automático foi ligado ou desligado pela última vez.</summary>
+        public DateTime? WhatsAppChangedAt { get; set; }
+
+        /// <summary>Quem ligou ou desligou ("" = o próprio sistema, ex.: ao trocar as credenciais).</summary>
+        public string WhatsAppChangedBy { get; set; } = "";
+
+        /// <summary>O número de WhatsApp da empresa e as credenciais dele (segredos cifrados).</summary>
+        public CompanyWhatsApp WhatsApp { get; set; } = new CompanyWhatsApp();
     }
 
     public static class CompanyTimeZone

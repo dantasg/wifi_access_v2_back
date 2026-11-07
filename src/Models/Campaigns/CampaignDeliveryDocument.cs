@@ -58,13 +58,14 @@ namespace Models.Campaigns
                 .ThenBy(recipient => recipient.Name, StringComparer.CurrentCultureIgnoreCase)
                 .Select(recipient => new CampaignPdfRow(
                     recipient.Name, recipient.Phone, recipient.Instagram, recipient.Info,
-                    recipient.EventDate == objRun.LocalDate, recipient.Message))
+                    recipient.EventDate == objRun.LocalDate, recipient.Message,
+                    recipient.WhatsAppStatus, recipient.WhatsAppError))
                 .ToList();
 
             return new CampaignPdfData(
                 sCompanyName, sUnitName, objCampaign.Name, objCampaign.Kind, objRun.LocalDate,
                 CampaignConfig.FromJson(sConfigJson).Message, objSettings?.Logo,
-                objSettings?.Colors ?? new ThemeColors(), objRows);
+                objSettings?.Colors ?? new ThemeColors(), objRows, objRun.WhatsAppEnabled);
         }
 
         /// <summary>"campanha-aniversario-itaituba-2026-10-12.pdf".</summary>

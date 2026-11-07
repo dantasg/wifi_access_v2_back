@@ -39,6 +39,13 @@ namespace Models.DataBase
         public string AreaCode { get; set; } = "";
 
         /// <summary>
+        /// WhatsApp de atendimento da loja (DDD + número, só dígitos). Vai no fim de cada mensagem automática do
+        /// WhatsApp (PROPOSTA_WHATSAPP.md, D10), porque o número da campanha fica só na API e ninguém responde por
+        /// ele. Vazio = não cadastrado.
+        /// </summary>
+        public string StorePhone { get; set; } = "";
+
+        /// <summary>
         /// Quando o último relatório mensal desta unidade foi enviado (UTC). Marcador de idempotência:
         /// o serviço não reenvia no mesmo mês. Nulo = nunca enviado.
         /// </summary>

@@ -288,7 +288,7 @@ public class UnitUserTests
         CampaignRunDto objFromList = Assert.Single(Ok(await objStore.Runs(objCampaign.Id, null, CancellationToken.None)));
         CampaignSummaryDto objSummary = Assert.Single(Ok(await objStore.GetAll(null, CancellationToken.None)));
         PagedDto<CampaignRecipientDto> objRecipients = Ok(await objStore.Recipients(
-            objRun.Id, null, null, 1, 50, CancellationToken.None));
+            objRun.Id, null, null, 1, 50, null, CancellationToken.None));
         CampaignDeliveryDto objDelivery = Assert.Single(Ok(await objStore.Deliveries(objRun.Id, null, CancellationToken.None)));
         IActionResult objOtherPdf = await objStore.DeliveryPdf(objRun.Id, objCastanhalDelivery.Id, null, CancellationToken.None);
         FileContentResult objCsv = Assert.IsType<FileContentResult>(

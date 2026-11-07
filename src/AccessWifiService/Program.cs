@@ -1,6 +1,7 @@
 using AccessWifiService;
 using AccessWifiService.Campaigns;
 using AccessWifiService.SiteContacts;
+using AccessWifiService.WhatsApp;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,6 +11,7 @@ using Models.DataBase;
 using Models.Email;
 using Models.Persistence;
 using Models.Security;
+using Models.WhatsApp;
 
 // Teste do PDF de campanha, sem banco nem serviço: o publicar-producao.sh roda no servidor antes de trocar
 // a versão, para saber se o gerador (biblioteca nativa + fonte embutida) funciona lá.
@@ -71,6 +73,27 @@ objBuilder.Services.Configure<SiteContactOptions>(
     objBuilder.Configuration.GetSection(SiteContactOptions.SectionName));
 objBuilder.Services.AddScoped<SiteContactNotifier>();
 objBuilder.Services.AddHostedService<SiteContactWorker>();
+
+// WhatsApp pela API oficial da Meta (PROPOSTA_WHATSAPP.md): os modelos de mensagem de cada campanha vão para a
+// Meta sozinhos e, com o envio automático ligado, a execução manda a mensagem a cada cliente antes do e-mail ao
+// gestor; tudo com as credenciais de cada empresa. Um HttpClient só, com conexões renovadas a cada 5 minutos.
+WhatsAppOptions objWhatsAppOptions = objBuilder.Configuration.GetSection(WhatsAppOptions.SectionName).Get<WhatsAppOptions>()
+    ?? new WhatsAppOptions();
+HttpClient objWhatsAppHttpClient = new HttpClient(new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(5) })
+{
+    Timeout = TimeSpan.FromSeconds(20),
+};
+objBuilder.Services.AddSingleton(new WhatsAppCloudClient(objWhatsAppHttpClient, objWhatsAppOptions));
+objBuilder.Services.AddSingleton(
+    objBuilder.Configuration.GetSection(WhatsAppTemplateOptions.SectionName).Get<WhatsAppTemplateOptions>()
+    ?? new WhatsAppTemplateOptions());
+objBuilder.Services.AddScoped<WhatsAppTemplateService>();
+objBuilder.Services.AddSingleton(
+    objBuilder.Configuration.GetSection(CampaignWhatsAppOptions.SectionName).Get<CampaignWhatsAppOptions>()
+    ?? new CampaignWhatsAppOptions());
+objBuilder.Services.AddScoped<CampaignWhatsAppSender>();
+objBuilder.Services.AddScoped<WhatsAppAlertService>();
+objBuilder.Services.AddHostedService<WhatsAppTemplateWorker>();
 
 objBuilder.Build().Run();
 return 0;

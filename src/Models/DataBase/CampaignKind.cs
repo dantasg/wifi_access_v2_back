@@ -151,6 +151,44 @@ namespace Models.DataBase
         public static readonly IReadOnlyList<string> Delivered = [Pending, Sent, Simulated];
     }
 
+    /// <summary>A mensagem de um cliente pelo WhatsApp numa execução (<see cref="CampaignRecipient.WhatsAppStatus"/>).</summary>
+    public static class CampaignWhatsAppStatus
+    {
+        /// <summary>Esperando o envio.</summary>
+        public const string Pending = "Pending";
+
+        /// <summary>Não foi enviada (saiu do automático, unidade sem WhatsApp, sem texto aprovado…). O motivo vai junto.</summary>
+        public const string Skipped = "Skipped";
+
+        /// <summary>A Meta aceitou; falta o aviso de envio e entrega.</summary>
+        public const string Accepted = "Accepted";
+        public const string Sent = "Sent";
+        public const string Delivered = "Delivered";
+        public const string Read = "Read";
+
+        /// <summary>A Meta recusou ou avisou que não entregou. O motivo vai junto.</summary>
+        public const string Failed = "Failed";
+
+        /// <summary>Recebeu (ou está a caminho): vai para a parte "Receberam pelo WhatsApp" do PDF.</summary>
+        public static bool IsReceived(string sStatus) => sStatus is Accepted or Sent or Delivered or Read;
+
+        /// <summary>A Meta já deu a palavra final: a espera do e-mail (D4) não precisa mais dela.</summary>
+        public static bool IsFinal(string sStatus) => sStatus is Delivered or Read or Failed or Skipped;
+
+        /// <summary>Para o PDF e o e-mail.</summary>
+        public static string Label(string sStatus) => sStatus switch
+        {
+            Accepted => "Enviada",
+            Sent => "Enviada",
+            Delivered => "Entregue",
+            Read => "Lida",
+            Failed => "Não entregue",
+            Skipped => "Não enviada",
+            Pending => "Na fila",
+            _ => "",
+        };
+    }
+
     /// <summary>Situação do e-mail de uma unidade numa execução (<see cref="CampaignDelivery"/>).</summary>
     public static class CampaignDeliveryStatus
     {

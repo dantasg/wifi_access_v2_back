@@ -13,7 +13,8 @@ namespace AccessWifi.Api.Features.SystemSettings
         string FromName,
         bool UseStartTls);
 
-    public record SystemSettingsDto(SmtpSettingsDto Smtp);
+    /// <param name="WhatsAppAlertEmails">Para quem vão os alertas do WhatsApp (D9), separados por vírgula. "" = ninguém.</param>
+    public record SystemSettingsDto(SmtpSettingsDto Smtp, string WhatsAppAlertEmails = "");
 
     /// <summary>
     /// Password nulo = manter a atual; texto = trocar. Host vazio = sem SMTP (nada sai por e-mail).
@@ -28,7 +29,8 @@ namespace AccessWifi.Api.Features.SystemSettings
         string? FromName,
         bool? UseStartTls);
 
-    public record UpdateSystemSettingsRequest(SmtpSettingsRequest Smtp);
+    /// <param name="WhatsAppAlertEmails">Nulo = manter; "" = ninguém recebe; e-mails separados por vírgula.</param>
+    public record UpdateSystemSettingsRequest(SmtpSettingsRequest Smtp, string? WhatsAppAlertEmails = null);
 
     public record SmtpTestRequest(string To);
 

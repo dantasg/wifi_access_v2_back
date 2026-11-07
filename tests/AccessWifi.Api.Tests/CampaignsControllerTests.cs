@@ -259,7 +259,7 @@ public class CampaignsControllerTests
         Assert.Equal("gerente@regional.com.br", objDeliveryDto.Email);
         Assert.Equal(CampaignDeliveryStatus.Sent, objDeliveryDto.Status);
         CampaignRecipientDto objRecipient = Assert.Single(Ok(await objController.Recipients(
-            objRun.Id, null, null, 1, 50, CancellationToken.None)).Items);
+            objRun.Id, null, null, 1, 50, null, CancellationToken.None)).Items);
         Assert.Equal("Itaituba", objRecipient.Unit);
         Assert.Equal("seg, 12/10 · 30 anos", objRecipient.Info);
 

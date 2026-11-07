@@ -8,9 +8,13 @@ using static Models.Pdf.PdfTheme;
 
 namespace Models.Campaigns
 {
-    /// <summary>Um cliente no PDF. <paramref name="Message"/> é a mensagem já montada, que vai no link do WhatsApp.</summary>
+    /// <summary>
+    /// Um cliente no PDF. <paramref name="Message"/> é a mensagem já montada, que vai no link do WhatsApp.
+    /// WhatsAppStatus e WhatsAppError: como foi o envio automático (parte 3 do WhatsApp); "" = sem WhatsApp.
+    /// </summary>
     public sealed record CampaignPdfRow(
-        string Name, string Phone, string Instagram, string Info, bool IsToday, string Message);
+        string Name, string Phone, string Instagram, string Info, bool IsToday, string Message,
+        string WhatsAppStatus = "", string? WhatsAppError = null);
 
     /// <summary>Tudo o que o PDF de uma unidade mostra (D20).</summary>
     public sealed record CampaignPdfData(
@@ -22,12 +26,24 @@ namespace Models.Campaigns
         string MessageTemplate,
         string? LogoDataUrl,
         ThemeColors Colors,
-        IReadOnlyList<CampaignPdfRow> Rows);
+        IReadOnlyList<CampaignPdfRow> Rows,
+        bool WhatsApp = false)
+    {
+        /// <summary>Com o WhatsApp ligado: quem recebeu a mensagem automática.</summary>
+        public IReadOnlyList<CampaignPdfRow> ReceivedRows =>
+            Rows.Where(row => CampaignWhatsAppStatus.IsReceived(row.WhatsAppStatus)).ToList();
+
+        /// <summary>Com o WhatsApp ligado: quem não recebeu, para o gestor falar com eles (D5).</summary>
+        public IReadOnlyList<CampaignPdfRow> NotReceivedRows =>
+            Rows.Where(row => !CampaignWhatsAppStatus.IsReceived(row.WhatsAppStatus)).ToList();
+    }
 
     /// <summary>
     /// O PDF de campanha que vai para o e-mail da unidade (D20): com a logo e as cores do portal da
     /// empresa, diz qual é a campanha, qual mensagem mandar e lista os clientes, com o WhatsApp (abre a
-    /// conversa com a mensagem pronta) e o Instagram de cada um como link.
+    /// conversa com a mensagem pronta) e o Instagram de cada um como link. Com o WhatsApp automático ligado
+    /// (PROPOSTA_WHATSAPP.md, D5), a lista vem em duas partes: primeiro quem não recebeu, com o motivo, depois
+    /// quem recebeu.
     /// </summary>
     public static class CampaignPdf
     {
@@ -99,6 +115,21 @@ namespace Models.Campaigns
                         Field(objRow.RelativeItem(), "Clientes", objData.Rows.Count.ToString(), objColors);
                     });
 
+                    if (objData.WhatsApp)
+                    {
+                        // O resumo do envio automático (D5).
+                        objColumn.Item().Background(objColors.Surface).Border(1).BorderColor(objColors.Line).CornerRadius(8)
+                            .Padding(12).Text(objText =>
+                            {
+                                objText.Span($"{objData.ReceivedRows.Count} receberam pelo WhatsApp").Bold().FontColor(objColors.BrandDark);
+                                objText.Span(" · ").FontColor(objColors.Muted);
+                                objText.Span($"{objData.NotReceivedRows.Count} não receberam").Bold();
+                                objText.Span(objData.NotReceivedRows.Count > 0
+                                    ? ": estão primeiro na lista, com o motivo, para vocês entrarem em contato."
+                                    : ": todos receberam. Este PDF é só para conferência.").FontColor(objColors.Muted);
+                            });
+                    }
+
                     if (objData.Kind == CampaignKind.Birthday)
                     {
                         (DateOnly dtStart, DateOnly dtEnd) = CampaignCalendar.BirthdayRange(objData.LocalDate);
@@ -112,108 +143,181 @@ namespace Models.Campaigns
                         });
                     }
 
+                    // Com o WhatsApp e todos tendo recebido, não há com quem falar: só o resumo e a lista.
+                    bool bAllReceived = objData.WhatsApp && objData.NotReceivedRows.Count == 0;
+                    bool bNoneReceived = objData.WhatsApp && objData.ReceivedRows.Count == 0;
+
                     // A mensagem, como a empresa escreveu na tela de campanha.
-                    objColumn.Item().Background(objColors.Surface).Border(1).BorderColor(objColors.Line).CornerRadius(8)
-                        .Padding(14).Column(objBox =>
-                        {
-                            objBox.Spacing(6);
-                            objBox.Item().Text("Mensagem para enviar").FontSize(12).Bold().FontColor(objColors.BrandDark);
-                            objBox.Item().Text(sMessage).FontSize(12).FontColor(objColors.Ink);
-                            if (sMessage.Contains('{'))
-                            {
-                                objBox.Item().Text(
-                                    "O que está entre chaves muda para cada cliente: no link do WhatsApp já vai preenchido.")
-                                    .FontSize(9).FontColor(objColors.Muted);
-                            }
-                            if (bHadEmoji)
-                            {
-                                objBox.Item().Text(
-                                    "Os emojis da mensagem não aparecem neste PDF, mas vão junto no link do WhatsApp.")
-                                    .FontSize(9).FontColor(objColors.Muted);
-                            }
-                        });
-
-                    objColumn.Item().Column(objSteps =>
+                    if (!bAllReceived)
                     {
-                        objSteps.Spacing(2);
-                        objSteps.Item().Text("Como fazer").Bold().FontColor(objColors.BrandDark);
-                        objSteps.Item().Text("1. Clique no WhatsApp do cliente: a conversa abre com a mensagem pronta, já com o nome dele.");
-                        objSteps.Item().Text("2. Confira o texto e envie.");
-                        objSteps.Item().Text("3. Se o cliente informou o Instagram, o @ também é um link para o perfil dele.");
-                    });
+                        objColumn.Item().Background(objColors.Surface).Border(1).BorderColor(objColors.Line).CornerRadius(8)
+                            .Padding(14).Column(objBox =>
+                            {
+                                objBox.Spacing(6);
+                                objBox.Item().Text(objData.WhatsApp ? "Mensagem para quem não recebeu" : "Mensagem para enviar")
+                                    .FontSize(12).Bold().FontColor(objColors.BrandDark);
+                                objBox.Item().Text(sMessage).FontSize(12).FontColor(objColors.Ink);
+                                if (sMessage.Contains('{'))
+                                {
+                                    objBox.Item().Text(
+                                        "O que está entre chaves muda para cada cliente: no link do WhatsApp já vai preenchido.")
+                                        .FontSize(9).FontColor(objColors.Muted);
+                                }
+                                if (bHadEmoji)
+                                {
+                                    objBox.Item().Text(
+                                        "Os emojis da mensagem não aparecem neste PDF, mas vão junto no link do WhatsApp.")
+                                        .FontSize(9).FontColor(objColors.Muted);
+                                }
+                            });
 
-                    objColumn.Item().Table(objTable =>
-                    {
-                        objTable.ColumnsDefinition(objColumns =>
+                        objColumn.Item().Column(objSteps =>
                         {
-                            objColumns.ConstantColumn(24);
-                            objColumns.RelativeColumn(2.7f);
-                            objColumns.RelativeColumn(2.1f);
-                            objColumns.RelativeColumn(2f);
-                            if (bWithInfo)
+                            objSteps.Spacing(2);
+                            objSteps.Item().Text("Como fazer").Bold().FontColor(objColors.BrandDark);
+                            if (objData.WhatsApp)
                             {
-                                // Cabe "Hoje · seg, 12/10 · 28 anos" numa linha.
-                                objColumns.RelativeColumn(2.8f);
-                            }
-                        });
-
-                        objTable.Header(objHeader =>
-                        {
-                            ColumnTitle(objHeader.Cell(), "#", objColors);
-                            ColumnTitle(objHeader.Cell(), "Cliente", objColors);
-                            ColumnTitle(objHeader.Cell(), "WhatsApp", objColors);
-                            ColumnTitle(objHeader.Cell(), "Instagram", objColors);
-                            if (bWithInfo)
-                            {
-                                ColumnTitle(objHeader.Cell(), sInfoTitle, objColors);
-                            }
-                        });
-
-                        int iLine = 0;
-                        foreach (CampaignPdfRow objCustomer in objData.Rows)
-                        {
-                            iLine++;
-                            Cell(objTable.Cell(), objColors).Text(iLine.ToString()).FontColor(objColors.Muted);
-                            Cell(objTable.Cell(), objColors).Text(objCustomer.Name).SemiBold();
-                            Cell(objTable.Cell(), objColors)
-                                .Hyperlink(CampaignContact.WhatsAppUrl(objCustomer.Phone, objCustomer.Message))
-                                .Text(CampaignContact.FormatPhone(objCustomer.Phone)).FontColor(objColors.Link).Underline();
-
-                            IContainer objInstagram = Cell(objTable.Cell(), objColors);
-                            string sProfile = InstagramHandle.ProfileUrl(objCustomer.Instagram);
-                            if (sProfile.Length > 0)
-                            {
-                                objInstagram.Hyperlink(sProfile)
-                                    .Text("@" + InstagramHandle.Normalize(objCustomer.Instagram)).FontColor(objColors.Link).Underline();
-                            }
-                            else if (objCustomer.Instagram.Length > 0)
-                            {
-                                // Fora do formato do Instagram (dado antigo): mostra como veio, sem link.
-                                objInstagram.Text(objCustomer.Instagram);
+                                int iStep = 1;
+                                if (!bNoneReceived)
+                                {
+                                    objSteps.Item().Text($"{iStep++}. Quem está em \"Receberam pelo WhatsApp\" já recebeu a mensagem: não precisa mandar de novo.");
+                                }
+                                objSteps.Item().Text($"{iStep++}. Fale com quem está em \"Não receberam\": clique no WhatsApp do cliente e a conversa abre com a mensagem pronta.");
+                                objSteps.Item().Text($"{iStep}. Se o cliente informou o Instagram, o @ também é um link para o perfil dele.");
                             }
                             else
                             {
-                                objInstagram.Text("—").FontColor(objColors.Muted);
+                                objSteps.Item().Text("1. Clique no WhatsApp do cliente: a conversa abre com a mensagem pronta, já com o nome dele.");
+                                objSteps.Item().Text("2. Confira o texto e envie.");
+                                objSteps.Item().Text("3. Se o cliente informou o Instagram, o @ também é um link para o perfil dele.");
                             }
+                        });
+                    }
 
-                            if (bWithInfo)
-                            {
-                                Cell(objTable.Cell(), objColors).Text(objText =>
-                                {
-                                    if (objCustomer.IsToday)
-                                    {
-                                        objText.Span("Hoje · ").Bold().FontColor(objColors.BrandDark);
-                                    }
-                                    objText.Span(objCustomer.Info);
-                                });
-                            }
-                        }
-                    });
+                    if (!objData.WhatsApp)
+                    {
+                        CustomersTable(objColumn.Item(), objData.Rows, bWithInfo, sInfoTitle, objColors, bWhatsApp: false);
+                        return;
+                    }
+
+                    // D5: primeiro quem não recebeu (o gestor fala com eles), depois quem recebeu, para conferir.
+                    IReadOnlyList<CampaignPdfRow> objNotReceived = objData.NotReceivedRows;
+                    IReadOnlyList<CampaignPdfRow> objReceived = objData.ReceivedRows;
+                    if (objNotReceived.Count > 0)
+                    {
+                        objColumn.Item().Text($"Não receberam pelo WhatsApp — fale com eles ({objNotReceived.Count})")
+                            .FontSize(13).Bold().FontColor(objColors.BrandDark);
+                        CustomersTable(objColumn.Item(), objNotReceived, bWithInfo, sInfoTitle, objColors, bWhatsApp: true);
+                    }
+                    objColumn.Item().Text($"Receberam pelo WhatsApp ({objReceived.Count})")
+                        .FontSize(13).Bold().FontColor(objColors.BrandDark);
+                    if (objReceived.Count > 0)
+                    {
+                        CustomersTable(objColumn.Item(), objReceived, bWithInfo, sInfoTitle, objColors, bWhatsApp: true);
+                    }
+                    else
+                    {
+                        objColumn.Item().Text("Ninguém recebeu pelo WhatsApp nesta campanha.").FontColor(objColors.Muted);
+                    }
                 });
 
                 // ------------------------------------------------------------------ Rodapé
                 Footer(objPage, objColors);
             })).GeneratePdf();
+        }
+
+        /// <summary>
+        /// A tabela de clientes. Com o WhatsApp, embaixo do nome vem a situação ("Entregue", "Lida") ou o motivo de
+        /// não ter recebido.
+        /// </summary>
+        private static void CustomersTable(
+            IContainer objContainer, IReadOnlyList<CampaignPdfRow> objRows, bool bWithInfo, string sInfoTitle,
+            Palette objColors, bool bWhatsApp)
+        {
+            objContainer.Table(objTable =>
+            {
+                objTable.ColumnsDefinition(objColumns =>
+                {
+                    objColumns.ConstantColumn(24);
+                    objColumns.RelativeColumn(2.7f);
+                    objColumns.RelativeColumn(2.1f);
+                    objColumns.RelativeColumn(2f);
+                    if (bWithInfo)
+                    {
+                        // Cabe "Hoje · seg, 12/10 · 28 anos" numa linha.
+                        objColumns.RelativeColumn(2.8f);
+                    }
+                });
+
+                objTable.Header(objHeader =>
+                {
+                    ColumnTitle(objHeader.Cell(), "#", objColors);
+                    ColumnTitle(objHeader.Cell(), "Cliente", objColors);
+                    ColumnTitle(objHeader.Cell(), "WhatsApp", objColors);
+                    ColumnTitle(objHeader.Cell(), "Instagram", objColors);
+                    if (bWithInfo)
+                    {
+                        ColumnTitle(objHeader.Cell(), sInfoTitle, objColors);
+                    }
+                });
+
+                int iLine = 0;
+                foreach (CampaignPdfRow objCustomer in objRows)
+                {
+                    iLine++;
+                    Cell(objTable.Cell(), objColors).Text(iLine.ToString()).FontColor(objColors.Muted);
+                    if (bWhatsApp)
+                    {
+                        string sDetail = CampaignWhatsAppStatus.IsReceived(objCustomer.WhatsAppStatus)
+                            ? CampaignWhatsAppStatus.Label(objCustomer.WhatsAppStatus)
+                            : objCustomer.WhatsAppError ?? CampaignWhatsAppStatus.Label(objCustomer.WhatsAppStatus);
+                        Cell(objTable.Cell(), objColors).Column(objName =>
+                        {
+                            objName.Item().Text(objCustomer.Name).SemiBold();
+                            if (sDetail.Length > 0)
+                            {
+                                objName.Item().Text(sDetail).FontSize(8.5f).FontColor(objColors.Muted);
+                            }
+                        });
+                    }
+                    else
+                    {
+                        Cell(objTable.Cell(), objColors).Text(objCustomer.Name).SemiBold();
+                    }
+                    Cell(objTable.Cell(), objColors)
+                        .Hyperlink(CampaignContact.WhatsAppUrl(objCustomer.Phone, objCustomer.Message))
+                        .Text(CampaignContact.FormatPhone(objCustomer.Phone)).FontColor(objColors.Link).Underline();
+
+                    IContainer objInstagram = Cell(objTable.Cell(), objColors);
+                    string sProfile = InstagramHandle.ProfileUrl(objCustomer.Instagram);
+                    if (sProfile.Length > 0)
+                    {
+                        objInstagram.Hyperlink(sProfile)
+                            .Text("@" + InstagramHandle.Normalize(objCustomer.Instagram)).FontColor(objColors.Link).Underline();
+                    }
+                    else if (objCustomer.Instagram.Length > 0)
+                    {
+                        // Fora do formato do Instagram (dado antigo): mostra como veio, sem link.
+                        objInstagram.Text(objCustomer.Instagram);
+                    }
+                    else
+                    {
+                        objInstagram.Text("—").FontColor(objColors.Muted);
+                    }
+
+                    if (bWithInfo)
+                    {
+                        Cell(objTable.Cell(), objColors).Text(objText =>
+                        {
+                            if (objCustomer.IsToday)
+                            {
+                                objText.Span("Hoje · ").Bold().FontColor(objColors.BrandDark);
+                            }
+                            objText.Span(objCustomer.Info);
+                        });
+                    }
+                }
+            });
         }
     }
 }

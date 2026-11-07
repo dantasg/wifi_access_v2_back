@@ -15,6 +15,7 @@ using Microsoft.IdentityModel.Tokens;
 using Models.Email;
 using Models.Persistence;
 using Models.Security;
+using Models.WhatsApp;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 ConfigurationManager objConfiguration = builder.Configuration;
@@ -135,6 +136,16 @@ builder.Services.AddRateLimiter(objLimiterOptions =>
                 PermitLimit = 300,
                 Window = TimeSpan.FromMinutes(1),
             }));
+    // Avisos da Meta (WhatsApp): chegam em rajadas na hora das campanhas (enviada, entregue, lida de cada
+    // cliente), de poucos IPs da Meta. 1200/min por IP folga para isso e ainda barra abuso.
+    objLimiterOptions.AddPolicy("whatsapp-webhook", objHttpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            objHttpContext.Connection.RemoteIpAddress ?? IPAddress.Loopback,
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 1200,
+                Window = TimeSpan.FromMinutes(1),
+            }));
     // Formulário do site: uma pessoa manda uma vez (talvez duas, se errar algo); 5/min barra robô insistente.
     objLimiterOptions.AddPolicy("site-contact", objHttpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
@@ -172,6 +183,15 @@ builder.Services.AddMemoryCache();
 builder.Services.AddScoped<UnitDeviceSync>();
 builder.Services.AddScoped<UnitLocator>();
 builder.Services.AddHostedService<UnitDeviceSyncWorker>();
+// WhatsApp pela API oficial da Meta (PROPOSTA_WHATSAPP.md): cada empresa com as próprias credenciais
+// (banco, cifradas); aqui só o endereço e a versão da Graph API, configuráveis para testar com uma Meta falsa.
+WhatsAppOptions objWhatsAppOptions = objConfiguration.GetSection(WhatsAppOptions.SectionName).Get<WhatsAppOptions>()
+    ?? new WhatsAppOptions();
+builder.Services.AddSingleton(objWhatsAppOptions);
+builder.Services.AddHttpClient<WhatsAppCloudClient>(objWhatsAppHttpClient =>
+{
+    objWhatsAppHttpClient.Timeout = TimeSpan.FromSeconds(20);
+});
 // Conta de e-mail do sistema (Configurações do sistema): a API só usa para o e-mail de teste; quem manda o
 // relatório e as campanhas é o worker, com o mesmo código.
 builder.Services.AddScoped<ConfigurationReader>();

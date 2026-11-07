@@ -88,6 +88,35 @@ namespace Models.DataBase
         public DateTime? StartedAt { get; set; }
         public DateTime? FinishedAt { get; set; }
         public string? Error { get; set; }
+
+        // ------------------------------------------- WhatsApp automático (PROPOSTA_WHATSAPP.md, parte 3)
+
+        /// <summary>
+        /// Como estava o interruptor da empresa quando a execução foi criada. Ligado: antes do e-mail, cada cliente
+        /// recebe a mensagem pelo WhatsApp, e o PDF separa quem recebeu de quem não recebeu.
+        /// </summary>
+        public bool WhatsAppEnabled { get; set; }
+
+        /// <summary>Quando começou o envio pelo WhatsApp (a etapa desiste das falhas temporárias depois de 1 hora).</summary>
+        public DateTime? WhatsAppStartedAt { get; set; }
+
+        /// <summary>Depois de uma falha temporária da Meta (velocidade, fora do ar), quando tentar de novo.</summary>
+        public DateTime? WhatsAppRetryAt { get; set; }
+
+        /// <summary>
+        /// Envios terminados: espera os avisos da Meta até aqui (D4, 10 minutos), ou menos se todos responderem.
+        /// Nulo = ainda enviando.
+        /// </summary>
+        public DateTime? WhatsAppWaitUntil { get; set; }
+
+        /// <summary>O modelo da Meta que saiu (o da versão da execução ou o último aprovado antes dela, §11.2).</summary>
+        public Guid? IDWhatsAppTemplate { get; set; }
+
+        /// <summary>A versão da campanha cujo texto saiu pelo WhatsApp.</summary>
+        public int? WhatsAppVersionNumber { get; set; }
+
+        /// <summary>Por que o WhatsApp não pôde ser usado (ou parou no meio), em português (D9). Nulo = sem problema.</summary>
+        public string? WhatsAppError { get; set; }
     }
 
     /// <summary>
@@ -133,6 +162,15 @@ namespace Models.DataBase
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime? ProcessedAt { get; set; }
+
+        /// <summary>
+        /// A mensagem pelo WhatsApp (parte 3). Ver <see cref="CampaignWhatsAppStatus"/>; "" = a execução foi sem
+        /// WhatsApp. O registro completo da mensagem fica em <see cref="WhatsAppMessage"/>.
+        /// </summary>
+        public string WhatsAppStatus { get; set; } = "";
+
+        /// <summary>Por que não recebeu pelo WhatsApp, em português (vai no PDF do gestor).</summary>
+        public string? WhatsAppError { get; set; }
     }
 
     /// <summary>

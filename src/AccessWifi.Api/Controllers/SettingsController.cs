@@ -51,7 +51,8 @@ public partial class SettingsController : ControllerBase
             return BadRequest(new ErrorResponse("Informe a unidade (?unit=slug) ou o host (?host=)."));
         }
 
-        Unit? objUnit = await FindPortalUnitAsync(sUnitSlug, sPortalHost, sAp, objCancellationToken);
+        (Unit? objUnit, string sCompanyName) =
+            await FindPortalUnitAsync(sUnitSlug, sPortalHost, sAp, objCancellationToken);
         if (objUnit is null)
         {
             return NotFound(new ErrorResponse("Unidade não encontrada."));
@@ -65,7 +66,7 @@ public partial class SettingsController : ControllerBase
 
         // Devolve o slug resolvido: quando a unidade veio pelo host, é assim que o front
         // descobre o que mandar depois no /authorize.
-        return Ok(SettingsDto.ForPortal(objSettings, objUnit));
+        return Ok(SettingsDto.ForPortal(objSettings, objUnit, sCompanyName));
     }
 
     /// <summary>
@@ -84,7 +85,7 @@ public partial class SettingsController : ControllerBase
             return NotFound();
         }
 
-        Unit? objUnit = await FindPortalUnitAsync(unit, null, null, objCancellationToken);
+        (Unit? objUnit, _) = await FindPortalUnitAsync(unit, null, null, objCancellationToken);
         if (objUnit is null)
         {
             return NotFound();
@@ -237,20 +238,23 @@ public partial class SettingsController : ControllerBase
     }
 
     /// <summary>Unidade ativa, de empresa ativa, pelo slug, host ou ponto de acesso; null se não houver.</summary>
-    private async Task<Unit?> FindPortalUnitAsync(
+    /// <summary>A unidade ativa de uma empresa ativa, com o nome da empresa (na mesma consulta de antes).</summary>
+    private async Task<(Unit? objUnit, string sCompanyName)> FindPortalUnitAsync(
         string? sUnitSlug, string? sPortalHost, string? sAp, CancellationToken objCancellationToken)
     {
         Unit? objUnit = await _objUnitLocator.FindAsync(
             _objDbContext.Units.AsNoTracking(), sUnitSlug, sPortalHost, sAp, objCancellationToken);
         if (objUnit is null || !objUnit.Active)
         {
-            return null;
+            return (null, "");
         }
 
-        bool bCompanyActive = await _objDbContext.Companies
+        string? sCompanyName = await _objDbContext.Companies
             .AsNoTracking()
-            .AnyAsync(company => company.Id == objUnit.IDCompany && company.Active, objCancellationToken);
-        return bCompanyActive ? objUnit : null;
+            .Where(company => company.Id == objUnit.IDCompany && company.Active)
+            .Select(company => company.Name)
+            .FirstOrDefaultAsync(objCancellationToken);
+        return sCompanyName is null ? (null, "") : (objUnit, sCompanyName);
     }
 
     /// <summary>Empresa do token; para o super admin, a do ?company=slug. Sem empresa, devolve o erro.</summary>

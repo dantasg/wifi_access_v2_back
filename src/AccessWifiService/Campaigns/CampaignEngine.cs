@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using AccessWifiService.WhatsApp;
 using Models.Campaigns;
 using Models.DataBase;
 using Models.Email;
@@ -29,7 +30,8 @@ namespace AccessWifiService.Campaigns
 
     /// <summary>
     /// O motor das campanhas, chamado a cada poucos segundos pelo <see cref="CampaignWorker"/>: cria as
-    /// execuções que venceram, escolhe os clientes e manda, para cada unidade, um e-mail com o PDF dos
+    /// execuções que venceram, escolhe os clientes, manda pelo WhatsApp quando a empresa ligou o envio
+    /// automático (<see cref="CampaignWhatsAppSender"/>) e manda, para cada unidade, um e-mail com o PDF dos
     /// clientes dela (D17) — o gerente faz o contato. Todo o estado mora no banco (cada cliente e cada
     /// e-mail têm o seu status), então pausar, retomar e sobreviver a um reinício é continuar dos pendentes.
     /// </summary>
@@ -40,17 +42,20 @@ namespace AccessWifiService.Campaigns
 
         private readonly AppDbContext _objDbContext;
         private readonly IEmailSender _objEmailSender;
+        private readonly CampaignWhatsAppSender _objWhatsApp;
         private readonly CampaignEngineOptions _objOptions;
         private readonly ILogger<CampaignEngine> _objLogger;
 
         public CampaignEngine(
             AppDbContext objDbContext,
             IEmailSender objEmailSender,
+            CampaignWhatsAppSender objWhatsApp,
             IOptions<CampaignEngineOptions> objOptions,
             ILogger<CampaignEngine> objLogger)
         {
             _objDbContext = objDbContext;
             _objEmailSender = objEmailSender;
+            _objWhatsApp = objWhatsApp;
             _objOptions = objOptions.Value;
             _objLogger = objLogger;
         }
@@ -93,9 +98,10 @@ namespace AccessWifiService.Campaigns
             }
 
             List<Guid> objCompanyIds = objDue.Select(campaign => campaign.IDCompany).Distinct().ToList();
-            Dictionary<Guid, string> objZones = await _objDbContext.Companies.AsNoTracking()
+            var objCompanies = await _objDbContext.Companies.AsNoTracking()
                 .Where(company => objCompanyIds.Contains(company.Id))
-                .ToDictionaryAsync(company => company.Id, company => company.TimeZone, objCancellationToken);
+                .Select(company => new { company.Id, company.TimeZone, company.WhatsAppEnabled })
+                .ToDictionaryAsync(company => company.Id, objCancellationToken);
             HashSet<(Guid, string)> objEnabled = (await _objDbContext.CompanyCampaignKinds.AsNoTracking()
                     .Where(kind => objCompanyIds.Contains(kind.IDCompany))
                     .Select(kind => new { kind.IDCompany, kind.Kind })
@@ -128,7 +134,9 @@ namespace AccessWifiService.Campaigns
                     continue;
                 }
 
-                TimeZoneInfo objZone = CompanyTimeZone.Resolve(objZones.GetValueOrDefault(objCampaign.IDCompany));
+                TimeZoneInfo objZone = CompanyTimeZone.Resolve(objCompanies.GetValueOrDefault(objCampaign.IDCompany)?.TimeZone);
+                // O interruptor da empresa na hora do disparo (PROPOSTA_WHATSAPP.md, parte 3).
+                bool bWhatsApp = objCompanies.GetValueOrDefault(objCampaign.IDCompany)?.WhatsAppEnabled == true;
                 CampaignConfig objConfig = CampaignConfig.FromJson(objCampaign.ConfigJson);
                 DateOnly dtToday = CompanyTimeZone.Today(objZone, dtNowUtc);
 
@@ -158,6 +166,7 @@ namespace AccessWifiService.Campaigns
                             CreatedAt = dtNowUtc,
                             FinishedAt = bMissed ? dtNowUtc : null,
                             Error = bMissed ? "O serviço estava fora do ar no horário e o dia já virou." : null,
+                            WhatsAppEnabled = bWhatsApp && !bMissed,
                         });
                         iCreated++;
                     }
@@ -254,7 +263,11 @@ namespace AccessWifiService.Campaigns
                 join campaign in _objDbContext.Campaigns.AsNoTracking() on run.IDCampaign equals campaign.Id
                 where run.IDCompany == objRun.IDCompany && run.LocalDate == objRun.LocalDate
                     && run.Id != objRunId && s_arrDelivered.Contains(recipient.Status)
-                select new { recipient.Id, recipient.IDCustomer, recipient.Status, RunId = run.Id, campaign.Kind, campaign.Name })
+                select new
+                {
+                    recipient.Id, recipient.IDCustomer, recipient.Status, recipient.WhatsAppStatus, RunId = run.Id,
+                    campaign.Kind, campaign.Name,
+                })
                 .ToListAsync(objCancellationToken);
             var objOtherByCustomer = objOtherToday
                 .GroupBy(item => item.IDCustomer)
@@ -298,12 +311,15 @@ namespace AccessWifiService.Campaigns
                     Status = CampaignRecipientStatus.Pending,
                     Milestone = iCustomerMilestone,
                     CreatedAt = dtNowUtc,
+                    WhatsAppStatus = objRun.WhatsAppEnabled ? CampaignWhatsAppStatus.Pending : "",
                 };
 
                 if (objOtherByCustomer.TryGetValue(objMember.Id, out var objOther))
                 {
                     bool bOtherLessImportant = CampaignKind.Priority(objOther.Kind) > iPriority;
-                    if (objOther.Status == CampaignRecipientStatus.Pending && bOtherLessImportant)
+                    // Já saiu pelo WhatsApp: não dá mais para trocar, mesmo antes do e-mail.
+                    bool bOtherNotSent = objOther.WhatsAppStatus is "" or CampaignWhatsAppStatus.Pending;
+                    if (objOther.Status == CampaignRecipientStatus.Pending && bOtherLessImportant && bOtherNotSent)
                     {
                         // A outra ainda não saiu e é menos importante: esta ocupa o lugar dela.
                         await ReplaceAsync(objOther.Id, objOther.RunId, objCampaign.Name, dtNowUtc, objCancellationToken);
@@ -313,6 +329,7 @@ namespace AccessWifiService.Campaigns
                         objRecipient.Status = CampaignRecipientStatus.Ignored;
                         objRecipient.Reason = $"Limite do dia: já recebe \"{objOther.Name}\" hoje.";
                         objRecipient.ProcessedAt = dtNowUtc;
+                        objRecipient.WhatsAppStatus = "";
                         iIgnoredInBatch++;
                     }
                 }
@@ -400,11 +417,13 @@ namespace AccessWifiService.Campaigns
         {
             CampaignRecipient? objOther = await _objDbContext.CampaignRecipients
                 .FirstOrDefaultAsync(recipient => recipient.Id == lRecipientId, objCancellationToken);
-            if (objOther is null || objOther.Status != CampaignRecipientStatus.Pending)
+            if (objOther is null || objOther.Status != CampaignRecipientStatus.Pending
+                || objOther.WhatsAppStatus is not ("" or CampaignWhatsAppStatus.Pending))
             {
                 return;
             }
             objOther.Status = CampaignRecipientStatus.Ignored;
+            objOther.WhatsAppStatus = "";
             objOther.Reason = $"Substituída por \"{sCampaign}\" (limite de 1 mensagem por dia).";
             objOther.ProcessedAt = dtNowUtc;
 
@@ -433,6 +452,12 @@ namespace AccessWifiService.Campaigns
 
             Campaign objCampaign = await _objDbContext.Campaigns.AsNoTracking()
                 .FirstAsync(campaign => campaign.Id == objRun.IDCampaign, objCancellationToken);
+            // WhatsApp ligado: primeiro a mensagem para cada cliente e a espera dos avisos; o e-mail vem depois,
+            // dizendo quem recebeu e quem não (PROPOSTA_WHATSAPP.md, parte 3).
+            if (!await _objWhatsApp.ProcessAsync(objRun, objCampaign, dtNowUtc, objCancellationToken))
+            {
+                return 0;
+            }
             await CreateDeliveriesAsync(objRun, objCampaign, dtNowUtc, objCancellationToken);
 
             List<CampaignDelivery> objExpired = await _objDbContext.CampaignDeliveries
@@ -774,6 +799,11 @@ namespace AccessWifiService.Campaigns
                         objRecipient.Status = CampaignRecipientStatus.Cancelled;
                         objRecipient.Reason = "Execução cancelada.";
                         objRecipient.ProcessedAt = dtNowUtc;
+                        if (objRecipient.WhatsAppStatus == CampaignWhatsAppStatus.Pending)
+                        {
+                            objRecipient.WhatsAppStatus = CampaignWhatsAppStatus.Skipped;
+                            objRecipient.WhatsAppError = "Execução cancelada antes do envio.";
+                        }
                     }
                     CampaignRun objRun = await _objDbContext.CampaignRuns.FirstAsync(run => run.Id == objRunId, objCancellationToken);
                     objRun.CancelledCount += objBatch.Count;

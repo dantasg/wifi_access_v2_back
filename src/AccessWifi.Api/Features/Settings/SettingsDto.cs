@@ -15,7 +15,10 @@ public record SettingsDto(
     string? AreaCode = null,
     // Slug da unidade resolvida. Só sai na leitura do portal (o front precisa dele para o
     // /authorize quando a unidade veio pelo host); ignorado no PUT do painel.
-    string? Unit = null)
+    string? Unit = null,
+    // Nome da empresa, para o texto da autorização no portal (a Meta pede o nome de quem vai mandar as
+    // mensagens, PROPOSTA_WHATSAPP.md §9). Só sai na leitura do portal; ignorado no PUT do painel.
+    string? CompanyName = null)
 {
     public static SettingsDto FromEntity(PortalSettings objSettings, string? sUnitSlug = null)
     {
@@ -36,10 +39,12 @@ public record SettingsDto(
     /// resposta cai de ~100 KB para ~1 KB, e o tema chega antes ao celular do visitante. O DDD é o da
     /// unidade, se ela tiver um; senão, o da empresa.
     /// </summary>
-    public static SettingsDto ForPortal(PortalSettings objSettings, Models.DataBase.Unit objUnit)
+    public static SettingsDto ForPortal(
+        PortalSettings objSettings, Models.DataBase.Unit objUnit, string sCompanyName)
     {
         return FromEntity(objSettings, objUnit.Slug) with
         {
+            CompanyName = sCompanyName,
             Logo = PortalImage.Url(objUnit.Slug, PortalImage.Logo, objSettings.Logo),
             Favicon = PortalImage.Url(objUnit.Slug, PortalImage.Favicon, objSettings.Favicon),
             Banner = PortalImage.Url(objUnit.Slug, PortalImage.Banner, objSettings.Banner),
